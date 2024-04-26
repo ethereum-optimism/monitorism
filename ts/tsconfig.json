@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "skipLibCheck": true
+  },
+  "include": [
+    "package.json",
+    "src/abi/IGnosisSafe.0.8.19.json",
+    "src/abi/OptimismPortal.json",
+    "src/**/*",
+    "contrib/**/*",
+    "internal/**/*"
+  ]
+}
