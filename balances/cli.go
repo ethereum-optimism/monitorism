@@ -48,7 +48,7 @@ func ReadCLIFlags(ctx *cli.Context) (Config, error) {
 	return cfg, nil
 }
 
-func ClIFlags(envPrefix string) []cli.Flag {
+func CLIFlags(envPrefix string) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:    NodeURLFlagName,
