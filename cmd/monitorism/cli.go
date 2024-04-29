@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum-optimism/monitorism/balances"
 	"github.com/ethereum-optimism/monitorism/metrics"
+	"github.com/ethereum-optimism/monitorism/withdrawals"
 
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
@@ -31,14 +32,23 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 		Version:              params.VersionWithCommit(GitCommit, GitDate),
 		Commands: []*cli.Command{
 			{
+				Name:        "withdrawals",
+				Usage:       "Monitors proven withdrawals on L1 against L2",
+				Description: "Monitors proven withdrawals on L1 against L2",
+				Flags:       append(defaultFlags, withdrawals.CLIFlags(EnvVarPrefix)...),
+				Action:      cliapp.LifecycleCmd(WithdrawalsMain),
+			},
+			{
 				Name:        "balances",
-				Description: "Monitors the specified account balances",
-				Flags:       append(defaultFlags, balances.ClIFlags(EnvVarPrefix)...),
+				Usage:       "Monitors account balances",
+				Description: "Monitors account balances",
+				Flags:       append(defaultFlags, balances.CLIFlags(EnvVarPrefix)...),
 				Action:      cliapp.LifecycleCmd(BalanceMain),
 			},
 			{
 				Name:        "version",
-				Description: "print version",
+				Usage:       "Show version",
+				Description: "Show version",
 				Action: func(ctx *cli.Context) error {
 					cli.ShowVersion(ctx)
 					return nil
@@ -46,6 +56,24 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 			},
 		},
 	}
+}
+
+func WithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	metricsRegistry := opmetrics.NewRegistry()
+	metricsConfig := opmetrics.ReadCLIConfig(ctx)
+
+	cfg, err := withdrawals.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse withdrawals config from flags: %w", err)
+	}
+
+	app, err := withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
+	}
+
+	return metrics.WithMetricsServer(log, app, metricsRegistry, metricsConfig), nil
 }
 
 func BalanceMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
