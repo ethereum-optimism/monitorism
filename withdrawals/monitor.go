@@ -109,7 +109,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 }
 
 func (m *Monitor) Start(ctx context.Context) error {
-	log.Info("starting monitor...")
 	if m.worker != nil {
 		return errors.New("monitor already started")
 	}
