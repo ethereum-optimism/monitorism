@@ -80,7 +80,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		loopIntervalMs: cfg.LoopIntervalMsec,
 
 		l1Client: l1Client,
-		l2Client: l1Client,
+		l2Client: l2Client,
 
 		optimismPortalAddress: cfg.OptimismPortalAddress,
 		optimismPortal:        optimismPortal,
