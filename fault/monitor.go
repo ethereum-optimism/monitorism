@@ -2,15 +2,12 @@ package fault
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
-	"github.com/ethereum-optimism/optimism/op-service/clock"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,10 +24,7 @@ const (
 )
 
 type Monitor struct {
-	log            log.Logger
-	worker         *clock.LoopFn
-	loopIntervalMs uint64
-	stopped        atomic.Bool
+	log log.Logger
 
 	l1Client *ethclient.Client
 	l2Client *ethclient.Client
@@ -46,7 +40,7 @@ type Monitor struct {
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
-	log.Info("creating monitor...")
+	log.Info("creating fault monitor...")
 
 	l1Client, err := ethclient.Dial(cfg.L1NodeURL)
 	if err != nil {
@@ -78,11 +72,11 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 
 	monitor := &Monitor{
-		log:            log,
-		loopIntervalMs: cfg.LoopIntervalMsec,
+		log: log,
 
-		l1Client:         l1Client,
-		l2Client:         l2Client,
+		l1Client: l1Client,
+		l2Client: l2Client,
+
 		l2OO:             l2OO,
 		faultProofWindow: faultProofWindow.Uint64(),
 
@@ -112,33 +106,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	return monitor, nil
 }
 
-func (m *Monitor) Start(ctx context.Context) error {
-	if m.worker != nil {
-		return errors.New("monitor already started")
-	}
-
-	m.log.Info("starting monitor...", "loop_interval_ms", m.loopIntervalMs)
-	m.tick(ctx)
-	m.worker = clock.NewLoopFn(clock.SystemClock, m.tick, nil, time.Millisecond*time.Duration(m.loopIntervalMs))
-	return nil
-}
-
-func (m *Monitor) Stop(_ context.Context) error {
-	m.log.Info("closing monitor...")
-	m.l1Client.Close()
-	m.l2Client.Close()
-	err := m.worker.Close()
-	if err == nil {
-		m.stopped.Store(true)
-	}
-	return err
-}
-
-func (m *Monitor) Stopped() bool {
-	return m.stopped.Load()
-}
-
-func (m *Monitor) tick(ctx context.Context) {
+func (m *Monitor) Run(ctx context.Context) {
 	callOpts := &bind.CallOpts{Context: ctx}
 
 	// Check for available outputs to validate
@@ -148,7 +116,6 @@ func (m *Monitor) tick(ctx context.Context) {
 		m.log.Error("failed to query next output index", "err", err)
 		return
 	}
-
 	if m.currOutputIndex >= nextOutputIndex.Uint64() {
 		m.log.Info("waiting for next output", "index", m.currOutputIndex, "next_index", nextOutputIndex)
 		return
@@ -164,7 +131,6 @@ func (m *Monitor) tick(ctx context.Context) {
 		m.log.Error("failed to query output", "index", m.currOutputIndex, "err", err)
 		return
 	}
-
 	l2Height, err := m.l2Client.BlockNumber(ctx)
 	if err != nil {
 		m.log.Error("failed to query latest l2 height", "err", err)
@@ -182,7 +148,6 @@ func (m *Monitor) tick(ctx context.Context) {
 		m.log.Error("failed to query l2 block", "height", output.L2BlockNumber, "err", err)
 		return
 	}
-
 	proof := struct{ StorageHash common.Hash }{}
 	if err := m.l2Client.Client().CallContext(ctx, &proof, "eth_getProof",
 		predeploys.L2ToL1MessagePasserAddr, nil, hexutil.EncodeBig(block.Number())); err != nil {
@@ -214,6 +179,12 @@ func (m *Monitor) tick(ctx context.Context) {
 	m.isCurrentlyMismatched.Set(0)
 }
 
+func (m *Monitor) Close(_ context.Context) error {
+	m.l1Client.Close()
+	m.l2Client.Close()
+	return nil
+}
+
 func (m *Monitor) findFirstUnfinalizedOutputIndex(ctx context.Context, finalizationWindow uint64) (uint64, error) {
 	m.log.Info("searching for first unfinalized output")
 	callOpts := &bind.CallOpts{Context: ctx}
@@ -222,15 +193,14 @@ func (m *Monitor) findFirstUnfinalizedOutputIndex(ctx context.Context, finalizat
 	if err != nil {
 		return 0, fmt.Errorf("failed to query latest block: %w", err)
 	}
-
 	totalOutputsBig, err := m.l2OO.NextOutputIndex(callOpts)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query next output index: %w", err)
 	}
-	totalOutputs := totalOutputsBig.Uint64()
 
 	// Binary search the list of posted outputs
 
+	totalOutputs := totalOutputsBig.Uint64()
 	low, high := uint64(0), totalOutputs
 	for low < high {
 		mid := (low + high) / 2
