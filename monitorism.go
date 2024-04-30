@@ -96,6 +96,9 @@ func (app *cliApp) Stop(ctx context.Context) error {
 	}
 
 	app.log.Info("closing monitor...")
+	if err := app.worker.Close(); err != nil {
+		app.log.Error("error stopping worker loop", "err", err)
+	}
 	if err := app.monitor.Close(ctx); err != nil {
 		app.log.Error("error closing monitor", "err", err)
 	}
