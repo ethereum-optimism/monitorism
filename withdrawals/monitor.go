@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	MetricsNamespace = "monitorism"
+	MetricsNamespace = "withdrawals_mon"
 
 	// event WithdrawalProven(bytes32 indexed withdrawalHash, address indexed from, address indexed to);
 	WithdrawalProvenEventABI = "WithdrawalProven(bytes32,address,address)"

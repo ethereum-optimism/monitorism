@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	MetricsNamespace = "monitorism"
+	MetricsNamespace = "balances_mon"
 )
 
 type Account struct {
