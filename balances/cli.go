@@ -12,22 +12,22 @@ import (
 )
 
 const (
-	NodeURLFlagName        = "node.url"
-	LoopIntervalMsFlagName = "loop.interval"
-	AccountsFlagName       = "accounts"
+	NodeURLFlagName  = "node.url"
+	AccountsFlagName = "accounts"
 )
 
-func ReadCLIFlags(ctx *cli.Context) (Config, error) {
-	cfg := Config{
-		NodeUrl:        ctx.String(NodeURLFlagName),
-		LoopIntervalMs: ctx.Uint64(LoopIntervalMsFlagName),
-	}
+type CLIConfig struct {
+	NodeUrl  string
+	Accounts []Account
+}
 
-	if cfg.LoopIntervalMs == 0 {
-		return cfg, fmt.Errorf("loop interval set to zero")
-	}
-
+func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
+	cfg := CLIConfig{NodeUrl: ctx.String(NodeURLFlagName)}
 	accounts := ctx.StringSlice(AccountsFlagName)
+	if len(accounts) == 0 {
+		return cfg, fmt.Errorf("--%s must have at least one account", AccountsFlagName)
+	}
+
 	for _, account := range accounts {
 		split := strings.Split(account, ":")
 		if len(split) != 2 {
@@ -36,7 +36,7 @@ func ReadCLIFlags(ctx *cli.Context) (Config, error) {
 
 		addr, nickname := split[0], split[1]
 		if !common.IsHexAddress(addr) {
-			return cfg, fmt.Errorf("incorrect address: %s", addr)
+			return cfg, fmt.Errorf("address is not a hex-encoded address: %s", addr)
 		}
 		if len(nickname) == 0 {
 			return cfg, fmt.Errorf("nickname for %s not set", addr)
@@ -56,15 +56,9 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Value:   "127.0.0.1:8545",
 			EnvVars: opservice.PrefixEnvVar(envPrefix, "NODE_URL"),
 		},
-		&cli.Uint64Flag{
-			Name:    LoopIntervalMsFlagName,
-			Usage:   "Loop interval in milliseconds",
-			Value:   60_000,
-			EnvVars: opservice.PrefixEnvVar(envPrefix, "LOOP_INTERVAL_MS"),
-		},
 		&cli.StringSliceFlag{
 			Name:    AccountsFlagName,
-			Usage:   "One or accounts formatted via `account1:nickname1,account2:nickname2`",
+			Usage:   "One or accounts formatted via `address:nickname",
 			EnvVars: opservice.PrefixEnvVar(envPrefix, "ACCOUNTS"),
 		},
 	}

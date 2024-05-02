@@ -2,15 +2,11 @@ package withdrawals
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
-	"sync/atomic"
-	"time"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
-	"github.com/ethereum-optimism/optimism/op-service/clock"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
 	"github.com/ethereum/go-ethereum"
@@ -34,10 +30,7 @@ var (
 )
 
 type Monitor struct {
-	log            log.Logger
-	worker         *clock.LoopFn
-	loopIntervalMs uint64
-	stopped        atomic.Bool
+	log log.Logger
 
 	l1Client *ethclient.Client
 	l2Client *ethclient.Client
@@ -46,16 +39,17 @@ type Monitor struct {
 	optimismPortal        *bindings.OptimismPortalCaller
 	l2ToL1MP              *bindings.L2ToL1MessagePasserCaller
 
-	detectedForgery      prometheus.Gauge
-	withdrawalsValidated prometheus.Counter
-	checkedL1Heights     *prometheus.GaugeVec
-
 	maxBlockRange uint64
 	nextL1Height  uint64
+
+	// metrics
+	checkedL1Heights     *prometheus.GaugeVec
+	detectedForgery      prometheus.Gauge
+	withdrawalsValidated prometheus.Counter
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
-	log.Info("creating monitor...")
+	log.Info("creating withdrawals monitor...")
 
 	l1Client, err := ethclient.Dial(cfg.L1NodeURL)
 	if err != nil {
@@ -76,8 +70,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 
 	return &Monitor{
-		log:            log,
-		loopIntervalMs: cfg.LoopIntervalMsec,
+		log: log,
 
 		l1Client: l1Client,
 		l2Client: l2Client,
@@ -108,33 +101,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}, nil
 }
 
-func (m *Monitor) Start(ctx context.Context) error {
-	if m.worker != nil {
-		return errors.New("monitor already started")
-	}
-
-	m.log.Info("starting monitor...", "loop_interval_ms", m.loopIntervalMs)
-	m.tick(ctx)
-	m.worker = clock.NewLoopFn(clock.SystemClock, m.tick, nil, time.Millisecond*time.Duration(m.loopIntervalMs))
-	return nil
-}
-
-func (m *Monitor) Stop(_ context.Context) error {
-	log.Info("closing monitor...")
-	m.l1Client.Close()
-	m.l2Client.Close()
-	err := m.worker.Close()
-	if err == nil {
-		m.stopped.Store(true)
-	}
-	return err
-}
-
-func (m *Monitor) Stopped() bool {
-	return m.stopped.Load()
-}
-
-func (m *Monitor) tick(ctx context.Context) {
+func (m *Monitor) Run(ctx context.Context) {
 	latestL1Height, err := m.l1Client.BlockNumber(ctx)
 	if err != nil {
 		m.log.Error("failed to query latest block number", "err", err)
@@ -203,4 +170,10 @@ func (m *Monitor) tick(ctx context.Context) {
 	m.log.Info("validated withdrawals", "height", toBlockNumber)
 	m.nextL1Height = toBlockNumber + 1
 	m.checkedL1Heights.WithLabelValues("checked").Set(float64(toBlockNumber))
+}
+
+func (m *Monitor) Close(_ context.Context) error {
+	m.l1Client.Close()
+	m.l2Client.Close()
+	return nil
 }

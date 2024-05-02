@@ -16,7 +16,6 @@ const (
 	L2NodeURLFlagName = "l2.node.url"
 
 	EventBlockRangeFlagName       = "event.block.range"
-	LoopIntervalMsecFlagName      = "loop.interval.msec"
 	StartingL1BlockHeightFlagName = "start.block.height"
 
 	OptimismPortalAddressFlagName = "optimismportal.address"
@@ -38,7 +37,6 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		L1NodeURL:             ctx.String(L1NodeURLFlagName),
 		L2NodeURL:             ctx.String(L2NodeURLFlagName),
 		EventBlockRange:       ctx.Uint64(EventBlockRangeFlagName),
-		LoopIntervalMsec:      ctx.Uint64(LoopIntervalMsecFlagName),
 		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
 	}
 
@@ -74,12 +72,6 @@ func CLIFlags(envVar string) []cli.Flag {
 			Usage:   "Max block range when scanning for events",
 			Value:   1000,
 			EnvVars: opservice.PrefixEnvVar(envVar, "EVENT_BLOCK_RANGE"),
-		},
-		&cli.Uint64Flag{
-			Name:    LoopIntervalMsecFlagName,
-			Usage:   "Loop interval of the monitor in milliseconds",
-			Value:   60_000,
-			EnvVars: opservice.PrefixEnvVar(envVar, "LOOP_INTERVAL_MSEC"),
 		},
 		&cli.Uint64Flag{
 			Name:    StartingL1BlockHeightFlagName,
