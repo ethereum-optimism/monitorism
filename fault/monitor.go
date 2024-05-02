@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	MetricsNamespace = "monitorism"
+	MetricsNamespace = "fault_mon"
 )
 
 type Monitor struct {

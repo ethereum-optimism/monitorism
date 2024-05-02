@@ -1,0 +1,174 @@
+package multisig
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math/big"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+
+	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
+	"github.com/ethereum-optimism/optimism/op-service/metrics"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+const (
+	MetricsNamespace = "multisig_mon"
+	SafeNonceABI     = "nonce()"
+
+	OPTokenEnvName = "OP_SERVICE_ACCOUNT_TOKEN"
+)
+
+var (
+	SafeNonceSelector = crypto.Keccak256([]byte(SafeNonceABI))[:4]
+)
+
+type Monitor struct {
+	log log.Logger
+
+	l1Client *ethclient.Client
+
+	optimismPortalAddress common.Address
+	optimismPortal        *bindings.OptimismPortalCaller
+
+	onePassToken string
+	onePassVault string
+	safeAddress  common.Address
+
+	// metrics
+	safeNonce                 *prometheus.GaugeVec
+	latestPresignedPauseNonce *prometheus.GaugeVec
+	paused                    *prometheus.GaugeVec
+}
+
+func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
+	l1Client, err := ethclient.Dial(cfg.L1NodeURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial l1 rpc: %w", err)
+	}
+
+	optimismPortal, err := bindings.NewOptimismPortalCaller(cfg.OptimismPortalAddress, l1Client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
+	}
+
+	if len(os.Getenv(OPTokenEnvName)) == 0 {
+		return nil, fmt.Errorf("%s ENV name must be set for 1Pass integration", OPTokenEnvName)
+	}
+
+	return &Monitor{
+		log:      log,
+		l1Client: l1Client,
+
+		optimismPortal:        optimismPortal,
+		optimismPortalAddress: cfg.OptimismPortalAddress,
+
+		safeAddress:  cfg.SafeAddress,
+		onePassVault: cfg.OnePassVault,
+
+		safeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "safeNonce",
+			Help:      "Safe Nonce",
+		}, []string{"address", "nickname"}),
+		latestPresignedPauseNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latestPresignedPauseNonce",
+			Help:      "Latest pre-signed pause nonce",
+		}, []string{"address", "nickname"}),
+		paused: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "pausedState",
+			Help:      "OptimismPortal paused state",
+		}, []string{"address", "nickname"}),
+	}, nil
+}
+
+func (m *Monitor) Run(ctx context.Context) {
+	m.checkOptimismPortal(ctx)
+	m.checkSafeNonce(ctx)
+	m.checkPresignedNonce(ctx)
+}
+
+func (m *Monitor) checkOptimismPortal(ctx context.Context) {
+	paused, err := m.optimismPortal.Paused(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		m.log.Error("failed to query OptimismPortal paused status", "err", err)
+		return
+	}
+
+	pausedMetric := 0
+	if paused {
+		pausedMetric = 1
+	}
+
+	m.paused.WithLabelValues(m.optimismPortalAddress.String(), "").Set(float64(pausedMetric))
+	m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
+}
+
+func (m *Monitor) checkSafeNonce(ctx context.Context) {
+	nonceBytes := hexutil.Bytes{}
+	nonceTx := map[string]interface{}{"to": m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
+	if err := m.l1Client.Client().CallContext(ctx, &nonceBytes, "eth_call", nonceTx, "latest"); err != nil {
+		m.log.Error("failed to query safe nonce", "err", err)
+		return
+	}
+
+	nonce := new(big.Int).SetBytes(nonceBytes).Uint64()
+	m.safeNonce.WithLabelValues(m.safeAddress.String(), "").Set(float64(nonce))
+	m.log.Info("Safe Nonce", "address", m.safeAddress.String(), "nonce", nonce)
+}
+
+func (m *Monitor) checkPresignedNonce(ctx context.Context) {
+	cmd := exec.CommandContext(ctx, "op", "item", "list", "--format=json", fmt.Sprintf("--vault=%s", m.onePassVault))
+
+	output, err := cmd.Output()
+	if err != nil {
+		m.log.Error("failed to run op cli")
+		return
+	}
+
+	vaultItems := []struct{ Title string }{}
+	if err := json.Unmarshal(output, &vaultItems); err != nil {
+		m.log.Error("failed to unmarshal op cli stdout", "err", err)
+		return
+	}
+
+	latestPresignedNonce := int64(-1)
+	for _, item := range vaultItems {
+		if strings.HasPrefix(item.Title, "ready-") && strings.HasSuffix(item.Title, ".json") {
+			nonce, err := strconv.ParseInt(item.Title[6:len(item.Title)-5], 10, 64)
+			if err != nil {
+				m.log.Error("failed to parse nonce from item title", "title", item.Title)
+				return
+			}
+			if nonce > latestPresignedNonce {
+				latestPresignedNonce = nonce
+			}
+		}
+	}
+
+	m.latestPresignedPauseNonce.WithLabelValues(m.optimismPortalAddress.String(), "").Set(float64(latestPresignedNonce))
+	if latestPresignedNonce == -1 {
+		m.log.Error("no presigned nonce found")
+		return
+	}
+
+	m.log.Info("Latest Presigned Nonce", "nonce", latestPresignedNonce)
+}
+
+func (m *Monitor) Close(_ context.Context) error {
+	m.l1Client.Close()
+	return nil
+}

@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum-optimism/monitorism"
 	"github.com/ethereum-optimism/monitorism/balances"
 	"github.com/ethereum-optimism/monitorism/fault"
+	"github.com/ethereum-optimism/monitorism/multisig"
 	"github.com/ethereum-optimism/monitorism/withdrawals"
 
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
@@ -23,7 +24,7 @@ const (
 )
 
 func newCli(GitCommit string, GitDate string) *cli.App {
-	defaultFlags := monitorism.DefaultCLIFlags(EnvVarPrefix)
+	defaultFlags := monitorism.DefaultCLIFlags("MONITORISM")
 	return &cli.App{
 		Name:                 "Monitorism",
 		Description:          "OP Stack Monitoring",
@@ -31,24 +32,31 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 		Version:              params.VersionWithCommit(GitCommit, GitDate),
 		Commands: []*cli.Command{
 			{
+				Name:        "multisig",
+				Usage:       "Monitors OptimismPortal pause status, Safe nonce, and Pre-signed nonce",
+				Description: "Monitors OptimismPortal pause status, Safe nonce, and Pre-signed nonce",
+				Flags:       append(multisig.CLIFlags("MULTISIG_MON"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(MultisigMain),
+			},
+			{
 				Name:        "fault",
 				Usage:       "Monitors output roots posted on L1 against L2",
 				Description: "Monitors output roots posted on L1 against L2",
-				Flags:       append(defaultFlags, fault.CLIFlags(EnvVarPrefix)...),
+				Flags:       append(fault.CLIFlags("FAULT_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(FaultMain),
 			},
 			{
 				Name:        "withdrawals",
 				Usage:       "Monitors proven withdrawals on L1 against L2",
 				Description: "Monitors proven withdrawals on L1 against L2",
-				Flags:       append(defaultFlags, withdrawals.CLIFlags(EnvVarPrefix)...),
+				Flags:       append(withdrawals.CLIFlags("WITHDRAWAL_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(WithdrawalsMain),
 			},
 			{
 				Name:        "balances",
 				Usage:       "Monitors account balances",
 				Description: "Monitors account balances",
-				Flags:       append(defaultFlags, balances.CLIFlags(EnvVarPrefix)...),
+				Flags:       append(balances.CLIFlags("BALANCE_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(BalanceMain),
 			},
 			{
@@ -64,17 +72,33 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 	}
 }
 
+func MultisigMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := multisig.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse multisig config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := multisig.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multisig monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+
 func FaultMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := fault.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse withdrawals config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse fault config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := fault.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
+		return nil, fmt.Errorf("failed to create fault monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
