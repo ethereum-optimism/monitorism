@@ -26,6 +26,8 @@ import (
 const (
 	MetricsNamespace = "multisig_mon"
 	SafeNonceABI     = "nonce()"
+
+	OPTokenEnvName = "OP_SERVICE_ACCOUNT_TOKEN"
 )
 
 var (
@@ -61,6 +63,10 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
 	}
 
+	if len(os.Getenv(OPTokenEnvName)) == 0 {
+		return nil, fmt.Errorf("%s ENV name must be set for 1Pass integration", OPTokenEnvName)
+	}
+
 	return &Monitor{
 		log:      log,
 		l1Client: l1Client,
@@ -69,7 +75,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		optimismPortalAddress: cfg.OptimismPortalAddress,
 
 		safeAddress:  cfg.SafeAddress,
-		onePassToken: cfg.OnePassServiceToken,
 		onePassVault: cfg.OnePassVault,
 
 		safeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
@@ -126,7 +131,6 @@ func (m *Monitor) checkSafeNonce(ctx context.Context) {
 }
 
 func (m *Monitor) checkPresignedNonce(ctx context.Context) {
-	os.Setenv("OP_SERVICE_ACCOUNT_TOKEN", m.onePassToken)
 	cmd := exec.CommandContext(ctx, "op", "item", "list", "--format=json", fmt.Sprintf("--vault=%s", m.onePassVault))
 
 	output, err := cmd.Output()

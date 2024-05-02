@@ -16,8 +16,7 @@ const (
 	OptimismPortalAddressFlagName = "optimismportal.address"
 	SafeAddressFlagName           = "safe.address"
 
-	OnePassServiceTokenFlagName = "op.service.token"
-	OnePassVaultFlagName        = "op.vault"
+	OnePassVaultFlagName = "op.vault"
 )
 
 type Account struct {
@@ -31,16 +30,13 @@ type CLIConfig struct {
 	L1NodeURL             string
 	OptimismPortalAddress common.Address
 	SafeAddress           common.Address
-
-	OnePassServiceToken string
-	OnePassVault        string
+	OnePassVault          string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		L1NodeURL:           ctx.String(L1NodeURLFlagName),
-		OnePassServiceToken: ctx.String(OnePassServiceTokenFlagName),
-		OnePassVault:        ctx.String(OnePassVaultFlagName),
+		L1NodeURL:    ctx.String(L1NodeURLFlagName),
+		OnePassVault: ctx.String(OnePassVaultFlagName),
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
@@ -75,11 +71,6 @@ func CLIFlags(envVar string) []cli.Flag {
 			Name:    SafeAddressFlagName,
 			Usage:   "Address of the Safe contract",
 			EnvVars: opservice.PrefixEnvVar(envVar, "SAFE"),
-		},
-		&cli.StringFlag{
-			Name:    OnePassServiceTokenFlagName,
-			Usage:   "1Pass Service Token",
-			EnvVars: opservice.PrefixEnvVar(envVar, "1PASS_SERVICE_TOKEN"),
 		},
 		&cli.StringFlag{
 			Name:    OnePassVaultFlagName,
