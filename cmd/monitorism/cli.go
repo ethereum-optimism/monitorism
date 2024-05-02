@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum-optimism/monitorism/balances"
+	"github.com/ethereum-optimism/monitorism/fault"
 	"github.com/ethereum-optimism/monitorism/metrics"
 	"github.com/ethereum-optimism/monitorism/withdrawals"
 
@@ -32,6 +33,13 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 		Version:              params.VersionWithCommit(GitCommit, GitDate),
 		Commands: []*cli.Command{
 			{
+				Name:        "fault",
+				Usage:       "Monitors output roots posted on L1 against L2",
+				Description: "Monitors output roots posted on L1 against L2",
+				Flags:       append(defaultFlags, fault.CLIFlags(EnvVarPrefix)...),
+				Action:      cliapp.LifecycleCmd(FaultMain),
+			},
+			{
 				Name:        "withdrawals",
 				Usage:       "Monitors proven withdrawals on L1 against L2",
 				Description: "Monitors proven withdrawals on L1 against L2",
@@ -56,6 +64,24 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 			},
 		},
 	}
+}
+
+func FaultMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	metricsRegistry := opmetrics.NewRegistry()
+	metricsConfig := opmetrics.ReadCLIConfig(ctx)
+
+	cfg, err := fault.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse withdrawals config from flags: %w", err)
+	}
+
+	app, err := fault.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
+	}
+
+	return metrics.WithMetricsServer(log, app, metricsRegistry, metricsConfig), nil
 }
 
 func WithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
