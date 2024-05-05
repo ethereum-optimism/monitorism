@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ethereum-optimism/monitorism"
-	"github.com/ethereum-optimism/monitorism/balances"
-	"github.com/ethereum-optimism/monitorism/fault"
-	"github.com/ethereum-optimism/monitorism/multisig"
-	"github.com/ethereum-optimism/monitorism/withdrawals"
+	monitorism "github.com/ethereum-optimism/monitorism/op-monitorism"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/balances"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/fault"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
 
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
