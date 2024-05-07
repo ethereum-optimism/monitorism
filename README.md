@@ -12,7 +12,7 @@ COMMANDS:
    balances     Monitors account balances
 ```
 
-Each monitor has some common configuration, configurable both via cli arguments or environment variables and defaults.
+Each monitor has some common configuration, configurable both via cli or env with defaults.
 ```
 OPTIONS:
    --log.level value           [$MONITORISM_LOG_LEVEL]           The lowest log level that will be output (default: INFO)                                                       
@@ -26,9 +26,9 @@ OPTIONS:
 
 ## Monitors
 
-In addition the common configuration, each available monitor also accept their specific configuration
+In addition the common configuration, each monitor also has their specific configuration
 
-* **Note**: The environment variable prefix for monitor-configuration is different than the global monitor config described above.
+* **Note**: The environment variable prefix for monitor-specific configuration is different than the global monitor config described above.
 
 ### Fault Monitor
 
@@ -45,7 +45,7 @@ On mismatch the `isCurrentlyMismatched` metrics is set to `1`.
 
 ### Withdrawals Monitor
 
-The withdrawals monitor checks for new withdrawals that haven proven to the `OptimismPortal` contract. Each withdrawal is checked against the `L2ToL1MessagePasser` contract
+The withdrawals monitor checks for new withdrawals that have been proven to the `OptimismPortal` contract. Each withdrawal is checked against the `L2ToL1MessagePasser` contract
 ```
 OPTIONS:
    --l1.node.url value             [$WITHDRAWAL_MON_L1_NODE_URL]         Node URL of L1 peer (default: "127.0.0.1:8545")          
@@ -74,11 +74,11 @@ The multisig monitor reports the paused status of the `OptimismPortal` contract.
 
 ```
 OPTIONS:
-   --l1.node.url value             Node URL of L1 peer (default: "127.0.0.1:8545")                                               [$MULTISIG_MON_L1_NODE_URL]
-   --optimismportal.address value  Address of the OptimismPortal contract                                                        [$MULTISIG_MON_OPTIMISM_PORTAL]
-   --nickname value                Nickname of chain being monitored                                                             [$MULTISIG_MON_NICKNAME]
-   --safe.address value            Address of the Safe contract                                                                  [$MULTISIG_MON_SAFE]
-   --op.vault value                1Pass Vault name storing presigned safe txs following a 'ready-<nonce>.json' item name format [$MULTISIG_MON_1PASS_VAULT_NAME]
+   --l1.node.url value             [$MULTISIG_MON_L1_NODE_URL]       Node URL of L1 peer (default: "127.0.0.1:8545")                                               
+   --optimismportal.address value  [$MULTISIG_MON_OPTIMISM_PORTAL]   Address of the OptimismPortal contract                                                        
+   --nickname value                [$MULTISIG_MON_NICKNAME]          Nickname of chain being monitored                                                             
+   --safe.address value            [$MULTISIG_MON_SAFE]              Address of the Safe contract                                                                  
+   --op.vault value                [$MULTISIG_MON_1PASS_VAULT_NAME]  1Pass Vault name storing presigned safe txs following a 'ready-<nonce>.json' item name format 
 ```
 
 ## Typescript
