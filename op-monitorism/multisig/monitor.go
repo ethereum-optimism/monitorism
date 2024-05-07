@@ -41,10 +41,11 @@ type Monitor struct {
 
 	optimismPortalAddress common.Address
 	optimismPortal        *bindings.OptimismPortalCaller
+	nickname              string
 
 	onePassToken string
-	onePassVault string
-	safeAddress  common.Address
+	onePassVault *string
+	safeAddress  *common.Address
 
 	// metrics
 	safeNonce                 *prometheus.GaugeVec
@@ -63,8 +64,15 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
 	}
 
-	if len(os.Getenv(OPTokenEnvName)) == 0 {
+	if cfg.OnePassVault != nil && len(os.Getenv(OPTokenEnvName)) == 0 {
 		return nil, fmt.Errorf("%s ENV name must be set for 1Pass integration", OPTokenEnvName)
+	}
+
+	if cfg.OnePassVault == nil {
+		log.Warn("one pass integration is not configured")
+	}
+	if cfg.SafeAddress == nil {
+		log.Warn("safe integration is not configured")
 	}
 
 	return &Monitor{
@@ -73,6 +81,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 		optimismPortal:        optimismPortal,
 		optimismPortalAddress: cfg.OptimismPortalAddress,
+		nickname:              cfg.Nickname,
 
 		safeAddress:  cfg.SafeAddress,
 		onePassVault: cfg.OnePassVault,
@@ -113,25 +122,35 @@ func (m *Monitor) checkOptimismPortal(ctx context.Context) {
 		pausedMetric = 1
 	}
 
-	m.paused.WithLabelValues(m.optimismPortalAddress.String(), "").Set(float64(pausedMetric))
+	m.paused.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
 	m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
 }
 
 func (m *Monitor) checkSafeNonce(ctx context.Context) {
+	if m.safeAddress == nil {
+		m.log.Warn("safe address is not configured, skipping...")
+		return
+	}
+
 	nonceBytes := hexutil.Bytes{}
-	nonceTx := map[string]interface{}{"to": m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
+	nonceTx := map[string]interface{}{"to": *m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
 	if err := m.l1Client.Client().CallContext(ctx, &nonceBytes, "eth_call", nonceTx, "latest"); err != nil {
 		m.log.Error("failed to query safe nonce", "err", err)
 		return
 	}
 
 	nonce := new(big.Int).SetBytes(nonceBytes).Uint64()
-	m.safeNonce.WithLabelValues(m.safeAddress.String(), "").Set(float64(nonce))
+	m.safeNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(nonce))
 	m.log.Info("Safe Nonce", "address", m.safeAddress.String(), "nonce", nonce)
 }
 
 func (m *Monitor) checkPresignedNonce(ctx context.Context) {
-	cmd := exec.CommandContext(ctx, "op", "item", "list", "--format=json", fmt.Sprintf("--vault=%s", m.onePassVault))
+	if m.onePassVault == nil {
+		m.log.Warn("one pass integration is not configured, skipping...")
+		return
+	}
+
+	cmd := exec.CommandContext(ctx, "op", "item", "list", "--format=json", fmt.Sprintf("--vault=%s", *m.onePassVault))
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -159,7 +178,7 @@ func (m *Monitor) checkPresignedNonce(ctx context.Context) {
 		}
 	}
 
-	m.latestPresignedPauseNonce.WithLabelValues(m.optimismPortalAddress.String(), "").Set(float64(latestPresignedNonce))
+	m.latestPresignedPauseNonce.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(latestPresignedNonce))
 	if latestPresignedNonce == -1 {
 		m.log.Error("no presigned nonce found")
 		return

@@ -74,15 +74,16 @@ func CLIFlags(envVar string) []cli.Flag {
 			EnvVars: opservice.PrefixEnvVar(envVar, "EVENT_BLOCK_RANGE"),
 		},
 		&cli.Uint64Flag{
-			Name:    StartingL1BlockHeightFlagName,
-			Usage:   "Starting height to scan for events",
-			Value:   0,
-			EnvVars: opservice.PrefixEnvVar(envVar, "LOOP_INTERVAL_MSEC"),
+			Name:     StartingL1BlockHeightFlagName,
+			Usage:    "Starting height to scan for events",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
+			Required: true,
 		},
 		&cli.StringFlag{
-			Name:    OptimismPortalAddressFlagName,
-			Usage:   "Address of the OptimismPortal contract",
-			EnvVars: opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			Name:     OptimismPortalAddressFlagName,
+			Usage:    "Address of the OptimismPortal contract",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			Required: true,
 		},
 	}
 }
