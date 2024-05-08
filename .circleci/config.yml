@@ -1,31 +1,265 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine.
-# See: https://circleci.com/docs/configuration-reference
 version: 2.1
 
-# Define a job to be invoked later in a workflow.
-# See: https://circleci.com/docs/jobs-steps/#jobs-overview & https://circleci.com/docs/configuration-reference/#jobs
-jobs:
-  say-hello:
-    # Specify the execution environment. You can specify an image from Docker Hub or use one of our convenience images from CircleCI's Developer Hub.
-    # See: https://circleci.com/docs/executor-intro/ & https://circleci.com/docs/configuration-reference/#executor-job
-    docker:
-      # Specify the version you desire here
-      # See: https://circleci.com/developer/images/image/cimg/base
-      - image: cimg/base:current
+parameters:
+  ci_builder_image:
+    type: string
+    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder:v0.48.0
+  ci_builder_rust_image:
+    type: string
+    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder-rust:latest
+  base_image:
+    type: string
+    default: default
 
-    # Add steps to the job
-    # See: https://circleci.com/docs/jobs-steps/#steps-overview & https://circleci.com/docs/configuration-reference/#steps
+orbs:
+  go: circleci/go@1.8.0
+  gcp-cli: circleci/gcp-cli@3.0.1
+  slack: circleci/slack@4.10.1
+  shellcheck: circleci/shellcheck@3.2.0
+commands:
+  gcp-oidc-authenticate:
+    description: "Authenticate with GCP using a CircleCI OIDC token."
+    parameters:
+      project_id:
+        type: env_var_name
+        default: GCP_PROJECT_ID
+      workload_identity_pool_id:
+        type: env_var_name
+        default: GCP_WIP_ID
+      workload_identity_pool_provider_id:
+        type: env_var_name
+        default: GCP_WIP_PROVIDER_ID
+      service_account_email:
+        type: env_var_name
+        default: GCP_SERVICE_ACCOUNT_EMAIL
+      gcp_cred_config_file_path:
+        type: string
+        default: /home/circleci/gcp_cred_config.json
+      oidc_token_file_path:
+        type: string
+        default: /home/circleci/oidc_token.json
     steps:
-      # Checkout the code as the first step.
-      - checkout
       - run:
-          name: "Say hello"
-          command: "echo Hello, World!"
+          name: "Create OIDC credential configuration"
+          command: |
+            # Store OIDC token in temp file
+            echo $CIRCLE_OIDC_TOKEN > << parameters.oidc_token_file_path >>
+            # Create a credential configuration for the generated OIDC ID Token
+            gcloud iam workload-identity-pools create-cred-config \
+                "projects/${<< parameters.project_id >>}/locations/global/workloadIdentityPools/${<< parameters.workload_identity_pool_id >>}/providers/${<< parameters.workload_identity_pool_provider_id >>}"\
+                --output-file="<< parameters.gcp_cred_config_file_path >>" \
+                --service-account="${<< parameters.service_account_email >>}" \
+                --credential-source-file=<< parameters.oidc_token_file_path >>
+      - run:
+          name: "Authenticate with GCP using OIDC"
+          command: |
+            # Configure gcloud to leverage the generated credential configuration
+            gcloud auth login --brief --cred-file "<< parameters.gcp_cred_config_file_path >>"
+            # Configure ADC
+            echo "export GOOGLE_APPLICATION_CREDENTIALS='<< parameters.gcp_cred_config_file_path >>'" | tee -a "$BASH_ENV"
 
-# Orchestrate jobs using workflows
-# See: https://circleci.com/docs/workflows/ & https://circleci.com/docs/configuration-reference/#workflows
+  check-changed:
+    description: "Conditionally halts a step if certain modules change"
+    parameters:
+      patterns:
+        type: string
+        description: "Comma-separated list of dependencies"
+      no_go_deps:
+        type: string
+        default: ""
+        description: "If set, does not trigger on `go.mod` / `go.sum` changes."
+    steps:
+      - run:
+          name: "Check for changes"
+          environment:
+            CHECK_CHANGED_NO_GO_DEPS: "<<parameters.no_go_deps>>"
+          command: |
+            cd ops/check-changed
+            pip3 install -r requirements.txt
+            python3 main.py "<<parameters.patterns>>"
+
+  notify-failures-on-develop:
+    description: "Notify Slack"
+    parameters:
+      channel:
+        type: string
+        default: C03N11M0BBN
+      mentions:
+        type: string
+        default: ""
+    steps:
+      - slack/notify:
+          channel: << parameters.channel >>
+          event: fail
+          template: basic_fail_1
+          branch_pattern: develop
+          mentions: "<< parameters.mentions >>"
+
+jobs:
+  docker-build:
+    environment:
+      DOCKER_BUILDKIT: 1
+    parameters:
+      docker_tags:
+        description: Docker image tags, comma-separated
+        type: string
+      docker_name:
+        description: "Docker buildx bake target"
+        type: string
+        default: ""
+      registry:
+        description: Docker registry
+        type: string
+        default: "us-docker.pkg.dev"
+      repo:
+        description: Docker repo
+        type: string
+        default: "oplabs-tools-artifacts/images"
+      save_image_tag:
+        description: Save docker image with given tag
+        type: string
+        default: ""
+      platforms:
+        description: Platforms to build for, comma-separated
+        type: string
+        default: "linux/amd64"
+      publish:
+        description: Publish the docker image (multi-platform, all tags)
+        type: boolean
+        default: false
+      release:
+        description: Run the release script
+        type: boolean
+        default: false
+      resource_class:
+        description: Docker resoruce class
+        type: string
+        default: medium
+    machine:
+      image: <<pipeline.parameters.base_image>>
+      resource_class: "<<parameters.resource_class>>"
+      docker_layer_caching: true  # we rely on this for faster builds, and actively warm it up for builds with common stages
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp/docker_images
+      - run:
+          command: mkdir -p /tmp/docker_images
+      - when:
+          condition: "<<parameters.release>>"
+          steps:
+            - gcp-cli/install
+      - when:
+          condition:
+            or:
+              - "<<parameters.publish>>"
+              - "<<parameters.release>>"
+          steps:
+            - gcp-oidc-authenticate
+      - run:
+          name: Build
+          command: |
+            # Check to see if DOCKER_HUB_READ_ONLY_TOKEN is set (i.e. we are in repo) before attempting to use secrets.
+            # Building should work without this read only login, but may get rate limited.
+            if [[ -v DOCKER_HUB_READ_ONLY_TOKEN ]]; then
+              echo "$DOCKER_HUB_READ_ONLY_TOKEN" | docker login -u "$DOCKER_HUB_READ_ONLY_USER" --password-stdin
+            fi
+
+            export REGISTRY="<<parameters.registry>>"
+            export REPOSITORY="<<parameters.repo>>"
+            export IMAGE_TAGS="$(echo -ne "<<parameters.docker_tags>>" | sed "s/[^a-zA-Z0-9\n,]/-/g")"
+            export GIT_COMMIT="$(git rev-parse HEAD)"
+            export GIT_DATE="$(git show -s --format='%ct')"
+            export GIT_VERSION="<<pipeline.git.tag>>"
+            export PLATFORMS="<<parameters.platforms>>"
+
+            # Create, start (bootstrap) and use a *named* docker builder
+            # This allows us to cross-build multi-platform,
+            # and naming allows us to use the DLC (docker-layer-cache)
+            docker buildx create --driver=docker-container --name=buildx-build --bootstrap --use
+
+            DOCKER_OUTPUT_DESTINATION=""
+            if [ "<<parameters.publish>>" == "true" ]; then
+              gcloud auth configure-docker <<parameters.registry>>
+              echo "Building for platforms $PLATFORMS and then publishing to registry"
+              DOCKER_OUTPUT_DESTINATION="--push"
+              if [ "<<parameters.save_image_tag>>" != "" ]; then
+                echo "ERROR: cannot save image to docker when publishing to registry"
+                exit 1
+              fi
+            else
+              if [ "<<parameters.save_image_tag>>" == "" ]; then
+                echo "Running $PLATFORMS build without destination (cache warm-up)"
+                DOCKER_OUTPUT_DESTINATION=""
+              elif [[ $PLATFORMS == *,* ]]; then
+                echo "ERROR: cannot perform multi-arch (platforms: $PLATFORMS) build while also loading the result into regular docker"
+                exit 1
+              else
+                echo "Running single-platform $PLATFORMS build and loading into docker"
+                DOCKER_OUTPUT_DESTINATION="--load"
+              fi
+            fi
+
+            # Let them cook!
+            docker buildx bake \
+              --progress plain \
+              --builder=buildx-build \
+              -f docker-bake.hcl \
+              $DOCKER_OUTPUT_DESTINATION \
+              <<parameters.docker_name>>
+
+          no_output_timeout: 45m
+      - when:
+          condition: "<<parameters.publish>>"
+          steps:
+            - notify-failures-on-develop
+      - when:
+          condition: "<<parameters.save_image_tag>>"
+          steps:
+            - run:
+                name: Save
+                command: |
+                  IMAGE_NAME="<<parameters.registry>>/<<parameters.repo>>/<<parameters.docker_name>>:<<parameters.save_image_tag>>"
+                  docker save -o /tmp/docker_images/<<parameters.docker_name>>.tar $IMAGE_NAME
+            - persist_to_workspace:
+                root: /tmp/docker_images
+                paths:  # only write the one file, to avoid concurrent workspace-file additions
+                  - "<<parameters.docker_name>>.tar"
+      - when:
+          condition:
+            equal: [main, << pipeline.git.branch >>]
+          steps:
+            - gcp-oidc-authenticate:
+                service_account_email: GCP_SERVICE_ATTESTOR_ACCOUNT_EMAIL
+            - run:
+                name: Sign
+                command: |
+                  git clone https://github.com/ethereum-optimism/binary_signer
+                  cd binary_signer/signer
+                  git checkout tags/v1.0.4
+
+                  IMAGE_PATH="<<parameters.registry>>/<<parameters.repo>>/<<parameters.docker_name>>:<<pipeline.git.revision>>"
+                  echo $IMAGE_PATH
+                  pip3 install -r requirements.txt
+
+                  python3 ./sign_image.py --command="sign"\
+                      --attestor-project-name="$ATTESTOR_PROJECT_NAME"\
+                      --attestor-name="$ATTESTOR_NAME"\
+                      --image-path="$IMAGE_PATH"\
+                      --signer-logging-level="INFO"\
+                      --attestor-key-id="//cloudkms.googleapis.com/v1/projects/$ATTESTOR_PROJECT_NAME/locations/global/keyRings/$ATTESTOR_NAME-key-ring/cryptoKeys/$ATTESTOR_NAME-key/cryptoKeyVersions/1"
+  
 workflows:
-  say-hello-workflow: # This is the name of the workflow, feel free to change it to better match your workflow.
-    # Inside the workflow, you define the jobs you want to run.
+  main:
+    when:
+      and:
+        - or:
+            # Trigger on new commits
+          - equal: [ webhook, << pipeline.trigger_source >> ]
     jobs:
-      - say-hello
+      - docker-build:
+          name: op-monitorism-docker-build
+          docker_name: op-monitorism
+          docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
+          save_image_tag: <<pipeline.git.revision>> # for devnet later
+

@@ -1,4 +1,4 @@
-module github.com/ethereum-optimism/monitorism
+module github.com/ethereum-optimism/monitorism/op-monitorism
 
 go 1.21
 
