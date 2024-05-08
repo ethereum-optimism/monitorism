@@ -57,9 +57,10 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			EnvVars: opservice.PrefixEnvVar(envPrefix, "NODE_URL"),
 		},
 		&cli.StringSliceFlag{
-			Name:    AccountsFlagName,
-			Usage:   "One or accounts formatted via `address:nickname`",
-			EnvVars: opservice.PrefixEnvVar(envPrefix, "ACCOUNTS"),
+			Name:     AccountsFlagName,
+			Usage:    "One or accounts formatted via `address:nickname`",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "ACCOUNTS"),
+			Required: true,
 		},
 	}
 }

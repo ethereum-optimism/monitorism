@@ -27,14 +27,15 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 	defaultFlags := monitorism.DefaultCLIFlags("MONITORISM")
 	return &cli.App{
 		Name:                 "Monitorism",
+		Usage:                "OP Stack Monitoring",
 		Description:          "OP Stack Monitoring",
 		EnableBashCompletion: true,
 		Version:              params.VersionWithCommit(GitCommit, GitDate),
 		Commands: []*cli.Command{
 			{
 				Name:        "multisig",
-				Usage:       "Monitors OptimismPortal pause status, Safe nonce, and Pre-signed nonce",
-				Description: "Monitors OptimismPortal pause status, Safe nonce, and Pre-signed nonce",
+				Usage:       "Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password",
+				Description: "Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password",
 				Flags:       append(multisig.CLIFlags("MULTISIG_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(MultisigMain),
 			},

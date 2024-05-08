@@ -13,30 +13,26 @@ import (
 const (
 	L1NodeURLFlagName = "l1.node.url"
 
+	NicknameFlagName              = "nickname"
 	OptimismPortalAddressFlagName = "optimismportal.address"
 	SafeAddressFlagName           = "safe.address"
-
-	OnePassVaultFlagName = "op.vault"
+	OnePassVaultFlagName          = "op.vault"
 )
-
-type Account struct {
-	Nickname              string
-	SafeAddress           string
-	OptimismPortalAddress string
-	Vault                 string
-}
 
 type CLIConfig struct {
 	L1NodeURL             string
+	Nickname              string
 	OptimismPortalAddress common.Address
-	SafeAddress           common.Address
-	OnePassVault          string
+
+	// Optional
+	SafeAddress  *common.Address
+	OnePassVault *string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		L1NodeURL:    ctx.String(L1NodeURLFlagName),
-		OnePassVault: ctx.String(OnePassVaultFlagName),
+		L1NodeURL: ctx.String(L1NodeURLFlagName),
+		Nickname:  ctx.String(NicknameFlagName),
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
@@ -46,10 +42,18 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg.OptimismPortalAddress = common.HexToAddress(portalAddress)
 
 	safeAddress := ctx.String(SafeAddressFlagName)
-	if !common.IsHexAddress(safeAddress) {
-		return cfg, fmt.Errorf("--%s is not a hex-encoded address", SafeAddressFlagName)
+	if len(safeAddress) > 0 {
+		if !common.IsHexAddress(safeAddress) {
+			return cfg, fmt.Errorf("--%s is not a hex-encoded address", SafeAddressFlagName)
+		}
+		addr := common.HexToAddress(safeAddress)
+		cfg.SafeAddress = &addr
 	}
-	cfg.SafeAddress = common.HexToAddress(safeAddress)
+
+	onePassVault := ctx.String(OnePassVaultFlagName)
+	if len(onePassVault) > 0 {
+		cfg.OnePassVault = &onePassVault
+	}
 
 	return cfg, nil
 }
@@ -63,9 +67,16 @@ func CLIFlags(envVar string) []cli.Flag {
 			EnvVars: opservice.PrefixEnvVar(envVar, "L1_NODE_URL"),
 		},
 		&cli.StringFlag{
-			Name:    OptimismPortalAddressFlagName,
-			Usage:   "Address of the OptimismPortal contract",
-			EnvVars: opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			Name:     OptimismPortalAddressFlagName,
+			Usage:    "Address of the OptimismPortal contract",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     NicknameFlagName,
+			Usage:    "Nickname of chain being monitored",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "NICKNAME"),
+			Required: true,
 		},
 		&cli.StringFlag{
 			Name:    SafeAddressFlagName,
@@ -74,7 +85,7 @@ func CLIFlags(envVar string) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    OnePassVaultFlagName,
-			Usage:   "1Pass Vault name",
+			Usage:   "1Pass vault name storing presigned safe txs following a 'ready-<nonce>.json' item name format",
 			EnvVars: opservice.PrefixEnvVar(envVar, "1PASS_VAULT_NAME"),
 		},
 	}

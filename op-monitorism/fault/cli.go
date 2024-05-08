@@ -63,9 +63,10 @@ func CLIFlags(envVar string) []cli.Flag {
 			EnvVars: opservice.PrefixEnvVar(envVar, "START_OUTPUT_INDEX"),
 		},
 		&cli.StringFlag{
-			Name:    OptimismPortalAddressFlagName,
-			Usage:   "Address of the OptimismPortal contract",
-			EnvVars: opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			Name:     OptimismPortalAddressFlagName,
+			Usage:    "Address of the OptimismPortal contract",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			Required: true,
 		},
 	}
 }

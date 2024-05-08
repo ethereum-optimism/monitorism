@@ -85,17 +85,17 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		/** Metrics **/
 		detectedForgery: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "forgery_detected",
+			Name:      "isDetectingForgeries",
 			Help:      "0 if state is ok. 1 if forged withdrawals are detected",
 		}),
 		withdrawalsValidated: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
-			Name:      "withdrawals_validated",
+			Name:      "withdrawalsValidated",
 			Help:      "number of withdrawals succesfully validated",
 		}),
 		checkedL1Heights: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "height",
+			Name:      "highestBlockNumber",
 			Help:      "observed l1 heights (checked and known)",
 		}, []string{"type"}),
 	}, nil
