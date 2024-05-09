@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	MetricsNamespace = "balances_mon"
+	MetricsNamespace = "balance_mon"
 )
 
 type Account struct {
@@ -32,7 +32,8 @@ type Monitor struct {
 	accounts []Account
 
 	// metrics
-	balances *prometheus.GaugeVec
+	balances            *prometheus.GaugeVec
+	unexpectedRpcErrors *prometheus.CounterVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -53,9 +54,14 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 		balances: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "balance",
-			Help:      "Balances held by accounts registered with the monitor",
+			Name:      "balances",
+			Help:      "balances held by accounts registered with the monitor",
 		}, []string{"address", "nickname"}),
+		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "unexpectedRpcErrors",
+			Help:      "number of unexpcted rpc errors",
+		}, []string{"section", "name"}),
 	}, nil
 }
 
@@ -71,6 +77,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 	if err := m.rpc.BatchCallContext(ctx, batchElems); err != nil {
 		m.log.Error("failed getBalance batch request", "err", err)
+		m.unexpectedRpcErrors.WithLabelValues("balances", "batched_getBalance").Inc()
 		return
 	}
 
@@ -78,6 +85,7 @@ func (m *Monitor) Run(ctx context.Context) {
 		account := m.accounts[i]
 		if batchElems[i].Error != nil {
 			m.log.Error("failed to query account balance", "address", account.Address, "nickname", account.Nickname, "err", batchElems[i].Error)
+			m.unexpectedRpcErrors.WithLabelValues("balances", "getBalance").Inc()
 			continue
 		}
 

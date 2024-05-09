@@ -50,7 +50,8 @@ type Monitor struct {
 	// metrics
 	safeNonce                 *prometheus.GaugeVec
 	latestPresignedPauseNonce *prometheus.GaugeVec
-	paused                    *prometheus.GaugeVec
+	pausedState               *prometheus.GaugeVec
+	unexpectedRpcErrors       *prometheus.CounterVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -96,11 +97,16 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Name:      "latestPresignedPauseNonce",
 			Help:      "Latest pre-signed pause nonce",
 		}, []string{"address", "nickname"}),
-		paused: m.NewGaugeVec(prometheus.GaugeOpts{
+		pausedState: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "pausedState",
 			Help:      "OptimismPortal paused state",
 		}, []string{"address", "nickname"}),
+		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "unexpectedRpcErrors",
+			Help:      "number of unexpcted rpc errors",
+		}, []string{"section", "name"}),
 	}, nil
 }
 
@@ -114,6 +120,7 @@ func (m *Monitor) checkOptimismPortal(ctx context.Context) {
 	paused, err := m.optimismPortal.Paused(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		m.log.Error("failed to query OptimismPortal paused status", "err", err)
+		m.unexpectedRpcErrors.WithLabelValues("optimismportal", "paused").Inc()
 		return
 	}
 
@@ -122,7 +129,7 @@ func (m *Monitor) checkOptimismPortal(ctx context.Context) {
 		pausedMetric = 1
 	}
 
-	m.paused.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
+	m.pausedState.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
 	m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
 }
 
@@ -136,6 +143,7 @@ func (m *Monitor) checkSafeNonce(ctx context.Context) {
 	nonceTx := map[string]interface{}{"to": *m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
 	if err := m.l1Client.Client().CallContext(ctx, &nonceBytes, "eth_call", nonceTx, "latest"); err != nil {
 		m.log.Error("failed to query safe nonce", "err", err)
+		m.unexpectedRpcErrors.WithLabelValues("safe", "nonce()").Inc()
 		return
 	}
 
@@ -155,12 +163,14 @@ func (m *Monitor) checkPresignedNonce(ctx context.Context) {
 	output, err := cmd.Output()
 	if err != nil {
 		m.log.Error("failed to run op cli")
+		m.unexpectedRpcErrors.WithLabelValues("1pass", "exec").Inc()
 		return
 	}
 
 	vaultItems := []struct{ Title string }{}
 	if err := json.Unmarshal(output, &vaultItems); err != nil {
 		m.log.Error("failed to unmarshal op cli stdout", "err", err)
+		m.unexpectedRpcErrors.WithLabelValues("1pass", "stdout").Inc()
 		return
 	}
 
@@ -170,6 +180,7 @@ func (m *Monitor) checkPresignedNonce(ctx context.Context) {
 			nonce, err := strconv.ParseInt(item.Title[6:len(item.Title)-5], 10, 64)
 			if err != nil {
 				m.log.Error("failed to parse nonce from item title", "title", item.Title)
+				m.unexpectedRpcErrors.WithLabelValues("1pass", "title").Inc()
 				return
 			}
 			if nonce > latestPresignedNonce {
