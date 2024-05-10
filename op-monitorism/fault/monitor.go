@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	MetricsNamespace = "fault_mon"
+	MetricsNamespace = "fault_detector"
 )
 
 type Monitor struct {
@@ -35,8 +35,9 @@ type Monitor struct {
 	l2OO *bindings.L2OutputOracleCaller
 
 	// metrics
-	highestOutputIndex    *prometheus.GaugeVec
-	isCurrentlyMismatched prometheus.Gauge
+	highestOutputIndex     *prometheus.GaugeVec
+	isCurrentlyMismatched  prometheus.Gauge
+	nodeConnectionFailures *prometheus.CounterVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -90,12 +91,18 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Name:      "isCurrentlyMismatched",
 			Help:      "0 if state is ok, 1 if state is mismatched",
 		}),
+		nodeConnectionFailures: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "nodeConnectionFailures",
+			Help:      "number of times node connection has failed",
+		}, []string{"layer", "section"}),
 	}
 
 	startingOutputIndex := cfg.StartOutputIndex
 	if startingOutputIndex < 0 {
 		firstUnfinalizedIndex, err := monitor.findFirstUnfinalizedOutputIndex(ctx, monitor.faultProofWindow)
 		if err != nil {
+			monitor.nodeConnectionFailures.WithLabelValues("l1", "firstUnfinalizedIndex").Inc()
 			return nil, fmt.Errorf("failed to find first unfinalized output index: %w", err)
 		}
 		startingOutputIndex = int64(firstUnfinalizedIndex)
@@ -114,6 +121,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	nextOutputIndex, err := m.l2OO.NextOutputIndex(callOpts)
 	if err != nil {
 		m.log.Error("failed to query next output index", "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l1", "nextOutputIndex").Inc()
 		return
 	}
 	if m.currOutputIndex >= nextOutputIndex.Uint64() {
@@ -129,11 +137,13 @@ func (m *Monitor) Run(ctx context.Context) {
 	output, err := m.l2OO.GetL2Output(callOpts, big.NewInt(int64(m.currOutputIndex)))
 	if err != nil {
 		m.log.Error("failed to query output", "index", m.currOutputIndex, "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l1", "getL2Output").Inc()
 		return
 	}
 	l2Height, err := m.l2Client.BlockNumber(ctx)
 	if err != nil {
 		m.log.Error("failed to query latest l2 height", "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l2", "blockNumber").Inc()
 		return
 	}
 	if l2Height < output.L2BlockNumber.Uint64() {
@@ -146,12 +156,14 @@ func (m *Monitor) Run(ctx context.Context) {
 	block, err := m.l2Client.BlockByNumber(ctx, output.L2BlockNumber)
 	if err != nil {
 		m.log.Error("failed to query l2 block", "height", output.L2BlockNumber, "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l2", "blockByNumber").Inc()
 		return
 	}
 	proof := struct{ StorageHash common.Hash }{}
 	if err := m.l2Client.Client().CallContext(ctx, &proof, "eth_getProof",
 		predeploys.L2ToL1MessagePasserAddr, nil, hexutil.EncodeBig(block.Number())); err != nil {
 		m.log.Error("failed to query for proof response of l2ToL1MP contract", "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l2", "getProof").Inc()
 		return
 	}
 

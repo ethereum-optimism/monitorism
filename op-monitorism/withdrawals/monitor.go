@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	MetricsNamespace = "withdrawals_mon"
+	MetricsNamespace = "two_step_monitor"
 
 	// event WithdrawalProven(bytes32 indexed withdrawalHash, address indexed from, address indexed to);
 	WithdrawalProvenEventABI = "WithdrawalProven(bytes32,address,address)"
@@ -43,9 +43,10 @@ type Monitor struct {
 	nextL1Height  uint64
 
 	// metrics
-	checkedL1Heights     *prometheus.GaugeVec
-	detectedForgery      prometheus.Gauge
-	withdrawalsValidated prometheus.Counter
+	highestBlockNumber     *prometheus.GaugeVec
+	isDetectingForgeries   prometheus.Gauge
+	withdrawalsValidated   prometheus.Counter
+	nodeConnectionFailures *prometheus.CounterVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -83,7 +84,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		nextL1Height:  cfg.StartingL1BlockHeight,
 
 		/** Metrics **/
-		detectedForgery: m.NewGauge(prometheus.GaugeOpts{
+		isDetectingForgeries: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "isDetectingForgeries",
 			Help:      "0 if state is ok. 1 if forged withdrawals are detected",
@@ -93,11 +94,16 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Name:      "withdrawalsValidated",
 			Help:      "number of withdrawals succesfully validated",
 		}),
-		checkedL1Heights: m.NewGaugeVec(prometheus.GaugeOpts{
+		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "highestBlockNumber",
 			Help:      "observed l1 heights (checked and known)",
 		}, []string{"type"}),
+		nodeConnectionFailures: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "nodeConnectionFailures",
+			Help:      "number of times node connection has failed",
+		}, []string{"layer", "section"}),
 	}, nil
 }
 
@@ -105,10 +111,11 @@ func (m *Monitor) Run(ctx context.Context) {
 	latestL1Height, err := m.l1Client.BlockNumber(ctx)
 	if err != nil {
 		m.log.Error("failed to query latest block number", "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l1", "blockNumber").Inc()
 		return
 	}
 
-	m.checkedL1Heights.WithLabelValues("known").Set(float64(latestL1Height))
+	m.highestBlockNumber.WithLabelValues("known").Set(float64(latestL1Height))
 
 	fromBlockNumber := m.nextL1Height
 	if fromBlockNumber > latestL1Height {
@@ -131,6 +138,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	provenWithdrawalLogs, err := m.l1Client.FilterLogs(ctx, filterQuery)
 	if err != nil {
 		m.log.Error("failed to query withdrawal proven event logs", "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l1", "filterLogs").Inc()
 		return
 	}
 
@@ -151,6 +159,7 @@ func (m *Monitor) Run(ctx context.Context) {
 		if err != nil {
 			// Return early and loop back into the same block range
 			log.Error("failed to query L2ToL1MP sentMessages mapping", "withdrawal_hash", withdrawalHash.String(), "err", err)
+			m.nodeConnectionFailures.WithLabelValues("l2", "sentMessages").Inc()
 			return
 		}
 
@@ -159,17 +168,19 @@ func (m *Monitor) Run(ctx context.Context) {
 		// forgeries can be detected -- the existence of one implies many others likely exist.
 		if !seen {
 			m.log.Warn("forgery detected!!!!", "withdrawal_hash", withdrawalHash.String())
-			m.detectedForgery.Set(1)
+			m.isDetectingForgeries.Set(1)
 			return
 		}
 
 		m.withdrawalsValidated.Inc()
 	}
 
-	// Update markers
 	m.log.Info("validated withdrawals", "height", toBlockNumber)
+
+	// Update markers
 	m.nextL1Height = toBlockNumber + 1
-	m.checkedL1Heights.WithLabelValues("checked").Set(float64(toBlockNumber))
+	m.isDetectingForgeries.Set(0)
+	m.highestBlockNumber.WithLabelValues("checked").Set(float64(toBlockNumber))
 }
 
 func (m *Monitor) Close(_ context.Context) error {
