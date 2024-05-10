@@ -28,6 +28,10 @@ const (
 	SafeNonceABI     = "nonce()"
 
 	OPTokenEnvName = "OP_SERVICE_ACCOUNT_TOKEN"
+
+	// Item names follow a `ready-<nonce>.json` format
+	PresignedNonceTitlePrefix = "ready-"
+	PresignedNonceTitleSuffix = ".json"
 )
 
 var (
@@ -176,8 +180,9 @@ func (m *Monitor) checkPresignedNonce(ctx context.Context) {
 
 	latestPresignedNonce := int64(-1)
 	for _, item := range vaultItems {
-		if strings.HasPrefix(item.Title, "ready-") && strings.HasSuffix(item.Title, ".json") {
-			nonce, err := strconv.ParseInt(item.Title[6:len(item.Title)-5], 10, 64)
+		if strings.HasPrefix(item.Title, PresignedNonceTitlePrefix) && strings.HasSuffix(item.Title, PresignedNonceTitleSuffix) {
+			nonceStr := item.Title[len(PresignedNonceTitlePrefix) : len(item.Title)-len(PresignedNonceTitleSuffix)]
+			nonce, err := strconv.ParseInt(nonceStr, 10, 64)
 			if err != nil {
 				m.log.Error("failed to parse nonce from item title", "title", item.Title)
 				m.unexpectedRpcErrors.WithLabelValues("1pass", "title").Inc()
@@ -189,7 +194,7 @@ func (m *Monitor) checkPresignedNonce(ctx context.Context) {
 		}
 	}
 
-	m.latestPresignedPauseNonce.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(latestPresignedNonce))
+	m.latestPresignedPauseNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(latestPresignedNonce))
 	if latestPresignedNonce == -1 {
 		m.log.Error("no presigned nonce found")
 		return
