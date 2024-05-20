@@ -7,6 +7,7 @@ import (
 	monitorism "github.com/ethereum-optimism/monitorism/op-monitorism"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/balances"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/fault"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/global_events"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
 
@@ -61,6 +62,13 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Action:      cliapp.LifecycleCmd(BalanceMain),
 			},
 			{
+				Name:        "global_events",
+				Usage:       "Monitors global events with YAML configuration",
+				Description: "Monitors global events with YAML configuration",
+				Flags:       append(global_events.CLIFlags("global_events if you see this variable then changed into the code."), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(global_eventsMain),
+			},
+			{
 				Name:        "version",
 				Usage:       "Show version",
 				Description: "Show version",
@@ -73,6 +81,21 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 	}
 }
 
+func global_eventsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := global_events.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse global_events config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := global_events.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create global_events monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
 func MultisigMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := multisig.ReadCLIFlags(ctx)
