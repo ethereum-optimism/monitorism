@@ -1,0 +1,13 @@
+# This watches all contacts for OP, Mode, and Base mainnets for two logs.
+# These logs are emitted by Safes, so this effectively watches for all
+# transactions from any Safe on these chains.
+version: 1.0
+name: Safe Watcher
+priority: P0
+addresses:
+  - eth/op
+  - eth/mode
+  - eth/base
+events:
+  - signature: ExecutionFailure(bytes32,uint256)
+  - signature: ExecutionSuccess(bytes32,uint256)

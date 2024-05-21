@@ -5,34 +5,29 @@ import (
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 
-	"github.com/ethereum/go-ethereum/common"
+	// "github.com/ethereum/go-ethereum/common"
 
 	"github.com/urfave/cli/v2"
 )
 
 const (
 	L1NodeURLFlagName = "l1.node.url"
-
-	NicknameFlagName              = "nickname"
-	OptimismPortalAddressFlagName = "optimismportal.address"
-	SafeAddressFlagName           = "safe.address"
-	OnePassVaultFlagName          = "op.vault"
+	NicknameFlagName  = "nickname"
+	PathYamlFlagName  = "pathYaml"
 )
 
 type CLIConfig struct {
-	L1NodeURL             string
-	Nickname              string
-	OptimismPortalAddress common.Address
-
+	L1NodeURL string
+	Nickname  string
+	pathYaml  string
 	// Optional
-	SafeAddress  *common.Address
-	OnePassVault *string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
 		L1NodeURL: ctx.String(L1NodeURLFlagName),
 		Nickname:  ctx.String(NicknameFlagName),
+		pathYaml:  ctx.String(PathYamlFlagName),
 	}
 
 	return cfg, nil
@@ -50,6 +45,12 @@ func CLIFlags(envVar string) []cli.Flag {
 			Name:     NicknameFlagName,
 			Usage:    "Nickname of chain being monitored",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "NICKNAME"), //need to change the name to BLOCKCHAIN_NAME
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     PathYamlFlagName,
+			Usage:    "Path to the yaml file containing the events to monitor",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "PATH_YAML"), //need to change the name to BLOCKCHAIN_NAME
 			Required: true,
 		},
 	}

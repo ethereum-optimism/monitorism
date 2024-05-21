@@ -9,10 +9,11 @@ import (
 	// "os/exec"
 	// "strconv"
 	// "strings"
-
-	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
+	// "github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum"
+	"regexp"
+	"strings"
 	// "github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	// "github.com/ethereum/go-ethereum/common/hexutil"
@@ -24,32 +25,25 @@ import (
 )
 
 const (
-	MetricsNamespace = "multisig_mon"
-	SafeNonceABI     = "nonce()"
+	MetricsNamespace = "global_events_mon"
 
-	OPTokenEnvName = "OP_SERVICE_ACCOUNT_TOKEN"
+	// OPTokenEnvName = "OP_SERVICE_ACCOUNT_TOKEN"
 
 	// Item names follow a `ready-<nonce>.json` format
-	PresignedNonceTitlePrefix = "ready-"
-	PresignedNonceTitleSuffix = ".json"
-)
-
-var (
-	SafeNonceSelector = crypto.Keccak256([]byte(SafeNonceABI))[:4]
+	// PresignedNonceTitlePrefix = "ready-"
+	// PresignedNonceTitleSuffix = ".json"
 )
 
 type Monitor struct {
 	log log.Logger
 
-	l1Client *ethclient.Client
+	l1Client            *ethclient.Client
+	MonitoringAddresses []MonitoringAddress
 
-	optimismPortalAddress common.Address
-	optimismPortal        *bindings.OptimismPortalCaller
-	nickname              string
+	nickname string
 
-	onePassToken string
-	onePassVault *string
-	safeAddress  *common.Address
+	filename   string //filename of the yaml rules
+	yamlconfig Configuration
 
 	// metrics
 	safeNonce                 *prometheus.GaugeVec
@@ -63,21 +57,24 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1 rpc: %w", err)
 	}
+	fmt.Printf("--------------------------------------- global_events_mon (Infos) -----------------------------\n")
+	fmt.Printf("PathYaml: %v\n", cfg.pathYaml)
+	fmt.Printf("Nickname: %v\n", cfg.Nickname)
+	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
+	yamlconfig := ReadYamlFile(cfg.pathYaml)
 
-	if cfg.SafeAddress == nil {
-		log.Warn("safe integration is not configured")
-	}
+	MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
+	DisplayMonitorAddresses(MonitoringAddresses)
 
+	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
+	// fmt.Printf("YAML Config: %v\n", yamlconfig)
 	return &Monitor{
-		log:      log,
-		l1Client: l1Client,
+		log:                 log,
+		l1Client:            l1Client,
+		MonitoringAddresses: MonitoringAddresses,
 
-		optimismPortalAddress: cfg.OptimismPortalAddress,
-		nickname:              cfg.Nickname,
-
-		safeAddress:  cfg.SafeAddress,
-		onePassVault: cfg.OnePassVault,
-
+		nickname:   cfg.Nickname,
+		yamlconfig: yamlconfig,
 		safeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "safeNonce",
@@ -100,9 +97,54 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		}, []string{"section", "name"}),
 	}, nil
 }
+func formatSignature(signature string) string {
+	// Regex to extract function name and parameters
+	r := regexp.MustCompile(`(\w+)\s*\(([^)]*)\)`)
+	matches := r.FindStringSubmatch(signature)
+
+	if len(matches) != 3 {
+		return ""
+	}
+
+	// Function name
+	funcName := matches[1]
+	// Parameters, split by commas
+	params := matches[2]
+	// Clean parameters to keep only types
+	cleanParams := make([]string, 0)
+	for _, param := range strings.Split(params, ",") {
+		parts := strings.Fields(param)
+		if len(parts) > 0 {
+			cleanParams = append(cleanParams, parts[0])
+		}
+	}
+
+	// Return formatted function signature
+	return fmt.Sprintf("%s(%s)", funcName, strings.Join(cleanParams, ","))
+}
+
+// Format And Hash the signature to create the topic.
+// Formatting allows use to use "transfer(address owner, uint256 amount)" instead of "transfer(address,uint256
+// So with the name parameters
+
+func FormatAndHash(signature string) []byte { // this will return the topic not the 4bytes so longer.
+	formattedSignature := formatSignature(signature)
+	if formattedSignature == "" {
+		panic("Invalid signature")
+	}
+	hash := crypto.Keccak256([]byte(formattedSignature))
+	return hash
+}
 
 func (m *Monitor) Run(ctx context.Context) {
-	m.checkEvents(ctx)
+	// m.checkEvents(ctx)
+	input := "balanceOf(address owner)"
+	formattedSignature := formatSignature(input)
+	if formattedSignature == "" {
+		panic("Invalid signature")
+	}
+	hash := crypto.Keccak256([]byte(formattedSignature))
+	fmt.Printf("Function Selector: 0x%x\n", hash[:4])
 	// m.checkSafeNonce(ctx)
 	// m.checkPresignedNonce(ctx)
 }
@@ -126,15 +168,20 @@ func (m *Monitor) checkEvents(ctx context.Context) {
 		m.log.Crit("Failed to retrieve logs: %v", err)
 	}
 
-	fmt.Println("--------------------------START OF BLOCK--------------------------------------") // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+	fmt.Printf("-------------------------- START OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
 	fmt.Println("Block Number: ", latestBlockNumber)
 	fmt.Println("Number of logs: ", len(logs))
 	fmt.Println("BlockHash:", header.Hash().Hex())
-	// for _, vLog := range logs {
-	// 	fmt.Println("\n%s\n", vLog) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-	// }
+	for _, vLog := range logs {
+		// if vlog.Topics == topics_toml {
+		// 	// alerting + 1
+		// }
+		fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+		fmt.Printf("TxHash: %s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+		fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+	}
 
-	fmt.Println("--------------------------END OF BLOCK--------------------------------------") // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+	fmt.Printf("-------------------------- END OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
 	// paused, err := m.optimismPortal.Paused(&bind.CallOpts{Context: ctx})
 	// if err != nil {
 	// 	m.log.Error("failed to query OptimismPortal paused status", "err", err)

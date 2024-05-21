@@ -1,0 +1,11 @@
+# This watches the L1 SystemConfig for OP Mainnet for config updates.
+version: 1.0
+name: SystemConfig Config Updates
+priority: P2
+addresses:
+  - eth/op/SystemConfig
+events:
+  - signature: ConfigUpdate(uint256 indexed version, UpdateType indexed updateType, bytes data)
+  # Notice that the above signature is not normalized. The normalized version is:
+  #   ConfigUpdate(uint256,uint8,bytes)
+  # But for UX
