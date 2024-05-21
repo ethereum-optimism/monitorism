@@ -40,8 +40,8 @@ const (
 type Monitor struct {
 	log log.Logger
 
-	l1Client            *ethclient.Client
-	MonitoringAddresses []MonitoringAddress
+	l1Client               *ethclient.Client
+	TabMonitoringAddresses TabMonitoringAddress
 
 	nickname string
 
@@ -62,7 +62,7 @@ func ChainIDToName(chainID int64) string {
 	case 11155111:
 		return "Sepolia [Testnet]"
 	}
-	return "The ChainID is Not defined into the chaindIDToName function, this is probably a custom chain otherwise something is going wrong!"
+	return "The `ChainID` is Not defined into the `chaindIDToName` function, this is probably a custom chain otherwise something is going wrong!"
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -70,7 +70,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1 rpc: %w", err)
 	}
-	fmt.Printf("--------------------------------------- global_events_mon (Infos) -----------------------------\n")
+	fmt.Printf("--------------------------------------- Global_events_mon (Infos) -----------------------------\n")
 	// fmt.Printf("chainID:", ChainIDToName(l1Client.ChainID())
 	ChainID, err := l1Client.ChainID(context.Background())
 	if err != nil {
@@ -86,18 +86,20 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	fmt.Printf("PathYaml: %v\n", cfg.PathYamlRules)
 	fmt.Printf("Nickname: %v\n", cfg.Nickname)
 	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
-	MonitoringAddresses := ReadAllYamlRules(cfg.PathYamlRules)
+	TabMonitoringAddresses := ReadAllYamlRules(cfg.PathYamlRules)
 	// yamlconfig := ReadYamlFile(cfg.PathYamlRules)
+	fmt.Printf("Number of Addresses monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetUniqueMonitoredAddresses()))
+	fmt.Printf("Number of Events monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetMonitoredEvents()))
 
 	// MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
-	DisplayMonitorAddresses(MonitoringAddresses)
+	// DisplayMonitorAddresses(MonitoringAddresses)
 
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
 	// fmt.Printf("YAML Config: %v\n", yamlconfig)
 	return &Monitor{
-		log:                 log,
-		l1Client:            l1Client,
-		MonitoringAddresses: MonitoringAddresses,
+		log:                    log,
+		l1Client:               l1Client,
+		TabMonitoringAddresses: TabMonitoringAddresses,
 
 		nickname: cfg.Nickname,
 		// yamlconfig: yamlconfig,
@@ -163,16 +165,16 @@ func FormatAndHash(signature string) []byte { // this will return the topic not 
 }
 
 func (m *Monitor) Run(ctx context.Context) {
-	// m.checkEvents(ctx)
-	input := "balanceOf(address owner)"
-	formattedSignature := formatSignature(input)
-	if formattedSignature == "" {
-		panic("Invalid signature")
-	}
-	hash := crypto.Keccak256([]byte(formattedSignature))
-	fmt.Printf("Function Selector: 0x%x\n", hash[:4])
-	// m.checkSafeNonce(ctx)
-	// m.checkPresignedNonce(ctx)
+	m.checkEvents(ctx)
+	// input := "balanceOf(address owner)"
+	// formattedSignature := formatSignature(input)
+	// if formattedSignature == "" {
+	// 	panic("Invalid signature")
+	// }
+	// hash := crypto.Keccak256([]byte(formattedSignature))
+	// fmt.Printf("Function Selector: 0x%x\n", hash[:4])
+	// // m.checkSafeNonce(ctx)
+	// // m.checkPresignedNonce(ctx)
 }
 func (m *Monitor) checkEvents(ctx context.Context) {
 	header, err := m.l1Client.HeaderByNumber(context.Background(), nil)

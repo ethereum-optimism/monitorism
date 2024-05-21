@@ -5,6 +5,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 type EventTopic struct {
@@ -29,6 +30,39 @@ type Configuration struct {
 type MonitoringAddress struct {
 	Address string  `yaml:"addresses"`
 	Events  []Event `yaml:"events"`
+}
+
+type TabMonitoringAddress struct {
+	MonitoringAddress []MonitoringAddress
+}
+
+// Return all the addresses currently monitored
+func (T TabMonitoringAddress) GetMonitoredAddresses() []string {
+	var addresses []string
+	for _, T := range T.MonitoringAddress {
+		addresses = append(addresses, T.Address)
+	}
+
+	return addresses
+}
+
+// Return all the events currently monitored
+func (T TabMonitoringAddress) GetMonitoredEvents() []Event {
+	var Events []Event
+	for _, T := range T.MonitoringAddress {
+		for _, event := range T.Events {
+			Events = append(Events, event)
+		}
+	}
+
+	return Events
+}
+
+// return all the UNIQUE addresses currently GetMonitoredEvents
+func (T TabMonitoringAddress) GetUniqueMonitoredAddresses() []string {
+	temporary := T.GetMonitoredAddresses()
+	slices.Sort(temporary)
+	return slices.Compact(temporary)
 }
 
 func ReadYamlFile(filename string) Configuration {
@@ -64,7 +98,7 @@ func fromConfigurationToAddress(config Configuration) []MonitoringAddress {
 }
 
 // Read all the files in the `rules` directory at the given path from the command line `--PathYamlRules` that are YAML files.
-func ReadAllYamlRules(PathYamlRules string) []MonitoringAddress {
+func ReadAllYamlRules(PathYamlRules string) TabMonitoringAddress {
 	var monitoringAddresses []MonitoringAddress
 
 	entries, err := os.ReadDir(PathYamlRules) //Only read yaml files
@@ -93,7 +127,7 @@ func ReadAllYamlRules(PathYamlRules string) []MonitoringAddress {
 
 	}
 
-	return monitoringAddresses
+	return TabMonitoringAddress{MonitoringAddress: monitoringAddresses}
 }
 func DisplayMonitorAddresses(monitoringAddresses []MonitoringAddress) {
 	println("============== Monitoring addresses =================")
@@ -102,13 +136,7 @@ func DisplayMonitorAddresses(monitoringAddresses []MonitoringAddress) {
 		for _, event := range address.Events {
 			fmt.Printf("Event: %s, Topic[0]: %x\n", event.Signature, event._4bytes)
 		}
-
 	}
 	fmt.Println("===============================")
 
 }
-
-// if _, err := toml.DecodeFile("config.toml", &config); err != nil {
-//         fmt.Println("Error loading TOML data:", err)
-//         os.Exit(1)
-//     }
