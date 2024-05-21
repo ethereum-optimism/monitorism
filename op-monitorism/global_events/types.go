@@ -16,9 +16,9 @@ type EventTopic struct {
 }
 
 type Event struct {
-	_4bytes   string // That is the 4 bytes of the event signature, will be generated from the Event.Signature function just below this.
-	Signature string `yaml:"signature"` // That is the name of the function like "Transfer(address,address,uint256)"
-	// Topics    []EventTopic `yaml:"topics,omitempty"`
+	_4bytes   common.Hash  // That is the 4 bytes of the event signature, will be generated from the Event.Signature function just below this.
+	Signature string       `yaml:"signature"` // That is the name of the function like "Transfer(address,address,uint256)"
+	Topics    []EventTopic `yaml:"topics,omitempty"`
 }
 
 type Configuration struct {
@@ -96,7 +96,7 @@ func fromConfigurationToAddress(config Configuration) []MonitoringAddress {
 		fmt.Println("No addresses to monitor, but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
 		var event_with_4bytes []Event
 		for _, event := range config.Events {
-			event._4bytes = string(FormatAndHash(event.Signature))
+			event._4bytes = FormatAndHash(event.Signature)
 			event_with_4bytes = append(event_with_4bytes, event)
 
 		}
@@ -108,7 +108,7 @@ func fromConfigurationToAddress(config Configuration) []MonitoringAddress {
 	for _, address := range config.Addresses {
 		var event_with_4bytes []Event
 		for _, event := range config.Events {
-			event._4bytes = string(FormatAndHash(event.Signature))
+			event._4bytes = FormatAndHash(event.Signature)
 			event_with_4bytes = append(event_with_4bytes, event)
 
 		}

@@ -21,6 +21,7 @@ import (
 	// "github.com/ethereum/go-ethereum/accounts/abi/bind"
 	// "github.com/ethereum/go-ethereum/common"
 	// "github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -156,13 +157,14 @@ func formatSignature(signature string) string {
 // Formatting allows use to use "transfer(address owner, uint256 amount)" instead of "transfer(address,uint256
 // So with the name parameters
 
-func FormatAndHash(signature string) []byte { // this will return the topic not the 4bytes so longer.
+func FormatAndHash(signature string) common.Hash { // this will return the topic not the 4bytes so longer.
 	formattedSignature := formatSignature(signature)
 	if formattedSignature == "" {
 		panic("Invalid signature")
 	}
 	hash := crypto.Keccak256([]byte(formattedSignature))
-	return hash
+	return common.BytesToHash(hash)
+
 }
 
 func (m *Monitor) Run(ctx context.Context) {
@@ -183,7 +185,7 @@ func (m *Monitor) checkEvents(ctx context.Context) {
 		log.Crit("Failed to retrieve latest block header: %v", err)
 	}
 	latestBlockNumber := header.Number
-	fmt.Printf("Get the list of the addresses we are going to monitore\n", m.TabMonitoringAddresses.GetUniqueMonitoredAddresses())
+	// fmt.Printf("Get the list of the addresses we are going to monitore\n", m.TabMonitoringAdHexToHashHashetUniqueMonitoredAddresses())
 	query := ethereum.FilterQuery{
 		FromBlock: latestBlockNumber,
 		ToBlock:   latestBlockNumber,
@@ -199,14 +201,17 @@ func (m *Monitor) checkEvents(ctx context.Context) {
 	fmt.Println("Block Number: ", latestBlockNumber)
 	fmt.Println("Number of logs: ", len(logs))
 	fmt.Println("BlockHash:", header.Hash().Hex())
+
 	for _, vLog := range logs {
 		// if vlog.Topics == topics_toml {
 		// 	// alerting + 1
 		// }
-		// if vLog.Topics == m.TabMonitoringAddresses.GetMonitoredEvents()
-		fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-		fmt.Printf("TxHash: %s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-		fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+		if IsTopicInMonitoredEvents(vLog.Topics, m.TabMonitoringAddresses.GetMonitoredEvents()) {
+			fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+			fmt.Printf("TxHash: %s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+			fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+		}
+
 	}
 
 	fmt.Printf("-------------------------- END OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
@@ -225,6 +230,16 @@ func (m *Monitor) checkEvents(ctx context.Context) {
 	// m.pausedState.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
 	// m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
 	m.log.Info("Checking events")
+}
+func IsTopicInMonitoredEvents(topics []common.Hash, monitoredEvents []Event) bool {
+	for _, monitoredEvent := range monitoredEvents {
+		fmt.Printf("Monitored Event: %v\n", monitoredEvent._4bytes)
+		fmt.Printf("Topics: %v\n", topics[0])
+		if monitoredEvent._4bytes == topics[0] {
+			return true
+		}
+	}
+	return false
 }
 
 // func (m *Monitor) checkSafeNonce(ctx context.Context) {
