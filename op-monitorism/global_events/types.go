@@ -2,10 +2,12 @@ package global_events
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
+	"golang.org/x/exp/maps"
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
-	"slices"
+	// "slices"
 )
 
 type EventTopic struct {
@@ -20,16 +22,16 @@ type Event struct {
 }
 
 type Configuration struct {
-	Version   string   `yaml:"version"`
-	Name      string   `yaml:"name"`
-	Priority  string   `yaml:"priority"`
-	Addresses []string `yaml:"addresses"`
-	Events    []Event  `yaml:"events"`
+	Version   string           `yaml:"version"`
+	Name      string           `yaml:"name"`
+	Priority  string           `yaml:"priority"`
+	Addresses []common.Address `yaml:"addresses"` //TODO: add the superchain registry with the format `/l1/l2/optimismPortal`
+	Events    []Event          `yaml:"events"`
 }
 
 type MonitoringAddress struct {
-	Address string  `yaml:"addresses"`
-	Events  []Event `yaml:"events"`
+	Address common.Address `yaml:"addresses"`
+	Events  []Event        `yaml:"events"`
 }
 
 type TabMonitoringAddress struct {
@@ -37,8 +39,8 @@ type TabMonitoringAddress struct {
 }
 
 // Return all the addresses currently monitored
-func (T TabMonitoringAddress) GetMonitoredAddresses() []string {
-	var addresses []string
+func (T TabMonitoringAddress) GetMonitoredAddresses() []common.Address {
+	var addresses []common.Address
 	for _, T := range T.MonitoringAddress {
 		addresses = append(addresses, T.Address)
 	}
@@ -59,10 +61,15 @@ func (T TabMonitoringAddress) GetMonitoredEvents() []Event {
 }
 
 // return all the UNIQUE addresses currently GetMonitoredEvents
-func (T TabMonitoringAddress) GetUniqueMonitoredAddresses() []string {
-	temporary := T.GetMonitoredAddresses()
-	slices.Sort(temporary)
-	return slices.Compact(temporary)
+func (T TabMonitoringAddress) GetUniqueMonitoredAddresses() []common.Address {
+	hashmap := make(map[common.Address]bool)
+	for _, address := range T.GetMonitoredAddresses() {
+		if address != common.HexToAddress("0x0") { // If the address is set to 0x0, it means we are monitoring all the addresses, so we need to remove it from the tab here.
+			hashmap[address] = true
+		}
+
+	}
+	return maps.Keys(hashmap)
 }
 
 func ReadYamlFile(filename string) Configuration {
@@ -85,6 +92,19 @@ func ReadYamlFile(filename string) Configuration {
 // that will contains all the addresses that will monitore.
 func fromConfigurationToAddress(config Configuration) []MonitoringAddress {
 	var monitoringAddresses []MonitoringAddress
+	if len(config.Addresses) == 0 && len(config.Events) > 0 {
+		fmt.Println("No addresses to monitor, but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
+		var event_with_4bytes []Event
+		for _, event := range config.Events {
+			event._4bytes = string(FormatAndHash(event.Signature))
+			event_with_4bytes = append(event_with_4bytes, event)
+
+		}
+		monitoringAddresses = append(monitoringAddresses, MonitoringAddress{Address: common.Address{}, Events: event_with_4bytes})
+
+		return []MonitoringAddress{MonitoringAddress{Address: common.Address{}, Events: event_with_4bytes}}
+	}
+
 	for _, address := range config.Addresses {
 		var event_with_4bytes []Event
 		for _, event := range config.Events {
@@ -94,6 +114,7 @@ func fromConfigurationToAddress(config Configuration) []MonitoringAddress {
 		}
 		monitoringAddresses = append(monitoringAddresses, MonitoringAddress{Address: address, Events: event_with_4bytes})
 	}
+
 	return monitoringAddresses
 }
 
