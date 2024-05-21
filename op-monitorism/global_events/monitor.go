@@ -2,6 +2,7 @@ package global_events
 
 import (
 	"context"
+	// "os"
 	// "encoding/json"
 	"fmt"
 	// "math/big"
@@ -10,10 +11,12 @@ import (
 	// "strconv"
 	// "strings"
 	// "github.com/ethereum-optimism/optimism/op-bindings/bindings"
-	"github.com/ethereum-optimism/optimism/op-service/metrics"
-	"github.com/ethereum/go-ethereum"
 	"regexp"
 	"strings"
+
+	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/ethereum/go-ethereum"
+
 	// "github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	// "github.com/ethereum/go-ethereum/common/hexutil"
@@ -59,7 +62,7 @@ func ChainIDToName(chainID int64) string {
 	case 11155111:
 		return "Sepolia [Testnet]"
 	}
-	return "The ChainID is Not defined into the chaindIDToName function, this is probably a custom chain."
+	return "The ChainID is Not defined into the chaindIDToName function, this is probably a custom chain otherwise something is going wrong!"
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -77,15 +80,16 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		log.Crit("Failed to fetch the latest block header: %v", err)
 	}
-
+	// display the infos at the start to ensure everything is correct.
 	fmt.Printf("latestBlockNumber: %s\n", header.Number)
 	fmt.Printf("chainId: %+v\n", ChainIDToName(ChainID.Int64()))
-	fmt.Printf("PathYaml: %v\n", cfg.pathYaml)
+	fmt.Printf("PathYaml: %v\n", cfg.PathYamlRules)
 	fmt.Printf("Nickname: %v\n", cfg.Nickname)
 	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
-	yamlconfig := ReadYamlFile(cfg.pathYaml)
+	MonitoringAddresses := ReadAllYamlRules(cfg.PathYamlRules)
+	// yamlconfig := ReadYamlFile(cfg.PathYamlRules)
 
-	MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
+	// MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
 	DisplayMonitorAddresses(MonitoringAddresses)
 
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
@@ -95,8 +99,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1Client:            l1Client,
 		MonitoringAddresses: MonitoringAddresses,
 
-		nickname:   cfg.Nickname,
-		yamlconfig: yamlconfig,
+		nickname: cfg.Nickname,
+		// yamlconfig: yamlconfig,
 		safeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "safeNonce",
