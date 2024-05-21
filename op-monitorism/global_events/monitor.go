@@ -3,6 +3,7 @@ package global_events
 import (
 	"context"
 	// "os"
+	// "os"
 	// "encoding/json"
 	"fmt"
 	// "math/big"
@@ -18,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 
 	// "github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
+	// "github.com/ethereum/go-ethereum/common"
 	// "github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -93,7 +94,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 	// MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
 	// DisplayMonitorAddresses(MonitoringAddresses)
-
+	// Should I make a sleep of 10 seconds to ensure we can read this information before the prod?
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
 	// fmt.Printf("YAML Config: %v\n", yamlconfig)
 	return &Monitor{
@@ -182,15 +183,13 @@ func (m *Monitor) checkEvents(ctx context.Context) {
 		log.Crit("Failed to retrieve latest block header: %v", err)
 	}
 	latestBlockNumber := header.Number
-
+	fmt.Printf("Get the list of the addresses we are going to monitore\n", m.TabMonitoringAddresses.GetUniqueMonitoredAddresses())
 	query := ethereum.FilterQuery{
 		FromBlock: latestBlockNumber,
 		ToBlock:   latestBlockNumber,
-		Addresses: []common.Address{
-			// List of addresses to filter the logs by; remove or modify as needed
-		},
+		Addresses: m.TabMonitoringAddresses.GetUniqueMonitoredAddresses(), //if empty means that all addresses are monitored!
 	}
-
+	// os.Exit(0)
 	logs, err := m.l1Client.FilterLogs(context.Background(), query)
 	if err != nil {
 		m.log.Crit("Failed to retrieve logs: %v", err)
@@ -204,6 +203,7 @@ func (m *Monitor) checkEvents(ctx context.Context) {
 		// if vlog.Topics == topics_toml {
 		// 	// alerting + 1
 		// }
+		// if vLog.Topics == m.TabMonitoringAddresses.GetMonitoredEvents()
 		fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
 		fmt.Printf("TxHash: %s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
 		fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
