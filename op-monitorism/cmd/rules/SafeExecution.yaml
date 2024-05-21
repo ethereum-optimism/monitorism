@@ -4,10 +4,7 @@
 version: 1.0
 name: Safe Watcher
 priority: P0
-addresses:
-  - eth/op
-  - eth/mode
-  - eth/base
+addresses: # /!\ We are not supporting EIP 3770 yet, if the address is not starting by `0x`, this will panic by safety measure.
 events:
   - signature: ExecutionFailure(bytes32,uint256)
   - signature: ExecutionSuccess(bytes32,uint256)
