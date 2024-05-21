@@ -51,10 +51,11 @@ func ReadYamlFile(filename string) Configuration {
 func fromConfigurationToAddress(config Configuration) []MonitoringAddress {
 	var monitoringAddresses []MonitoringAddress
 	for _, address := range config.Addresses {
-		event_with_4bytes := make([]Event, len(config.Events))
+		var event_with_4bytes []Event
 		for _, event := range config.Events {
 			event._4bytes = string(FormatAndHash(event.Signature))
 			event_with_4bytes = append(event_with_4bytes, event)
+
 		}
 		monitoringAddresses = append(monitoringAddresses, MonitoringAddress{Address: address, Events: event_with_4bytes})
 	}
@@ -65,10 +66,12 @@ func DisplayMonitorAddresses(monitoringAddresses []MonitoringAddress) {
 	fmt.Printf("Number of addresses: %d\n", len(monitoringAddresses)) //need to put also the number of events
 	fmt.Printf("Number of events: %d\n", len(monitoringAddresses[0].Events))
 	for _, address := range monitoringAddresses {
-		fmt.Println("Address:", address.Address)
+		fmt.Println("===============================\nAddress:", address.Address)
 		for _, event := range address.Events {
-			fmt.Println("Event:", event.Signature, "4bytes:", event._4bytes)
+			fmt.Printf("Event: %s, Topic[0]: %x\n", event.Signature, event._4bytes)
 		}
+
+		fmt.Println("===============================")
 	}
 }
 

@@ -52,12 +52,34 @@ type Monitor struct {
 	unexpectedRpcErrors       *prometheus.CounterVec
 }
 
+func ChainIDToName(chainID int64) string {
+	switch chainID {
+	case 1:
+		return "Ethereum [Mainnet]"
+	case 11155111:
+		return "Sepolia [Testnet]"
+	}
+	return "The ChainID is Not defined into the chaindIDToName function, this is probably a custom chain."
+}
+
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	l1Client, err := ethclient.Dial(cfg.L1NodeURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1 rpc: %w", err)
 	}
 	fmt.Printf("--------------------------------------- global_events_mon (Infos) -----------------------------\n")
+	// fmt.Printf("chainID:", ChainIDToName(l1Client.ChainID())
+	ChainID, err := l1Client.ChainID(context.Background())
+	if err != nil {
+		log.Crit("Failed to retrieve chain ID: %v", err)
+	}
+	header, err := l1Client.HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		log.Crit("Failed to fetch the latest block header: %v", err)
+	}
+
+	fmt.Printf("latestBlockNumber: %s\n", header.Number)
+	fmt.Printf("chainId: %+v\n", ChainIDToName(ChainID.Int64()))
 	fmt.Printf("PathYaml: %v\n", cfg.pathYaml)
 	fmt.Printf("Nickname: %v\n", cfg.Nickname)
 	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
