@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"os"
+	"path/filepath"
 )
 
 type EventTopic struct {
@@ -61,18 +62,50 @@ func fromConfigurationToAddress(config Configuration) []MonitoringAddress {
 	}
 	return monitoringAddresses
 }
+
+// Read all the files in the `rules` directory at the given path from the command line `--PathYamlRules` that are YAML files.
+func ReadAllYamlRules(PathYamlRules string) []MonitoringAddress {
+	var monitoringAddresses []MonitoringAddress
+
+	entries, err := os.ReadDir(PathYamlRules) //Only read yaml files
+	if err != nil {
+		fmt.Println("Error reading directory:", err)
+		panic("Error reading directory")
+	}
+	var yamlFiles []os.DirEntry
+	// Filter entries for files ending with ".yaml" or ".yml"
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // Skip directories
+		}
+
+		// Check if the file ends with ".yaml" or ".yml"
+		if filepath.Ext(entry.Name()) == ".yaml" || filepath.Ext(entry.Name()) == ".yml" {
+			yamlFiles = append(yamlFiles, entry)
+		}
+	}
+
+	for _, file := range yamlFiles {
+		path_rule := PathYamlRules + "/" + file.Name()
+		fmt.Printf("Reading a rule named: %s\n", path_rule)
+		yamlconfig := ReadYamlFile(path_rule)
+		monitoringAddresses = append(monitoringAddresses, fromConfigurationToAddress(yamlconfig)...)
+
+	}
+
+	return monitoringAddresses
+}
 func DisplayMonitorAddresses(monitoringAddresses []MonitoringAddress) {
-	println("Monitoring addresses")
-	fmt.Printf("Number of addresses: %d\n", len(monitoringAddresses)) //need to put also the number of events
-	fmt.Printf("Number of events: %d\n", len(monitoringAddresses[0].Events))
+	println("============== Monitoring addresses =================")
 	for _, address := range monitoringAddresses {
-		fmt.Println("===============================\nAddress:", address.Address)
+		fmt.Println("Address:", address.Address)
 		for _, event := range address.Events {
 			fmt.Printf("Event: %s, Topic[0]: %x\n", event.Signature, event._4bytes)
 		}
 
-		fmt.Println("===============================")
 	}
+	fmt.Println("===============================")
+
 }
 
 // if _, err := toml.DecodeFile("config.toml", &config); err != nil {
