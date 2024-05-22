@@ -1,6 +1,6 @@
 module github.com/ethereum-optimism/monitorism/op-monitorism
 
-go 1.21
+go 1.21.0
 
 replace github.com/ethereum/go-ethereum v1.13.11 => github.com/ethereum-optimism/op-geth v1.101311.0-rc.1
 
