@@ -262,4 +262,6 @@ workflows:
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
           save_image_tag: <<pipeline.git.revision>> # for devnet later
+          context:
+            - oplabs-gcr
 
