@@ -1,28 +1,28 @@
 package global_events
 
 import (
-	// "bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/common"
-	"golang.org/x/exp/maps"
 	"gopkg.in/yaml.v3"
-	// "slices"
 )
 
+// EventTopic is the struct that will contain the index of the topic and the values that will be monitored (not used currently).
 type EventTopic struct {
 	Index  int      `yaml:"index"`
 	Values []string `yaml:"values"`
 }
 
+// Event is the struct that will contain the signature of the event and the topics that will be monitored.
 type Event struct {
-	Keccak256_Signature common.Hash  // `Topic[0]` That is the 4 bytes of the event signature, will be generated from the Event.Signature function just below this.
-	Signature           string       `yaml:"signature"` // That is the name of the function like "Transfer(address,address,uint256)"
-	Topics              []EventTopic `yaml:"topics,omitempty"`
+	Keccak256_Signature common.Hash  // the value is the `Topic[0]`. This is generated from the `Event.Signature` field (eg. 0x23428b18acfb3ea64b08dc0c1d296ea9c09702c09083ca5272e64d115b687d23 --> ExecutionFailure(bytes32,uint256)
+	Signature           string       `yaml:"signature"`        // That is the name of the function like "Transfer(address,address,uint256)"
+	Topics              []EventTopic `yaml:"topics,omitempty"` // The topics that will be monitored not used yet.
 }
 
+// Configuration is the struct that will contain the configuration coming from the yaml files under the `rules` directory.
 type Configuration struct {
 	Version   string           `yaml:"version"`
 	Name      string           `yaml:"name"`
@@ -31,24 +31,13 @@ type Configuration struct {
 	Events    []Event          `yaml:"events"`
 }
 
+// GlobalConfiguration is the struct that will contain all the configuration of the monitoring.
 type GlobalConfiguration struct {
 	Configuration []Configuration `yaml:"configuration"`
 }
 
-// monitore one address for multiples events
-type MonitoringAddress struct {
-	Address common.Address `yaml:"addresses"`
-	Events  []Event        `yaml:"events"`
-}
-
-// tab of monitoring addresses allows us to have multiples addresses with multiples events cf above.
-type TabMonitoringAddress struct {
-	MonitoringAddress []MonitoringAddress
-}
-
-// This will return at the FIRST occurence of the address in the configuration.
-// This can be an issue if there is multiples times the same alerts in multiples yaml rules.
-// TODO: mark this one into the docs.
+// ReturnEventsMonitoredForAnAddress will return the list of events monitored for a given address /!\ This will return the first occurence of the address in the configuration.
+// We assume currently there is no duplicates into the rules.
 func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddress(target_address common.Address) []Event {
 	for _, config := range G.Configuration {
 		for _, address := range config.Addresses {
@@ -60,12 +49,14 @@ func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddress(target_address co
 	return []Event{} // no events monitored for this address
 
 }
+
+// SearchIfATopicIsInsideAnAlert Search if a topic is inside a rules, if this the case will return a `Configuration`. /!\ This is worth noting that the returned only contains the event that matched the topic in `topic` in parameter.
 func (G GlobalConfiguration) SearchIfATopicIsInsideAnAlert(topic common.Hash) Configuration {
 	for _, config := range G.Configuration {
 		for _, event := range config.Events {
 			// fmt.Printf("Comparing %x with %x\n", topic, event.Keccak256_Signature)
 			if topic == event.Keccak256_Signature {
-				return config
+				return Configuration{Version: config.Version, Name: config.Name, Priority: config.Priority, Addresses: config.Addresses, Events: []Event{event}}
 			}
 
 		}
@@ -74,40 +65,7 @@ func (G GlobalConfiguration) SearchIfATopicIsInsideAnAlert(topic common.Hash) Co
 
 }
 
-// Return all the addresses currently monitored
-func (T TabMonitoringAddress) GetMonitoredAddresses() []common.Address {
-	var addresses []common.Address
-	for _, T := range T.MonitoringAddress {
-		addresses = append(addresses, T.Address)
-	}
-
-	return addresses
-}
-
-// Return all the events currently monitored
-func (T TabMonitoringAddress) GetMonitoredEvents() []Event {
-	var Events []Event
-	for _, T := range T.MonitoringAddress {
-		for _, event := range T.Events {
-			Events = append(Events, event)
-		}
-	}
-
-	return Events
-}
-
-// return all the UNIQUE addresses currently GetMonitoredEvents
-func (T TabMonitoringAddress) GetUniqueMonitoredAddresses() []common.Address {
-	hashmap := make(map[common.Address]bool)
-	for _, address := range T.GetMonitoredAddresses() {
-		if address != common.HexToAddress("0x0") { // If the address is set to 0x0, it means we are monitoring all the addresses, so we need to remove it from the tab here.
-			hashmap[address] = true
-		}
-
-	}
-	return maps.Keys(hashmap)
-}
-
+// ReadYamlFile read a yaml file and return a Configuration struct.
 func ReadYamlFile(filename string) Configuration {
 	var config Configuration
 	data, err := os.ReadFile(filename)
@@ -124,7 +82,7 @@ func ReadYamlFile(filename string) Configuration {
 	return config
 }
 
-// fromConfigurationToAddress take the configuration yaml and resolve the signature stringed like Transfer(address  // that will contains all the addresses that will monitore.
+// StringFunctionToHex take the configuration yaml and resolve the signature stringed like "Transfer(address)"  // that will contains all the addresses that will monitore.
 func StringFunctionToHex(config Configuration) Configuration {
 	var FinalConfig Configuration
 
@@ -152,7 +110,7 @@ func StringFunctionToHex(config Configuration) Configuration {
 	return FinalConfig
 }
 
-// Read all the files in the `rules` directory at the given path from the command line `--PathYamlRules` that are YAML files.
+// ReadAllYamlRules Read all the files in the `rules` directory at the given path from the command line `--PathYamlRules` that are YAML files.
 func ReadAllYamlRules(PathYamlRules string) GlobalConfiguration {
 	var GlobalConfig GlobalConfiguration
 
@@ -193,6 +151,7 @@ func ReadAllYamlRules(PathYamlRules string) GlobalConfiguration {
 	return GlobalConfig
 }
 
+// DisplayMonitorAddresses() will display the addresses that are monitored and the events that are monitored for each address.
 func (G GlobalConfiguration) DisplayMonitorAddresses() {
 	println("============== Monitoring addresses =================")
 	for _, config := range G.Configuration {

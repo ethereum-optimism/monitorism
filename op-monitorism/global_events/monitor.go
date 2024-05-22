@@ -2,17 +2,7 @@ package global_events
 
 import (
 	"context"
-	// "os"
-	// "time"
-	// "os"
-	// "encoding/json"
 	"fmt"
-	// "math/big"
-	// "os"
-	// "os/exec"
-	// "strconv"
-	// "strings"
-	// "github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"regexp"
 	"strings"
 
@@ -29,32 +19,27 @@ import (
 
 const (
 	MetricsNamespace = "global_events_mon"
-
-	// OPTokenEnvName = "OP_SERVICE_ACCOUNT_TOKEN"
-
-	// Item names follow a `ready-<nonce>.json` format
-	// PresignedNonceTitlePrefix = "ready-"
-	// PresignedNonceTitleSuffix = ".json"
 )
 
+// Monitor is the main struct of the monitor.
 type Monitor struct {
 	log log.Logger
 
 	l1Client     *ethclient.Client
 	globalconfig GlobalConfiguration
-
+	// nickname is the nickname of the monitor (we need to change the name this is not an ideal one here).
 	nickname string
 
 	filename   string //filename of the yaml rules
 	yamlconfig Configuration
 
-	// metrics
-	safeNonce                 *prometheus.GaugeVec
-	latestPresignedPauseNonce *prometheus.GaugeVec
-	pausedState               *prometheus.GaugeVec
-	unexpectedRpcErrors       *prometheus.CounterVec
+	// Prometheus metrics
+	eventEmitted        *prometheus.GaugeVec
+	unexpectedRpcErrors *prometheus.CounterVec
 }
 
+// ChainIDToName() allows to convert the chainID to a human readable name.
+// For now only ethereum + Sepolia are supported.
 func ChainIDToName(chainID int64) string {
 	switch chainID {
 	case 1:
@@ -65,6 +50,7 @@ func ChainIDToName(chainID int64) string {
 	return "The `ChainID` is Not defined into the `chaindIDToName` function, this is probably a custom chain otherwise something is going wrong!"
 }
 
+// NewMonitor creates a new Monitor instance.
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	l1Client, err := ethclient.Dial(cfg.L1NodeURL)
 	if err != nil {
@@ -88,39 +74,20 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
 	globalConfig := ReadAllYamlRules(cfg.PathYamlRules)
 	fmt.Printf("GlobalConfig: %#v\n", globalConfig.Configuration)
-	// // yamlconfig := ReadYamlFile(cfg.PathYamlRules)
-	// fmt.Printf("Number of Addresses monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetUniqueMonitoredAddresses()))
-	// fmt.Printf("Number of Events monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetMonitoredEvents()))
-	//
-	// // MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
 	globalConfig.DisplayMonitorAddresses()
-	// // Should I make a sleep of 10 seconds to ensure we can read this information before the prod?
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
-	//
 	// time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
-	// fmt.Printf("YAML Config: %v\n", yamlconfig)
 	return &Monitor{
 		log:          log,
 		l1Client:     l1Client,
 		globalconfig: globalConfig,
 
 		nickname: cfg.Nickname,
-		// yamlconfig: yamlconfig,
-		safeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+		eventEmitted: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "safeNonce",
-			Help:      "Safe Nonce",
-		}, []string{"address", "nickname"}),
-		latestPresignedPauseNonce: m.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "latestPresignedPauseNonce",
-			Help:      "Latest pre-signed pause nonce",
-		}, []string{"address", "nickname"}),
-		pausedState: m.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "pausedState",
-			Help:      "OptimismPortal paused state",
-		}, []string{"address", "nickname"}),
+			Name:      "eventEmitted",
+			Help:      "Event monitored emitted an log",
+		}, []string{"nickname", "alertname", "address", "functionName"}),
 		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "unexpectedRpcErrors",
@@ -128,6 +95,9 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		}, []string{"section", "name"}),
 	}, nil
 }
+
+// formatSignature allows to format the signature of a function to be able to hash it.
+// e.g: "transfer(address owner, uint256 amount)" -> "transfer(address,uint256)"
 func formatSignature(signature string) string {
 	// Regex to extract function name and parameters
 	r := regexp.MustCompile(`(\w+)\s*\(([^)]*)\)`)
@@ -154,11 +124,9 @@ func formatSignature(signature string) string {
 	return fmt.Sprintf("%s(%s)", funcName, strings.Join(cleanParams, ","))
 }
 
-// Format And Hash the signature to create the topic.
-// Formatting allows use to use "transfer(address owner, uint256 amount)" instead of "transfer(address,uint256
-// So with the name parameters
-
-func FormatAndHash(signature string) common.Hash { // this will return the topic not the 4bytes so longer.
+// FormatAndHash allow to Format the signature (e.g: "transfer(address,uint256)") to create the keccak256 hash associated with it.
+// Formatting allows use to use "transfer(address owner, uint256 amount)" instead of "transfer(address,uint256)"
+func FormatAndHash(signature string) common.Hash {
 	formattedSignature := formatSignature(signature)
 	if formattedSignature == "" {
 		panic("Invalid signature")
@@ -170,147 +138,43 @@ func FormatAndHash(signature string) common.Hash { // this will return the topic
 
 func (m *Monitor) Run(ctx context.Context) {
 	m.checkEvents(ctx)
-	// input := "balanceOf(address owner)"
-	// formattedSignature := formatSignature(input)
-	// if formattedSignature == "" {
-	// 	panic("Invalid signature")
-	// }
-	// hash := crypto.Keccak256([]byte(formattedSignature))
-	// fmt.Printf("Function Selector: 0x%x\n", hash[:4])
-	// // m.checkSafeNonce(ctx)
-	// // m.checkPresignedNonce(ctx)
 }
-func (m *Monitor) checkEvents(ctx context.Context) {
+func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs crit are not causing panic in runtime!
 	header, err := m.l1Client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
 		m.log.Warn("Failed to retrieve latest block header: %v", err) //TODO:need to wait 12 and retry here!
 	}
+
 	latestBlockNumber := header.Number
-	// fmt.Printf("Get the list of the addresses we are going to monitore\n", m.TabMonitoringAdHexToHashHashetUniqueMonitoredAddresses())
 	query := ethereum.FilterQuery{
 		FromBlock: latestBlockNumber,
 		ToBlock:   latestBlockNumber,
 		// Addresses: []common.Address{}, //if empty means that all addresses are monitored should be this value for optimisation and avoiding to take every logs every time -> m.globalconfig.GetUniqueMonitoredAddresses
 	}
-	// os.Exit(0)
+
 	logs, err := m.l1Client.FilterLogs(context.Background(), query)
 	if err != nil { //TODO:need to wait 12 and retry here!
 		m.log.Warn("Failed to retrieve logs: %v", err)
 	}
 
-	// fmt.Printf("-------------------------- START OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-	// fmt.Println("Block Number: ", latestBlockNumber)
-	// fmt.Println("Number of logs: ", len(logs))
-	// fmt.Println("BlockHash:", header.Hash().Hex())
-
 	for _, vLog := range logs {
 		if len(vLog.Topics) > 0 { //Ensure no anonymous event is here.
-			if len(m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]).Events) > 0 {
-				// function that return all the values from the config
-				// returndatafromconfig(vlog.topics, v.logAddress)
-				fmt.Printf("-------------------------- Event Detected ------------------------\n")          // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-				fmt.Printf("TxHash: h%s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-				fmt.Printf("The current config that matched this function: %v\n", m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]))
-				fmt.Printf("----------------------------------------------------------------\n") // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+			if len(m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]).Events) > 0 { // We matched an alert!
+				config := m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0])
+				fmt.Printf("-------------------------- Event Detected ------------------------\n")
+				fmt.Printf("TxHash: h%s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics)
+				fmt.Printf("The current config that matched this function: %v\n", config)
+				fmt.Printf("----------------------------------------------------------------\n")
+				m.eventEmitted.WithLabelValues(m.nickname, vLog.Address.String(), config.Name, config.Events[0].Signature).Set(float64(1))
+
 			}
 		}
 
 	}
+	m.log.Info("Checking events...", "CurrentBlock", latestBlockNumber)
 
-	// fmt.Printf("-------------------------- END OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-	// paused, err := m.optimismPortal.Paused(&bind.CallOpts{Context: ctx})
-	// if err != nil {
-	// 	m.log.Error("failed to query OptimismPortal paused status", "err", err)
-	// 	m.unexpectedRpcErrors.WithLabelValues("optimismportal", "paused").Inc()
-	// 	return
-	// }
-
-	// pausedMetric := 0
-	// if paused {
-	// 	pausedMetric = 1
-	// }
-	//
-	// m.pausedState.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
-	// m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
-	m.log.Info("Checking events")
 }
 
-// func IsTopicInMonitoredEvents(topics []common.Hash, monitoredEvents []Event) bool {
-// 	for _, monitoredEvent := range monitoredEvents {
-// 		// fmt.Printf("Monitored Event: %v\n", monitoredEvent._4bytes)
-// 		// fmt.Printf("Topics: %v\n", topics[0])
-// 		if monitoredEvent._4bytes == topics[0] {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
-// func (m *Monitor) checkSafeNonce(ctx context.Context) {
-// 	if m.safeAddress == nil {
-// 		m.log.Warn("safe address is not configured, skipping...")
-// 		return
-// 	}
-//
-// 	nonceBytes := hexutil.Bytes{}
-// 	nonceTx := map[string]interface{}{"to": *m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
-// 	if err := m.l1Client.Client().CallContext(ctx, &nonceBytes, "eth_call", nonceTx, "latest"); err != nil {
-// 		m.log.Error("failed to query safe nonce", "err", err)
-// 		m.unexpectedRpcErrors.WithLabelValues("safe", "nonce()").Inc()
-// 		return
-// 	}
-//
-// 	nonce := new(big.Int).SetBytes(nonceBytes).Uint64()
-// 	m.safeNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(nonce))
-// 	m.log.Info("Safe Nonce", "address", m.safeAddress.String(), "nonce", nonce)
-// }
-
-//	func (m *Monitor) checkPresignedNonce(ctx context.Context) {
-//		if m.onePassVault == nil {
-//			m.log.Warn("one pass integration is not configured, skipping...")
-//			return
-//		}
-//
-//		cmd := exec.CommandContext(ctx, "op", "item", "list", "--format=json", fmt.Sprintf("--vault=%s", *m.onePassVault))
-//
-//		output, err := cmd.Output()
-//		if err != nil {
-//			m.log.Error("failed to run op cli")
-//			m.unexpectedRpcErrors.WithLabelValues("1pass", "exec").Inc()
-//			return
-//		}
-//
-//		vaultItems := []struct{ Title string }{}
-//		if err := json.Unmarshal(output, &vaultItems); err != nil {
-//			m.log.Error("failed to unmarshal op cli stdout", "err", err)
-//			m.unexpectedRpcErrors.WithLabelValues("1pass", "stdout").Inc()
-//			return
-//		}
-//
-//		latestPresignedNonce := int64(-1)
-//		for _, item := range vaultItems {
-//			if strings.HasPrefix(item.Title, PresignedNonceTitlePrefix) && strings.HasSuffix(item.Title, PresignedNonceTitleSuffix) {
-//				nonceStr := item.Title[len(PresignedNonceTitlePrefix) : len(item.Title)-len(PresignedNonceTitleSuffix)]
-//				nonce, err := strconv.ParseInt(nonceStr, 10, 64)
-//				if err != nil {
-//					m.log.Error("failed to parse nonce from item title", "title", item.Title)
-//					m.unexpectedRpcErrors.WithLabelValues("1pass", "title").Inc()
-//					return
-//				}
-//				if nonce > latestPresignedNonce {
-//					latestPresignedNonce = nonce
-//				}
-//			}
-//		}
-//
-//		m.latestPresignedPauseNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(latestPresignedNonce))
-//		if latestPresignedNonce == -1 {
-//			m.log.Error("no presigned nonce found")
-//			return
-//		}
-//
-//		m.log.Info("Latest Presigned Nonce", "nonce", latestPresignedNonce)
-//	}
 func (m *Monitor) Close(_ context.Context) error {
 	m.l1Client.Close()
 	return nil
