@@ -58,43 +58,6 @@ commands:
             # Configure ADC
             echo "export GOOGLE_APPLICATION_CREDENTIALS='<< parameters.gcp_cred_config_file_path >>'" | tee -a "$BASH_ENV"
 
-  check-changed:
-    description: "Conditionally halts a step if certain modules change"
-    parameters:
-      patterns:
-        type: string
-        description: "Comma-separated list of dependencies"
-      no_go_deps:
-        type: string
-        default: ""
-        description: "If set, does not trigger on `go.mod` / `go.sum` changes."
-    steps:
-      - run:
-          name: "Check for changes"
-          environment:
-            CHECK_CHANGED_NO_GO_DEPS: "<<parameters.no_go_deps>>"
-          command: |
-            cd ops/check-changed
-            pip3 install -r requirements.txt
-            python3 main.py "<<parameters.patterns>>"
-
-  notify-failures-on-develop:
-    description: "Notify Slack"
-    parameters:
-      channel:
-        type: string
-        default: C03N11M0BBN
-      mentions:
-        type: string
-        default: ""
-    steps:
-      - slack/notify:
-          channel: << parameters.channel >>
-          event: fail
-          template: basic_fail_1
-          branch_pattern: develop
-          mentions: "<< parameters.mentions >>"
-
 jobs:
   docker-build:
     environment:
@@ -210,10 +173,6 @@ jobs:
 
           no_output_timeout: 45m
       - when:
-          condition: "<<parameters.publish>>"
-          steps:
-            - notify-failures-on-develop
-      - when:
           condition: "<<parameters.save_image_tag>>"
           steps:
             - run:
@@ -262,6 +221,7 @@ workflows:
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
           save_image_tag: <<pipeline.git.revision>> # for devnet later
+          publish: true
           context:
             - oplabs-gcr
 
