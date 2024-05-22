@@ -3,6 +3,7 @@ package global_events
 import (
 	"context"
 	// "os"
+	// "time"
 	// "os"
 	// "encoding/json"
 	"fmt"
@@ -18,9 +19,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum"
 
-	// "github.com/ethereum/go-ethereum/accounts/abi/bind"
-	// "github.com/ethereum/go-ethereum/common"
-	// "github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -42,8 +40,8 @@ const (
 type Monitor struct {
 	log log.Logger
 
-	l1Client               *ethclient.Client
-	TabMonitoringAddresses TabMonitoringAddress
+	l1Client     *ethclient.Client
+	globalconfig GlobalConfiguration
 
 	nickname string
 
@@ -88,20 +86,23 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	fmt.Printf("PathYaml: %v\n", cfg.PathYamlRules)
 	fmt.Printf("Nickname: %v\n", cfg.Nickname)
 	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
-	TabMonitoringAddresses := ReadAllYamlRules(cfg.PathYamlRules)
-	// yamlconfig := ReadYamlFile(cfg.PathYamlRules)
-	fmt.Printf("Number of Addresses monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetUniqueMonitoredAddresses()))
-	fmt.Printf("Number of Events monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetMonitoredEvents()))
-
-	// MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
-	// DisplayMonitorAddresses(MonitoringAddresses)
-	// Should I make a sleep of 10 seconds to ensure we can read this information before the prod?
+	globalConfig := ReadAllYamlRules(cfg.PathYamlRules)
+	fmt.Printf("GlobalConfig: %#v\n", globalConfig.Configuration)
+	// // yamlconfig := ReadYamlFile(cfg.PathYamlRules)
+	// fmt.Printf("Number of Addresses monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetUniqueMonitoredAddresses()))
+	// fmt.Printf("Number of Events monitored (for now don't take in consideration the duplicates): %v\n", len(TabMonitoringAddresses.GetMonitoredEvents()))
+	//
+	// // MonitoringAddresses := fromConfigurationToAddress(yamlconfig)
+	globalConfig.DisplayMonitorAddresses()
+	// // Should I make a sleep of 10 seconds to ensure we can read this information before the prod?
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
+	//
+	// time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
 	// fmt.Printf("YAML Config: %v\n", yamlconfig)
 	return &Monitor{
-		log:                    log,
-		l1Client:               l1Client,
-		TabMonitoringAddresses: TabMonitoringAddresses,
+		log:          log,
+		l1Client:     l1Client,
+		globalconfig: globalConfig,
 
 		nickname: cfg.Nickname,
 		// yamlconfig: yamlconfig,
@@ -182,39 +183,41 @@ func (m *Monitor) Run(ctx context.Context) {
 func (m *Monitor) checkEvents(ctx context.Context) {
 	header, err := m.l1Client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
-		log.Crit("Failed to retrieve latest block header: %v", err)
+		m.log.Warn("Failed to retrieve latest block header: %v", err) //TODO:need to wait 12 and retry here!
 	}
 	latestBlockNumber := header.Number
 	// fmt.Printf("Get the list of the addresses we are going to monitore\n", m.TabMonitoringAdHexToHashHashetUniqueMonitoredAddresses())
 	query := ethereum.FilterQuery{
 		FromBlock: latestBlockNumber,
 		ToBlock:   latestBlockNumber,
-		Addresses: m.TabMonitoringAddresses.GetUniqueMonitoredAddresses(), //if empty means that all addresses are monitored!
+		// Addresses: []common.Address{}, //if empty means that all addresses are monitored should be this value for optimisation and avoiding to take every logs every time -> m.globalconfig.GetUniqueMonitoredAddresses
 	}
 	// os.Exit(0)
 	logs, err := m.l1Client.FilterLogs(context.Background(), query)
-	if err != nil {
-		m.log.Crit("Failed to retrieve logs: %v", err)
+	if err != nil { //TODO:need to wait 12 and retry here!
+		m.log.Warn("Failed to retrieve logs: %v", err)
 	}
 
-	fmt.Printf("-------------------------- START OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-	fmt.Println("Block Number: ", latestBlockNumber)
-	fmt.Println("Number of logs: ", len(logs))
-	fmt.Println("BlockHash:", header.Hash().Hex())
+	// fmt.Printf("-------------------------- START OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+	// fmt.Println("Block Number: ", latestBlockNumber)
+	// fmt.Println("Number of logs: ", len(logs))
+	// fmt.Println("BlockHash:", header.Hash().Hex())
 
 	for _, vLog := range logs {
-		// if vlog.Topics == topics_toml {
-		// 	// alerting + 1
-		// }
-		if IsTopicInMonitoredEvents(vLog.Topics, m.TabMonitoringAddresses.GetMonitoredEvents()) {
-			fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-			fmt.Printf("TxHash: %s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
-			fmt.Printf("----------------------------------------------------------------\n")           // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+		if len(vLog.Topics) > 0 { //Ensure no anonymous event is here.
+			if len(m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]).Events) > 0 {
+				// function that return all the values from the config
+				// returndatafromconfig(vlog.topics, v.logAddress)
+				fmt.Printf("-------------------------- Event Detected ------------------------\n")          // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+				fmt.Printf("TxHash: h%s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+				fmt.Printf("The current config that matched this function: %v\n", m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]))
+				fmt.Printf("----------------------------------------------------------------\n") // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+			}
 		}
 
 	}
 
-	fmt.Printf("-------------------------- END OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
+	// fmt.Printf("-------------------------- END OF BLOCK (%s)--------------------------------------", latestBlockNumber) // Prints the log data; consider using `vLog.Topics` or `vLog.Data`
 	// paused, err := m.optimismPortal.Paused(&bind.CallOpts{Context: ctx})
 	// if err != nil {
 	// 	m.log.Error("failed to query OptimismPortal paused status", "err", err)
@@ -231,16 +234,17 @@ func (m *Monitor) checkEvents(ctx context.Context) {
 	// m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
 	m.log.Info("Checking events")
 }
-func IsTopicInMonitoredEvents(topics []common.Hash, monitoredEvents []Event) bool {
-	for _, monitoredEvent := range monitoredEvents {
-		fmt.Printf("Monitored Event: %v\n", monitoredEvent._4bytes)
-		fmt.Printf("Topics: %v\n", topics[0])
-		if monitoredEvent._4bytes == topics[0] {
-			return true
-		}
-	}
-	return false
-}
+
+// func IsTopicInMonitoredEvents(topics []common.Hash, monitoredEvents []Event) bool {
+// 	for _, monitoredEvent := range monitoredEvents {
+// 		// fmt.Printf("Monitored Event: %v\n", monitoredEvent._4bytes)
+// 		// fmt.Printf("Topics: %v\n", topics[0])
+// 		if monitoredEvent._4bytes == topics[0] {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 // func (m *Monitor) checkSafeNonce(ctx context.Context) {
 // 	if m.safeAddress == nil {
