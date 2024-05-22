@@ -220,7 +220,6 @@ workflows:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
-          save_image_tag: <<pipeline.git.revision>> # for devnet later
           publish: true
           context:
             - oplabs-gcr
