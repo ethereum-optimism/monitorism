@@ -44,8 +44,6 @@ func TestFormatSignature(t *testing.T) {
 			if output != test.expectedOutput {
 				t.Errorf("Failed %s: expected %q but got %q", test.name, test.expectedOutput, output)
 			}
-			t.Logf("Success %s: from %q got %q", test.name, test.input, output)
-
 		})
 	}
 }
