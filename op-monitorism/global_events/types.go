@@ -157,14 +157,16 @@ func (G GlobalConfiguration) DisplayMonitorAddresses() {
 	for _, config := range G.Configuration {
 		fmt.Printf("Name: %s\n", config.Name)
 		if len(config.Addresses) == 0 && len(config.Events) > 0 {
-			fmt.Println("No addresses to monitor, but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
+			fmt.Println("Address:[], No address are defined but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
 			for _, events := range config.Events {
 				fmt.Printf("Events: %v\n", events)
 			}
 		} else {
 			for _, address := range config.Addresses {
 				fmt.Println("Address:", address)
-				fmt.Printf("Events: %v\n", G.ReturnEventsMonitoredForAnAddress(address))
+				for _, events := range G.ReturnEventsMonitoredForAnAddress(address) {
+					fmt.Printf("Events: %v\n", events)
+				}
 			}
 		}
 	}

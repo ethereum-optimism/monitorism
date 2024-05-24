@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum"
 
@@ -13,8 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"time"
 )
 
 const (
@@ -28,7 +29,10 @@ type Monitor struct {
 	l1Client     *ethclient.Client
 	globalconfig GlobalConfiguration
 	// nickname is the nickname of the monitor (we need to change the name this is not an ideal one here).
-	nickname string
+	nickname    string
+	safeAddress *bindings.OptimismPortalCaller
+
+	LiveAddress *common.Address
 
 	filename   string //filename of the yaml rules
 	yamlconfig Configuration
@@ -76,7 +80,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	fmt.Printf("GlobalConfig: %#v\n", globalConfig.Configuration)
 	globalConfig.DisplayMonitorAddresses()
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
-	// time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
+	time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
 	return &Monitor{
 		log:          log,
 		l1Client:     l1Client,
@@ -87,7 +91,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Namespace: MetricsNamespace,
 			Name:      "eventEmitted",
 			Help:      "Event monitored emitted an log",
-		}, []string{"nickname", "alertname", "address", "functionName"}),
+		}, []string{"nickname", "rulename", "priority", "functionName", "address"}),
 		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "unexpectedRpcErrors",
@@ -102,11 +106,9 @@ func formatSignature(signature string) string {
 	// Regex to extract function name and parameters
 	r := regexp.MustCompile(`(\w+)\s*\(([^)]*)\)`)
 	matches := r.FindStringSubmatch(signature)
-
 	if len(matches) != 3 {
 		return ""
 	}
-
 	// Function name
 	funcName := matches[1]
 	// Parameters, split by commas
@@ -119,7 +121,6 @@ func formatSignature(signature string) string {
 			cleanParams = append(cleanParams, parts[0])
 		}
 	}
-
 	// Return formatted function signature
 	return fmt.Sprintf("%s(%s)", funcName, strings.Join(cleanParams, ","))
 }
@@ -139,6 +140,33 @@ func FormatAndHash(signature string) common.Hash {
 func (m *Monitor) Run(ctx context.Context) {
 	m.checkEvents(ctx)
 }
+
+func (m *Monitor) SignerCanBeRemove(ctx context.Context) { //TODO: Ensure the logs crit are not causing panic in runtime!
+	// 	if m.safeAddress == nil {
+	// 		m.log.Warn("safe address is not configured, skipping...")
+	// 		return
+	// 	}
+	//
+	// 	nonceBytes := hexutil.Bytes{}
+	// 	nonceTx := map[string]interface{}{"to": *m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
+	// 	if err := m.l1Client.Client().CallContext(ctx, &nonceBytes, "eth_call", nonceTx, "latest"); err != nil {
+	// 		m.log.Error("failed to query safe nonce", "err", err)
+	// 		m.unexpectedRpcErrors.WithLabelValues("safe", "nonce()").Inc()
+	// 		return
+	// 	}
+	//
+	// 	nonce := new(big.Int).SetBytes(nonceBytes).Uint64()
+	// 	m.safeNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(nonce))
+	// 	m.log.Info("Safe Nonce", "address", m.safeAddress.String(), "nonce", nonce)
+	// }
+	//
+	// 	m.pausedState.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
+	// 	m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
+	// 	m.log.Info("Checking if the signer can be SignerCanBeRemove..")
+
+}
+
+// checkEvents function to check the events. If an events is emitted onchain and match the rules defined in the yaml file, then we will display the event.
 func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs crit are not causing panic in runtime!
 	header, err := m.l1Client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
@@ -165,7 +193,7 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 				fmt.Printf("TxHash: h%s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics)
 				fmt.Printf("The current config that matched this function: %v\n", config)
 				fmt.Printf("----------------------------------------------------------------\n")
-				m.eventEmitted.WithLabelValues(m.nickname, vLog.Address.String(), config.Name, config.Events[0].Signature).Set(float64(1))
+				m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, vLog.Address.String()).Set(float64(1))
 
 			}
 		}
