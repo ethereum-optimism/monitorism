@@ -65,7 +65,7 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Name:        "global_events",
 				Usage:       "Monitors global events with YAML configuration",
 				Description: "Monitors global events with YAML configuration",
-				Flags:       append(global_events.CLIFlags("global_events if you see this variable then changed into the code."), defaultFlags...),
+				Flags:       append(global_events.CLIFlags("GLOBAL_EVENT_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(global_eventsMain),
 			},
 			{
