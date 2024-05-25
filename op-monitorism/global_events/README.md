@@ -20,5 +20,7 @@ events:
 To run it:
 
 ```bash
-go run . global_events --nickname MySuperNickName --l1.node.url https://localhost:8545  --PathYamlRules ../rules --loop.interval.msec 12000
+
+go run ../cmd/monitorism global_events --nickname MySuperNickName --l1.node.url https://localhost:8545 --PathYamlRules /tmp/Monitorism/op-monitorism/global_events/rules/rules_mainnet_L1 --loop.interval.msec 12000
+
 ```
