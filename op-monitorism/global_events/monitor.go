@@ -86,7 +86,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 	header, err := l1Client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
-		log.Crit("Failed to fetch the latest block header: %v", err)
+		log.Crit("Failed to fetch the latest block header", "error", err)
 	}
 	// display the infos at the start to ensure everything is correct.
 	fmt.Printf("latestBlockNumber: %s\n", header.Number)
@@ -94,7 +94,11 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	fmt.Printf("PathYaml: %v\n", cfg.PathYamlRules)
 	fmt.Printf("Nickname: %v\n", cfg.Nickname)
 	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
-	globalConfig := ReadAllYamlRules(cfg.PathYamlRules)
+	globalConfig, err := ReadAllYamlRules(cfg.PathYamlRules)
+	if err != nil {
+		log.Crit("Failed to read the yaml rules", "error", err.Error())
+	}
+	// create a globalconfig empty
 	fmt.Printf("GlobalConfig: %#v\n", globalConfig.Configuration)
 	globalConfig.DisplayMonitorAddresses()
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
@@ -189,7 +193,9 @@ func (m *Monitor) SignerCanBeRemove(ctx context.Context) { //TODO: Ensure the lo
 func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs crit are not causing panic in runtime!
 	header, err := m.l1Client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
-		m.log.Warn("Failed to retrieve latest block header: %v", err) //TODO:need to wait 12 and retry here!
+		m.unexpectedRpcErrors.WithLabelValues("L1", "HeaderByNumber").Inc()
+		m.log.Warn("Failed to retrieve latest block header", "error", err.Error()) //TODO:need to wait 12 and retry here!
+		return
 	}
 
 	latestBlockNumber := header.Number
@@ -201,7 +207,9 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 
 	logs, err := m.l1Client.FilterLogs(context.Background(), query)
 	if err != nil { //TODO:need to wait 12 and retry here!
-		m.log.Warn("Failed to retrieve logs: %v", err)
+		m.unexpectedRpcErrors.WithLabelValues("L1", "FilterLogs").Inc()
+		m.log.Warn("Failed to retrieve logs:", "error", err.Error())
+		return
 	}
 
 	for _, vLog := range logs {
@@ -218,7 +226,7 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 		}
 
 	}
-	m.log.Info("Checking events...", "CurrentBlock", latestBlockNumber)
+	m.log.Info("Checking events..", "CurrentBlock", latestBlockNumber)
 
 }
 

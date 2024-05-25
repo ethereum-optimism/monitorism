@@ -1,12 +1,12 @@
 package global_events
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-
 	"github.com/ethereum/go-ethereum/common"
 	"gopkg.in/yaml.v3"
+	"os"
+	"path/filepath"
 )
 
 // EventTopic is the struct that will contain the index of the topic and the values that will be monitored (not used currently).
@@ -111,7 +111,7 @@ func StringFunctionToHex(config Configuration) Configuration {
 }
 
 // ReadAllYamlRules Read all the files in the `rules` directory at the given path from the command line `--PathYamlRules` that are YAML files.
-func ReadAllYamlRules(PathYamlRules string) GlobalConfiguration {
+func ReadAllYamlRules(PathYamlRules string) (GlobalConfiguration, error) {
 	var GlobalConfig GlobalConfiguration
 
 	entries, err := os.ReadDir(PathYamlRules) //Only read yaml files
@@ -131,7 +131,9 @@ func ReadAllYamlRules(PathYamlRules string) GlobalConfiguration {
 			yamlFiles = append(yamlFiles, entry)
 		}
 	}
-
+	if len(yamlFiles) == 0 {
+		return GlobalConfiguration{}, errors.New("No YAML files found in the directory")
+	}
 	for _, file := range yamlFiles {
 		path_rule := PathYamlRules + "/" + file.Name()
 		fmt.Printf("Reading a rule named: %s\n", path_rule)
@@ -148,10 +150,10 @@ func ReadAllYamlRules(PathYamlRules string) GlobalConfiguration {
 		fmt.Println("Error writing the globalconfig YAML file on the disk:", err)
 		panic("Error writing the globalconfig YAML file on the disk")
 	}
-	return GlobalConfig
+	return GlobalConfig, nil
 }
 
-// DisplayMonitorAddresses() will display the addresses that are monitored and the events that are monitored for each address.
+// DisplayMonitorAddresses will display the addresses that are monitored and the events that are monitored for each address.
 func (G GlobalConfiguration) DisplayMonitorAddresses() {
 	println("============== Monitoring addresses =================")
 	for _, config := range G.Configuration {
