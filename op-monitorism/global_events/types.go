@@ -82,7 +82,7 @@ func ReadYamlFile(filename string) Configuration {
 	return config
 }
 
-// StringFunctionToHex take the configuration yaml and resolve the signature stringed like "Transfer(address)"  // that will contains all the addresses that will monitore.
+// StringFunctionToHex take the configuration yaml and resolve a solidity event like "Transfer(address)" to the keccak256 hash of the event signature and UPDATE the configuration with the keccak256 hash.
 func StringFunctionToHex(config Configuration) Configuration {
 	var FinalConfig Configuration
 
@@ -145,7 +145,7 @@ func ReadAllYamlRules(PathYamlRules string) (GlobalConfiguration, error) {
 	}
 
 	yaml_marshalled, err := yaml.Marshal(GlobalConfig)
-	err = os.WriteFile("globalconfig.yaml", yaml_marshalled, 0644)
+	err = os.WriteFile("/tmp/globalconfig.yaml", yaml_marshalled, 0644) // Storing the configuration if we need to debug and knows what is monitored in the future.
 	if err != nil {
 		fmt.Println("Error writing the globalconfig YAML file on the disk:", err)
 		panic("Error writing the globalconfig YAML file on the disk")

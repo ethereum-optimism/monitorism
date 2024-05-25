@@ -1,0 +1,8 @@
+version: 1.0
+name: OptimismPortalProxy (after Proof) L1
+priority: P5
+addresses:
+  - 0xbEb5Fc579115071764c7423A4f12eDde41f106Ed # /!\ We are not supporting EIP 3770 yet, if the address is not starting by 0x, this will panic by safety measure.
+events:
+  - signature: DisputeGameBlacklisted(IDisputeGame indexed disputeGame)
+  - signature: RespectedGameTypeSet(GameType indexed newGameType, Timestamp indexed updatedAt)

@@ -1,0 +1,9 @@
+version: 1.0
+name: Liveness Signer Action (Safe SC) L1
+priority: P2
+addresses:
+  - 0xc2819DC788505Aac350142A7A707BF9D03E3Bd03
+events:
+  - signature: AddedOwner(address owner)
+  - signature: RemovedOwner(address owner)
+  - signature: ChangedThreshold(uint256 threshold)

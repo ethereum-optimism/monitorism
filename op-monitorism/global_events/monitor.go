@@ -66,14 +66,14 @@ func cloneRepo(repoURL string, path string) error { //for debug purpose will be 
 	})
 	if err != nil {
 
-		fmt.Printf("Error while cloning the repo: %v", err)
+		fmt.Printf("Error while cloning the repo: %v\n", err)
 	}
 	return err
 }
 
 // NewMonitor creates a new Monitor instance.
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
-	cloneRepo("https://github.com/ethereum-optimism/monitorism.git", "/tmp/Monitorism/") //rules are located
+	cloneRepo("https://github.com/ethereum-optimism/monitorism.git", "/tmp/Monitorism/") //This copy the repo to /tmp/Monitorism/ we need to have the rules inside the repo and this will download them.
 	l1Client, err := ethclient.Dial(cfg.L1NodeURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1 rpc: %w", err)
@@ -159,6 +159,7 @@ func FormatAndHash(signature string) common.Hash {
 
 }
 
+// Run the monitor functions declared as a monitor method.
 func (m *Monitor) Run(ctx context.Context) {
 	m.checkEvents(ctx)
 	//  m.SignerCanBeRemove
@@ -230,6 +231,7 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 
 }
 
+// Close closes the monitor.
 func (m *Monitor) Close(_ context.Context) error {
 	m.l1Client.Close()
 	return nil
