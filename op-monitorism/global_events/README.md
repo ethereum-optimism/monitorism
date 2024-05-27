@@ -2,6 +2,32 @@
 
 This monitoring modules for the yaml rules added with the format ⚠️ This readme will be move into the global readme in the future.
 
+CLI and Docs: 
+```bash
+NAME:
+   Monitorism global_events - Monitors global events with YAML configuration
+
+USAGE:
+   Monitorism global_events [command options] [arguments...]
+
+DESCRIPTION:
+   Monitors global events with YAML configuration
+
+OPTIONS:
+   --l1.node.url value         Node URL of L1 peer (default: "http://127.0.0.1:8545") [$GLOBAL_EVENT_MON_L1_NODE_URL]
+   --nickname value            Nickname of chain being monitored [$GLOBAL_EVENT_MON_NICKNAME]
+   --PathYamlRules value       Path to the yaml file containing the events to monitor [$GLOBAL_EVENT_MON_PATH_YAML]
+   --log.level value           The lowest log level that will be output (default: INFO) [$MONITORISM_LOG_LEVEL]
+   --log.format value          Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text) [$MONITORISM_LOG_FORMAT]
+   --log.color                 Color the log output if in terminal mode (default: false) [$MONITORISM_LOG_COLOR]
+   --metrics.enabled           Enable the metrics server (default: false) [$MONITORISM_METRICS_ENABLED]
+   --metrics.addr value        Metrics listening address (default: "0.0.0.0") [$MONITORISM_METRICS_ADDR]
+   --metrics.port value        Metrics listening port (default: 7300) [$MONITORISM_METRICS_PORT]
+   --loop.interval.msec value  Loop interval of the monitor in milliseconds (default: 60000) [$MONITORISM_LOOP_INTERVAL_MSEC]
+   --help, -h                  show help
+
+```
+
 The rules are located here: `op-monitorism/global_events/rules/` then we have multiples folders depending the networks you want to monitore (`mainnet` or `sepolia`) for now.
 ```yaml
 # This is a TEMPLATE file please copy this one
