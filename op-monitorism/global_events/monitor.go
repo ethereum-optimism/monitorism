@@ -158,32 +158,6 @@ func FormatAndHash(signature string) common.Hash {
 // Run the monitor functions declared as a monitor method.
 func (m *Monitor) Run(ctx context.Context) {
 	m.checkEvents(ctx)
-	//  m.SignerCanBeRemove
-}
-
-func (m *Monitor) SignerCanBeRemove(ctx context.Context) { //TODO: Ensure the logs crit are not causing panic in runtime!
-	// 	if m.safeAddress == nil {
-	// 		m.log.Warn("safe address is not configured, skipping...")
-	// 		return
-	// 	}
-	//
-	// 	nonceBytes := hexutil.Bytes{}
-	// 	nonceTx := map[string]interface{}{"to": *m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
-	// 	if err := m.l1Client.Client().CallContext(ctx, &nonceBytes, "eth_call", nonceTx, "latest"); err != nil {
-	// 		m.log.Error("failed to query safe nonce", "err", err)
-	// 		m.unexpectedRpcErrors.WithLabelValues("safe", "nonce()").Inc()
-	// 		return
-	// 	}
-	//
-	// 	nonce := new(big.Int).SetBytes(nonceBytes).Uint64()
-	// 	m.safeNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(nonce))
-	// 	m.log.Info("Safe Nonce", "address", m.safeAddress.String(), "nonce", nonce)
-	// }
-	//
-	// 	m.pausedState.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
-	// 	m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
-	// 	m.log.Info("Checking if the signer can be SignerCanBeRemove..")
-
 }
 
 // checkEvents function to check the events. If an events is emitted onchain and match the rules defined in the yaml file, then we will display the event.
