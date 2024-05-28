@@ -1,7 +1,6 @@
 package global_events
 
 import (
-	//	"strings"
 	"testing"
 )
 
@@ -47,14 +46,3 @@ func TestFormatSignature(t *testing.T) {
 		})
 	}
 }
-
-// func TestFunctionSelector(t *testing.T) {
-// 	expectedSelector := "70a08231" // known selector for "balanceOf(address)"
-// 	formattedSignature := "balanceOf(address)"
-// 	hash := crypto.Keccak256([]byte(formattedSignature))
-// 	selector := strings.ToLower(fmt.Sprintf("%x", hash[:4]))
-//
-// 	if selector != expectedSelector {
-// 		t.Errorf("Selector calculation failed: expected %s but got %s", expectedSelector, selector)
-// 	}
-// }
