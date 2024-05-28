@@ -25,16 +25,6 @@ configuration:
       - signature: "ExecutionSuccess(bytes32,uint256)"
 `
 
-//	func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddress(target_address common.Address) []Event {
-//		for _, config := range G.Configuration {
-//			for _, address := range config.Addresses {
-//				if address == target_address {
-//					return config.Events
-//				}
-//			}
-//		}
-//		return []Event{} // no events monitored for this address
-//
 // Print the config to see if it's correct
 func TestReturnEventsMonitoredForAnAddress(t *testing.T) {
 	var config GlobalConfiguration
