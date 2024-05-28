@@ -10,8 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/prometheus/client_golang/prometheus"
 	"regexp"
 	"strings"
@@ -54,6 +52,8 @@ func ChainIDToName(chainID int64) string {
 	return "The `ChainID` is Not defined into the `chaindIDToName` function, this is probably a custom chain otherwise something is going wrong!"
 }
 
+// git "github.com/go-git/go-git/v5"
+// "github.com/go-git/go-git/v5/plumbing"
 // func cloneRepo(repoURL string, path string) error { //for debug purpose will be store to /tmp/Monitorism/rules_l1
 // 	_, err := git.PlainClone(path, false, &git.CloneOptions{
 // 		URL:           repoURL,
