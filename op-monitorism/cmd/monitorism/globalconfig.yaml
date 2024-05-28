@@ -1,0 +1,17 @@
+configuration:
+    - version: "1.0"
+      name: Safe Watcher
+      priority: P0
+      addresses: []
+      events:
+        - keccak256_signature: 0x23428b18acfb3ea64b08dc0c1d296ea9c09702c09083ca5272e64d115b687d23
+          signature: ExecutionFailure(bytes32,uint256)
+        - keccak256_signature: 0x442e715f626346e8c54381002da614f62bee8d27386535b2521ec8540898556e
+          signature: ExecutionSuccess(bytes32,uint256)
+    - version: "1.0"
+      name: SystemConfig Config Updates
+      priority: P2
+      addresses: []
+      events:
+        - keccak256_signature: 0x82f8cc4439cd78202f3081cd05a23d895e011595628770738fc5ba8ecba469ed
+          signature: ConfigUpdate(uint256 indexed version, UpdateType indexed updateType, bytes data)

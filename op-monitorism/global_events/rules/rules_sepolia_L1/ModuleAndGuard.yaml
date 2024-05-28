@@ -1,0 +1,9 @@
+version: 1.0
+name: Liveness Enabled/DisabledModule (Safe SC) L1
+priority: P2
+addresses:
+  - 0xCB7b18DBA09fc0525554727Df1b8Ee9c90b9870c
+events:
+  - signature: EnabledModule(address module)
+  - signature: DisabledModule(address module)
+  - signature: ChangedGuard(address guard)

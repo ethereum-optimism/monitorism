@@ -1,0 +1,9 @@
+version: 1.0
+name: Guard/Module Removed or Replaced (Safe SC) L1
+priority: P2
+addresses:
+  - 0xc2819DC788505Aac350142A7A707BF9D03E3Bd03
+events:
+  - signature: EnabledModule(address module)
+  - signature: DisabledModule(address module)
+  - signature: ChangedGuard(address guard)
