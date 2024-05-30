@@ -162,7 +162,6 @@ func (G GlobalConfiguration) DisplayMonitorAddresses() {
 				fmt.Printf("Events: %v\n", events)
 			}
 		} else {
-			println("size Address:", len(config.Addresses))
 			for _, address := range config.Addresses {
 				fmt.Println("Address:", address)
 				for _, events := range G.ReturnEventsMonitoredForAnAddress(address) {
