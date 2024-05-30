@@ -18,7 +18,7 @@ FROM alpine:3.18
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/bin/monitorism /usr/local/bin/monitorism
-
+COPY --from=builder /app/global_events/rules/ /usr/local/config/
 # Ensure the binary is executable
 RUN chmod +x /usr/local/bin/monitorism
 
