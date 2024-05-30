@@ -85,7 +85,6 @@ func ReadYamlFile(filename string) Configuration {
 // StringFunctionToHex take the configuration yaml and resolve a solidity event like "Transfer(address)" to the keccak256 hash of the event signature and UPDATE the configuration with the keccak256 hash.
 func StringFunctionToHex(config Configuration) Configuration {
 	var FinalConfig Configuration
-
 	if len(config.Addresses) == 0 && len(config.Events) > 0 {
 		fmt.Println("No addresses to monitor, but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
 		keccak256_topic_0 := config.Events
@@ -94,17 +93,16 @@ func StringFunctionToHex(config Configuration) Configuration {
 			fmt.Printf("Keccak256_Signature: %x\n", keccak256_topic_0[i].Keccak256_Signature)
 		}
 		FinalConfig = Configuration{Version: config.Version, Name: config.Name, Priority: config.Priority, Addresses: []common.Address{}, Events: keccak256_topic_0}
-
 		return FinalConfig
 	}
 	// If there is addresses to monitor, we will resolve the signature of the events.
-	for _, address := range config.Addresses { //resolve the hex signature from a topic
+	for _ = range config.Addresses { //resolve the hex signature from a topic
 		keccak256_topic_0 := config.Events
 		for i, event := range config.Events {
 			keccak256_topic_0[i].Keccak256_Signature = FormatAndHash(event.Signature)
 
 		}
-		FinalConfig = Configuration{Version: config.Version, Name: config.Name, Priority: config.Priority, Addresses: []common.Address{address}, Events: keccak256_topic_0}
+		FinalConfig = Configuration{Version: config.Version, Name: config.Name, Priority: config.Priority, Addresses: config.Addresses, Events: keccak256_topic_0}
 	}
 
 	return FinalConfig
@@ -164,6 +162,7 @@ func (G GlobalConfiguration) DisplayMonitorAddresses() {
 				fmt.Printf("Events: %v\n", events)
 			}
 		} else {
+			println("size Address:", len(config.Addresses))
 			for _, address := range config.Addresses {
 				fmt.Println("Address:", address)
 				for _, events := range G.ReturnEventsMonitoredForAnAddress(address) {
