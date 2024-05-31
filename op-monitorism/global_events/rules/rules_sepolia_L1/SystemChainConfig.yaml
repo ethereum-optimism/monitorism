@@ -2,6 +2,7 @@ version: 1.0
 name: SuperChainConfig Pause and Unpause L1
 priority: P2
 addresses:
+  # SuperChainConfig Proxy
   - 0xC2Be75506d5724086DEB7245bd260Cc9753911Be # /!\ We are not supporting EIP 3770 yet, if the address is not starting by 0x, this will panic by safety measure.
 events:
   - signature: Paused(String)

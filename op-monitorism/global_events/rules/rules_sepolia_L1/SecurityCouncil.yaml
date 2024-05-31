@@ -1,0 +1,18 @@
+version: 1.0
+name: Security Council Management (Safe SC) L1
+priority: P2
+addresses:
+  # Fake Security Council (Sepolia)
+  - 0xc2819DC788505Aac350142A7A707BF9D03E3Bd03
+events:
+  - signature: Paused(String)
+  - signature: Unpaused()
+  - signature: AddedOwner(address owner)
+  - signature: RemovedOwner(address owner)
+  - signature: ChangedThreshold(uint256 threshold)
+  - signature: EnabledModule(address module)
+  - signature: DisabledModule(address module)
+  - signature: ChangedGuard(address guard)
+  - signature: ExecutionFailure(bytes32 txHash, uint256 payment)
+  - signature: ExecutionSuccess(bytes32 txHash, uint256 payment)
+  - signature: ApproveHash(bytes32 indexed approvedHash, address indexed owner)
