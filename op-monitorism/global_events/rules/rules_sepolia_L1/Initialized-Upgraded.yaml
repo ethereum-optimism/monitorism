@@ -2,8 +2,6 @@ version: 1.0
 name: Initialized Upgraded Proxy L1 (Sepolia)
 priority: P2
 addresses:
-  # Multisig
-  - 0xdee57160aafcf04c34c887b5962d0a69676d3c8b
   # AddressManager
   - 0x9bFE9c5609311DF1c011c47642253B78a4f33F4B
   # L1CrossDomainMessengerProxy

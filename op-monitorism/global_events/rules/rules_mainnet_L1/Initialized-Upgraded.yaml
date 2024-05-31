@@ -2,8 +2,6 @@ version: 1.0
 name: Initialized Upgraded Proxy L1 (Ethereum)
 priority: P2
 addresses:
-  # Multisig
-  - 0x9ba6e03d8b90de867373db8cf1a58d2f7f006b3a
   # AddressManager
   - 0xdE1FCfB0851916CA5101820A69b13a4E276bd81F
   # L1CrossDomainMessengerProxy
