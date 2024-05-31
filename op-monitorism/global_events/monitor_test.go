@@ -31,11 +31,6 @@ func TestFormatSignature(t *testing.T) {
 			input:          " approve ( address spender , uint256 value ) ",
 			expectedOutput: "approve(address,uint256)",
 		},
-		// {
-		// 	name:           "Uniswap swap",
-		// 	input:          "Swap (address sender,address recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
-		// 	expectedOutput: "Swap(address,address,int256,int256,uint160,uint128,int24)",
-		// },
 		{
 			name:           "Uniswap swap",
 			input:          "Swap (address sender,address recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
