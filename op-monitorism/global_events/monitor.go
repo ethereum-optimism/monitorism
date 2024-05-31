@@ -167,21 +167,35 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 	}
 
 	for _, vLog := range logs {
-		if len(vLog.Topics) > 0 { //Ensure no anonymous event is here.
+		if len(vLog.Topics) > 0 { // Ensure no anonymous event is here.
 			if len(m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]).Events) > 0 { // We matched an alert!
 				config := m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0])
-				fmt.Printf("-------------------------- Event Detected ------------------------\n")
-				fmt.Printf("TxHash: h%s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics)
-				fmt.Printf("The current config that matched this function: %v\n", config)
-				fmt.Printf("----------------------------------------------------------------\n")
-				m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, vLog.Address.String()).Set(float64(1))
-
+				if isAddressIntoConfig(vLog.Address, config) {
+					fmt.Printf("-------------------------- Event Detected ------------------------\n")
+					fmt.Printf("TxHash: %s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics)
+					fmt.Printf("The current config that matched this function: %v\n", config)
+					fmt.Printf("----------------------------------------------------------------\n")
+					m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, vLog.Address.String()).Set(float64(1))
+				}
 			}
 		}
 
 	}
 	m.log.Info("Checking events..", "CurrentBlock", latestBlockNumber)
 
+}
+
+// isAddressIntoConfig check if an address is inside the config addresses if the config addresses is empty then we listen for every addresses.
+func isAddressIntoConfig(address common.Address, config Configuration) bool {
+	if len(config.Addresses) == 0 { //return true to listen to every addresses.
+		return true
+	}
+	for _, addr := range config.Addresses { // iterate over all the addresses in the config.
+		if addr == address {
+			return true
+		}
+	}
+	return false
 }
 
 // Close closes the monitor.
