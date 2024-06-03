@@ -20,6 +20,8 @@ const (
 	MetricsNamespace = "global_events_mon"
 )
 
+var counter int = 0
+
 // Monitor is the main struct of the monitor.
 type Monitor struct {
 	log log.Logger
@@ -38,6 +40,7 @@ type Monitor struct {
 	// Prometheus metrics
 	eventEmitted        *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
+	CurrentBlock        *prometheus.GaugeVec
 }
 
 // ChainIDToName() allows to convert the chainID to a human readable name.
@@ -79,7 +82,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 	// create a globalconfig empty
 	fmt.Printf("GlobalConfig: %#v\n", globalConfig.Configuration)
-	globalConfig.DisplayMonitorAddresses()
+	globalConfig.DisplayMonitorAddresses() //Display all the addresses that are monitored.
+
 	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
 	time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
 	return &Monitor{
@@ -98,6 +102,11 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Name:      "unexpectedRpcErrors",
 			Help:      "number of unexpcted rpc errors",
 		}, []string{"section", "name"}),
+		CurrentBlock: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "CurrentBlock",
+			Help:      "This metric return the current blockNumber Monitored.",
+		}, []string{"nickname"}),
 	}, nil
 }
 
@@ -143,16 +152,42 @@ func (m *Monitor) Run(ctx context.Context) {
 	m.checkEvents(ctx)
 }
 
+// metricsAllEventsRegistered allows to emit all the events at the start of the program with the values set to `0`.
+func metricsAllEventsRegistered(globalconfig GlobalConfiguration, eventEmitted *prometheus.GaugeVec, nickname string) {
+	for _, config := range globalconfig.Configuration {
+		if len(config.Addresses) == 0 {
+			for _, event := range config.Events {
+				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, "ANY_ADDRESSES_[]").Set(float64(0))
+			}
+			continue //pass to the next config so the [] any are not displayed as metrics here.
+		}
+		for _, address := range config.Addresses {
+			for _, event := range globalconfig.ReturnEventsMonitoredForAnAddress(address) {
+				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, address.String()).Set(float64(0))
+			}
+		}
+	}
+
+}
+
 // checkEvents function to check the events. If an events is emitted onchain and match the rules defined in the yaml file, then we will display the event.
 func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs crit are not causing panic in runtime!
+
+	if counter == 0 { //meaning we are at the start of the program.
+		metricsAllEventsRegistered(m.globalconfig, m.eventEmitted, m.nickname) // Emit all the events
+	}
+
+	counter++
 	header, err := m.l1Client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
 		m.unexpectedRpcErrors.WithLabelValues("L1", "HeaderByNumber").Inc()
 		m.log.Warn("Failed to retrieve latest block header", "error", err.Error()) //TODO:need to wait 12 and retry here!
 		return
 	}
-
 	latestBlockNumber := header.Number
+	blocknumber, _ := latestBlockNumber.Float64()
+
+	m.CurrentBlock.WithLabelValues(m.nickname).Set(float64(blocknumber)) //metrics for the current block monitored.
 	query := ethereum.FilterQuery{
 		FromBlock: latestBlockNumber,
 		ToBlock:   latestBlockNumber,
