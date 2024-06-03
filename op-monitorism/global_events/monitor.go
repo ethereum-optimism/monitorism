@@ -61,7 +61,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1 rpc: %w", err)
 	}
-	fmt.Printf("--------------------------------------- Global_events_mon (Infos) -----------------------------\n")
+	log.Info("--------------------------------------- Global_events_mon (Infos) -----------------------------\n")
 	ChainID, err := l1Client.ChainID(context.Background())
 	if err != nil {
 		log.Crit("Failed to retrieve chain ID: %v", err)
@@ -71,20 +71,18 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		log.Crit("Failed to fetch the latest block header", "error", err)
 	}
 	// display the infos at the start to ensure everything is correct.
-	fmt.Printf("latestBlockNumber: %s\n", header.Number)
-	fmt.Printf("chainId: %+v\n", ChainIDToName(ChainID.Int64()))
-	fmt.Printf("PathYaml: %v\n", cfg.PathYamlRules)
-	fmt.Printf("Nickname: %v\n", cfg.Nickname)
-	fmt.Printf("L1NodeURL: %v\n", cfg.L1NodeURL)
-	globalConfig, err := ReadAllYamlRules(cfg.PathYamlRules)
+	log.Info("", "latestBlockNumber", header.Number)
+	log.Info("", "chainId", ChainIDToName(ChainID.Int64()))
+	log.Info("", "PathYaml", cfg.PathYamlRules)
+	log.Info("", "Nickname", cfg.Nickname)
+	log.Info("", "L1NodeURL", cfg.L1NodeURL)
+	globalConfig, err := ReadAllYamlRules(cfg.PathYamlRules, log)
 	if err != nil {
 		log.Crit("Failed to read the yaml rules", "error", err.Error())
 	}
 	// create a globalconfig empty
-	fmt.Printf("GlobalConfig: %#v\n", globalConfig.Configuration)
-	globalConfig.DisplayMonitorAddresses() //Display all the addresses that are monitored.
-
-	fmt.Printf("--------------------------------------- End of Infos -----------------------------\n")
+	globalConfig.DisplayMonitorAddresses(log) //Display all the addresses that are monitored.
+	log.Info("--------------------------------------- End of Infos -----------------------------\n")
 	time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
 	return &Monitor{
 		log:          log,
@@ -206,10 +204,7 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 			if len(m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]).Events) > 0 { // We matched an alert!
 				config := m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0])
 				if isAddressIntoConfig(vLog.Address, config) {
-					fmt.Printf("-------------------------- Event Detected ------------------------\n")
-					fmt.Printf("TxHash: %s\nAddress:%s\nTopics: %s\n", vLog.TxHash, vLog.Address, vLog.Topics)
-					fmt.Printf("The current config that matched this function: %v\n", config)
-					fmt.Printf("----------------------------------------------------------------\n")
+					m.log.Info("Event Detected", "TxHash", vLog.TxHash.String(), "Address", vLog.Address, "Topics", vLog.Topics, "Config", config)
 					m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, vLog.Address.String()).Set(float64(1))
 				}
 			}

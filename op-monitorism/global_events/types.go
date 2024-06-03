@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
@@ -83,14 +84,14 @@ func ReadYamlFile(filename string) Configuration {
 }
 
 // StringFunctionToHex take the configuration yaml and resolve a solidity event like "Transfer(address)" to the keccak256 hash of the event signature and UPDATE the configuration with the keccak256 hash.
-func StringFunctionToHex(config Configuration) Configuration {
+func StringFunctionToHex(config Configuration, log log.Logger) Configuration {
 	var FinalConfig Configuration
 	if len(config.Addresses) == 0 && len(config.Events) > 0 {
-		fmt.Println("No addresses to monitor, but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
+		log.Warn("No addresses to monitor, but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
 		keccak256_topic_0 := config.Events
 		for i, event := range config.Events {
 			keccak256_topic_0[i].Keccak256_Signature = FormatAndHash(event.Signature)
-			fmt.Printf("Keccak256_Signature: %x\n", keccak256_topic_0[i].Keccak256_Signature)
+			log.Info("", "Keccak256", keccak256_topic_0[i].Keccak256_Signature)
 		}
 		FinalConfig = Configuration{Version: config.Version, Name: config.Name, Priority: config.Priority, Addresses: []common.Address{}, Events: keccak256_topic_0}
 		return FinalConfig
@@ -109,7 +110,7 @@ func StringFunctionToHex(config Configuration) Configuration {
 }
 
 // ReadAllYamlRules Read all the files in the `rules` directory at the given path from the command line `--PathYamlRules` that are YAML files.
-func ReadAllYamlRules(PathYamlRules string) (GlobalConfiguration, error) {
+func ReadAllYamlRules(PathYamlRules string, log log.Logger) (GlobalConfiguration, error) {
 	var GlobalConfig GlobalConfiguration
 
 	entries, err := os.ReadDir(PathYamlRules) //Only read yaml files
@@ -134,9 +135,9 @@ func ReadAllYamlRules(PathYamlRules string) (GlobalConfiguration, error) {
 	}
 	for _, file := range yamlFiles {
 		path_rule := PathYamlRules + "/" + file.Name()
-		fmt.Printf("Reading a rule named: %s\n", path_rule)
-		yamlconfig := ReadYamlFile(path_rule)        // Read the yaml file
-		yamlconfig = StringFunctionToHex(yamlconfig) // Modify the yaml config to have the common.hash of the event signature.
+		log.Info("Reading a new rule", "Rule", path_rule)
+		yamlconfig := ReadYamlFile(path_rule)             // Read the yaml file
+		yamlconfig = StringFunctionToHex(yamlconfig, log) // Modify the yaml config to have the common.hash of the event signature.
 		GlobalConfig.Configuration = append(GlobalConfig.Configuration, yamlconfig)
 		// monitoringAddresses = append(monitoringAddresses, fromConfigurationToAddress(yamlconfig)...)
 
@@ -145,27 +146,28 @@ func ReadAllYamlRules(PathYamlRules string) (GlobalConfiguration, error) {
 	yaml_marshalled, err := yaml.Marshal(GlobalConfig)
 	err = os.WriteFile("/tmp/globalconfig.yaml", yaml_marshalled, 0644) // Storing the configuration if we need to debug and knows what is monitored in the future.
 	if err != nil {
-		fmt.Println("Error writing the globalconfig YAML file on the disk:", err)
+		log.Warn("Error writing the globalconfig YAML file on the disk:", "ERROR", err)
 		panic("Error writing the globalconfig YAML file on the disk")
 	}
 	return GlobalConfig, nil
 }
 
 // DisplayMonitorAddresses will display the addresses that are monitored and the events that are monitored for each address.
-func (G GlobalConfiguration) DisplayMonitorAddresses() {
-	println("============== Monitoring addresses =================")
+func (G GlobalConfiguration) DisplayMonitorAddresses(log log.Logger) {
+	log.Info("============== Monitoring addresses =================")
+
 	for _, config := range G.Configuration {
-		fmt.Printf("Name: %s\n", config.Name)
+		log.Info("", "Name:", config.Name)
 		if len(config.Addresses) == 0 && len(config.Events) > 0 {
-			fmt.Println("Address:[], No address are defined but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
+			log.Warn("Address:[], No address are defined but some events are defined (this means we are monitoring all the addresses), probably for debugging purposes.")
 			for _, events := range config.Events {
-				fmt.Printf("Events: %v\n", events)
+				log.Info("", "Events", events)
 			}
 		} else {
 			for _, address := range config.Addresses {
-				fmt.Println("Address:", address)
+				log.Info("", "", "", "Address", address)
 				for _, events := range G.ReturnEventsMonitoredForAnAddress(address) {
-					fmt.Printf("Events: %v\n", events)
+					log.Info("", "", "", "", "", "Events", events)
 				}
 			}
 		}
