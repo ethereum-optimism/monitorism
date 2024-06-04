@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/fault"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/global_events"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/secrets"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
 
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
@@ -68,6 +69,13 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Description: "Monitors Drippie contract",
 				Flags:       append(drippie.CLIFlags("DRIPPIE_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(DrippieMain),
+			},
+			{
+				Name:        "secrets",
+				Usage:       "Monitors secrets revealed in the CheckSecrets dripcheck",
+				Description: "Monitors secrets revealed in the CheckSecrets dripcheck",
+				Flags:       append(secrets.CLIFlags("SECRETS_MON"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(SecretsMain),
 			},
 			{
 				Name:        "global_events",
@@ -179,6 +187,22 @@ func DrippieMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lif
 	monitor, err := drippie.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drippie monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+
+func SecretsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := secrets.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse secrets config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := secrets.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create secrets monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
