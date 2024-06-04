@@ -1,7 +1,0 @@
-version: 1.0
-name: Liveness Fallback Owner (Safe SC) L1
-priority: P2
-addresses:
-  - 0xCB7b18DBA09fc0525554727Df1b8Ee9c90b9870c #Need to recheck for this actual addresses.
-events:
-  - signature: OwnershipTransferredToFallback()

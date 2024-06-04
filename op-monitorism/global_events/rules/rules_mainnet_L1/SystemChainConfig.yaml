@@ -1,8 +1,0 @@
-version: 1.0
-name: SuperChainConfig Pause and Unpause L1
-priority: P2
-addresses:
-  - 0x95703e0982140D16f8ebA6d158FccEde42f04a4C # /!\ We are not supporting EIP 3770 yet, if the address is not starting by 0x, this will panic by safety measure.
-events:
-  - signature: Paused(String)
-  - signature: Unpaused()
