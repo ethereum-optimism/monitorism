@@ -94,7 +94,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Namespace: MetricsNamespace,
 			Name:      "eventEmitted",
 			Help:      "Event monitored emitted an log",
-		}, []string{"nickname", "rulename", "priority", "functionName", "address"}),
+		}, []string{"nickname", "rulename", "priority", "functionName", "topics", "address", "blockNumber", "txHash"}),
 		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "unexpectedRpcErrors",
@@ -155,13 +155,13 @@ func metricsAllEventsRegistered(globalconfig GlobalConfiguration, eventEmitted *
 	for _, config := range globalconfig.Configuration {
 		if len(config.Addresses) == 0 {
 			for _, event := range config.Events {
-				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, "ANY_ADDRESSES_[]").Set(float64(0))
+				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, event.Keccak256_Signature.Hex(), "ANY_ADDRESSES_[]", "0", "N/A").Set(float64(0))
 			}
 			continue //pass to the next config so the [] any are not displayed as metrics here.
 		}
 		for _, address := range config.Addresses {
 			for _, event := range globalconfig.ReturnEventsMonitoredForAnAddress(address) {
-				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, address.String()).Set(float64(0))
+				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, event.Keccak256_Signature.Hex(), address.String(), "0", "N/A").Set(float64(0))
 			}
 		}
 	}
@@ -205,7 +205,7 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 				config := m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0])
 				if isAddressIntoConfig(vLog.Address, config) {
 					m.log.Info("Event Detected", "TxHash", vLog.TxHash.String(), "Address", vLog.Address, "Topics", vLog.Topics, "Config", config)
-					m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, vLog.Address.String()).Set(float64(1))
+					m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, config.Events[0].Keccak256_Signature.Hex(), vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Set(float64(1))
 				}
 			}
 		}
