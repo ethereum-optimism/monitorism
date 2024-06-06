@@ -51,19 +51,26 @@ func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddress(target_address co
 
 }
 
-// SearchIfATopicIsInsideAnAlert Search if a topic is inside a rules, if this the case will return a `Configuration`. /!\ This is worth noting that the returned only contains the event that matched the topic in `topic` in parameter.
-func (G GlobalConfiguration) SearchIfATopicIsInsideAnAlert(topic common.Hash) Configuration {
-	for _, config := range G.Configuration {
-		for _, event := range config.Events {
-			// fmt.Printf("Comparing %x with %x\n", topic, event.Keccak256_Signature)
-			if topic == event.Keccak256_Signature {
-				return Configuration{Version: config.Version, Name: config.Name, Priority: config.Priority, Addresses: config.Addresses, Events: []Event{event}}
-			}
-
+// ReturnEventsMonitoredForAnAddressFromAConfig will return the list of events monitored for a given address from a given configuration. /!\ This will return the first occurence of the address in the configuration. As we assume currently there is no duplicates into the rules.
+func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddressFromAConfig(target_address common.Address, config Configuration) []Event {
+	for _, address := range config.Addresses {
+		if address == target_address {
+			return config.Events
 		}
 	}
-	return Configuration{}
+	return []Event{} // no events monitored for this address
 
+}
+func (G GlobalConfiguration) ReturnConfigsFromTopic(topic common.Hash) []Configuration {
+	configs := []Configuration{}
+	for _, config := range G.Configuration {
+		for _, event := range config.Events {
+			if topic == event.Keccak256_Signature {
+				configs = append(configs, config)
+			}
+		}
+	}
+	return configs
 }
 
 // ReadYamlFile read a yaml file and return a Configuration struct.
@@ -166,7 +173,7 @@ func (G GlobalConfiguration) DisplayMonitorAddresses(log log.Logger) {
 		} else {
 			for _, address := range config.Addresses {
 				log.Info("", "", "", "Address", address)
-				for _, events := range G.ReturnEventsMonitoredForAnAddress(address) {
+				for _, events := range G.ReturnEventsMonitoredForAnAddressFromAConfig(address, config) {
 					log.Info("", "", "", "", "", "Events", events)
 				}
 			}
