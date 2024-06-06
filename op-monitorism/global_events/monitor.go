@@ -230,9 +230,6 @@ func ReturnConfigFromConfigsAndAddress(address common.Address, configs []Configu
 			}
 		}
 	}
-	if configDefault.Version == "" {
-		fmt.Printf("configs: %#v\n", configs)
-	}
 	return configDefault
 }
 
