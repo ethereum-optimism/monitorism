@@ -80,7 +80,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		log.Crit("Failed to read the yaml rules", "error", err.Error())
 	}
-	// create a globalconfig empty
+
 	globalConfig.DisplayMonitorAddresses(log) //Display all the addresses that are monitored.
 	log.Info("--------------------------------------- End of Infos -----------------------------\n")
 	time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
@@ -160,7 +160,7 @@ func metricsAllEventsRegistered(globalconfig GlobalConfiguration, eventEmitted *
 			continue //pass to the next config so the [] any are not displayed as metrics here.
 		}
 		for _, address := range config.Addresses {
-			for _, event := range globalconfig.ReturnEventsMonitoredForAnAddress(address) {
+			for _, event := range globalconfig.ReturnEventsMonitoredForAnAddressFromAConfig(address, config) {
 				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, event.Keccak256_Signature.Hex(), address.String(), "0", "N/A").Set(float64(0))
 			}
 		}
@@ -201,31 +201,39 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 
 	for _, vLog := range logs {
 		if len(vLog.Topics) > 0 { // Ensure no anonymous event is here.
-			if len(m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0]).Events) > 0 { // We matched an alert!
-				config := m.globalconfig.SearchIfATopicIsInsideAnAlert(vLog.Topics[0])
-				if isAddressIntoConfig(vLog.Address, config) {
-					m.log.Info("Event Detected", "TxHash", vLog.TxHash.String(), "Address", vLog.Address, "Topics", vLog.Topics, "Config", config)
-					m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, config.Events[0].Keccak256_Signature.Hex(), vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Set(float64(1))
+			configs := m.globalconfig.ReturnConfigsFromTopic(vLog.Topics[0])
+			if len(configs) > 0 {
+				config := ReturnConfigFromConfigsAndAddress(vLog.Address, configs)
+				if len(config.Events) == 0 {
+					continue
 				}
+				// We matched an alert!
+				m.log.Info("Event Detected", "TxHash", vLog.TxHash.String(), "Address", vLog.Address, "Topics", vLog.Topics, "Config", config)
+				m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, config.Events[0].Signature, config.Events[0].Keccak256_Signature.Hex(), vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Set(float64(1))
 			}
 		}
-
 	}
 	m.log.Info("Checking events..", "CurrentBlock", latestBlockNumber)
-
 }
 
-// isAddressIntoConfig check if an address is inside the config addresses if the config addresses is empty then we listen for every addresses.
-func isAddressIntoConfig(address common.Address, config Configuration) bool {
-	if len(config.Addresses) == 0 { //return true to listen to every addresses.
-		return true
-	}
-	for _, addr := range config.Addresses { // iterate over all the addresses in the config.
-		if addr == address {
-			return true
+// ReturnConfigFromConfigsAndAddress allows to return the config from the configs and the address.
+func ReturnConfigFromConfigsAndAddress(address common.Address, configs []Configuration) Configuration {
+	configDefault := Configuration{}
+	for _, config := range configs {
+		if len(config.Addresses) == 0 { //return true to listen to every addresses.
+			configDefault = config
+			continue
+		}
+		for _, addr := range config.Addresses { // iterate over all the addresses in the config.
+			if addr == address {
+				return config
+			}
 		}
 	}
-	return false
+	if configDefault.Version == "" {
+		fmt.Printf("configs: %#v\n", configs)
+	}
+	return configDefault
 }
 
 // Close closes the monitor.
