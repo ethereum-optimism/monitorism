@@ -6,6 +6,7 @@ import (
 
 	monitorism "github.com/ethereum-optimism/monitorism/op-monitorism"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/balances"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/drippie"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/fault"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/global_events"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
@@ -60,6 +61,13 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Description: "Monitors account balances",
 				Flags:       append(balances.CLIFlags("BALANCE_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(BalanceMain),
+			},
+			{
+				Name:        "drippie",
+				Usage:       "Monitors Drippie contract",
+				Description: "Monitors Drippie contract",
+				Flags:       append(drippie.CLIFlags("DRIPPIE_MON"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(DrippieMain),
 			},
 			{
 				Name:        "global_events",
@@ -155,6 +163,22 @@ func BalanceMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lif
 	monitor, err := balances.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create balance monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+
+func DrippieMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := drippie.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse drippie config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := drippie.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create drippie monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
