@@ -238,7 +238,7 @@ workflows:
           publish: true
           release: true
           context:
-            - oplabs-gcr-release
+            - oplabs-gcr
   main:
     when:
       and:
