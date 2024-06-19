@@ -186,7 +186,13 @@ jobs:
                   - "<<parameters.docker_name>>.tar"
       - when:
           condition:
-            equal: [main, << pipeline.git.branch >>]
+            or:
+              - and:
+                - "<<parameters.publish>>"
+                - "<<parameters.release>>"
+              - and: 
+                - "<<parameters.publish>>"
+                - equal: [main, << pipeline.git.branch >>]
           steps:
             - gcp-oidc-authenticate:
                 service_account_email: GCP_SERVICE_ATTESTOR_ACCOUNT_EMAIL
@@ -209,6 +215,30 @@ jobs:
                       --attestor-key-id="//cloudkms.googleapis.com/v1/projects/$ATTESTOR_PROJECT_NAME/locations/global/keyRings/$ATTESTOR_NAME-key-ring/cryptoKeys/$ATTESTOR_NAME-key/cryptoKeyVersions/1"
   
 workflows:
+  release:
+    jobs:
+      - hold:
+          type: approval
+          filters:
+            tags:
+              only: /^op-monitorism\/v.*/
+            branches:
+              ignore: /.*/
+      - docker-build:
+          name: op-monitorism-docker-release
+          filters:
+            tags:
+              only: /^op-monitorism\/v.*/
+            branches:
+              ignore: /.*/
+          docker_name: op-monitorism
+          docker_tags: <<pipeline.git.revision>>
+          requires: ['hold']
+          platforms: "linux/amd64,linux/arm64"
+          publish: true
+          release: true
+          context:
+            - oplabs-gcr-release
   main:
     when:
       and:
