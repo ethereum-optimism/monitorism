@@ -235,7 +235,7 @@ workflows:
             branches:
               ignore: /.*/
           docker_name: op-monitorism
-          docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
+          docker_tags: <<pipeline.git.revision>>
           requires: ['hold']
           platforms: "linux/amd64,linux/arm64"
           publish: true
