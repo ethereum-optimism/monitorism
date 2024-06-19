@@ -23,6 +23,10 @@ op-monitorism:
 	make -C ./op-monitorism 
 .PHONY: op-monitorism
 
+tidy:
+	make -C ./op-monitorism tidy
+.PHONY: tidy
+
 clean:
 	rm -rf ./bin
 .PHONY: clean
