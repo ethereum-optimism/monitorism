@@ -186,9 +186,6 @@ jobs:
                   - "<<parameters.docker_name>>.tar"
       - when:
           condition:
-            # or:
-            #   - "<<parameters.publish>>"
-            #   - "<<parameters.release>>"
             or:
               - and:
                 - "<<parameters.publish>>"
