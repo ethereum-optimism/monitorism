@@ -171,8 +171,6 @@ jobs:
               $DOCKER_OUTPUT_DESTINATION \
               <<parameters.docker_name>>
 
-            echo << pipeline.git.branch >>
-
           no_output_timeout: 45m
       - when:
           condition: "<<parameters.save_image_tag>>"
@@ -191,11 +189,13 @@ jobs:
             # or:
             #   - "<<parameters.publish>>"
             #   - "<<parameters.release>>"
-            and:
-              - or:
+            or:
+              - and:
                 - "<<parameters.publish>>"
                 - "<<parameters.release>>"
-              - equal: [main, << pipeline.git.branch >>]
+              - and: 
+                - "<<parameters.publish>>"
+                - equal: [main, << pipeline.git.branch >>]
           steps:
             - gcp-oidc-authenticate:
                 service_account_email: GCP_SERVICE_ATTESTOR_ACCOUNT_EMAIL
