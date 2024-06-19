@@ -13,7 +13,6 @@ import (
 
 	// "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -21,23 +20,15 @@ import (
 )
 
 const (
-	MetricsNamespace = "two_step_monitor"
-
-	// event WithdrawalProven(bytes32 indexed withdrawalHash, address indexed from, address indexed to);
-	WithdrawalProvenEventABI = "WithdrawalProven(bytes32,address,address)"
-)
-
-var (
-	WithdrawalProvenEventABIHash = crypto.Keccak256Hash([]byte(WithdrawalProvenEventABI))
+	MetricsNamespace = "liveness_expiration_mon"
 )
 
 type Monitor struct {
 	log log.Logger
 
 	l1Client *ethclient.Client
-	l2Client *ethclient.Client
 
-	optimismPortalAddress common.Address
+	GnosisSafeAddress common.Address
 	// optimismPortal        *bindings.OptimismPortalCaller
 	// l2ToL1MP              *bindings.L2ToL1MessagePasserCaller
 
@@ -46,10 +37,8 @@ type Monitor struct {
 	GnosisSafe    *bindings.GnosisSafe
 
 	// metrics
-	highestBlockNumber     *prometheus.GaugeVec
-	isDetectingForgeries   prometheus.Gauge
-	withdrawalsValidated   prometheus.Counter
-	nodeConnectionFailures *prometheus.CounterVec
+	highestBlockNumber  *prometheus.GaugeVec
+	unexpectedRpcErrors *prometheus.CounterVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -58,7 +47,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1: %w", err)
 	}
-	fmt.Println("Safe Address: ", cfg.SafeAddress)
 	if cfg.SafeAddress.Cmp(common.Address{}) == 0 {
 		return nil, fmt.Errorf("Incorrect SafeAddress specified is set to -> %s", cfg.SafeAddress)
 	}
@@ -66,8 +54,13 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
-	owners, _ := GnosisSafe.GetOwners(nil)
-	fmt.Println(owners)
+
+	log.Info("----------------------- Liveness Expiration Monitoring (Infos) -----------------------------")
+	log.Info("", "Safe Address", cfg.SafeAddress)
+	log.Info("", "Interval", cfg.LoopIntervalMsec)
+	log.Info("", "L1RpcUrl", cfg.L1NodeURL)
+	log.Info("--------------------------- End of Infos -------------------------------------------------------")
+
 	// l2Client, err := ethclient.Dial(cfg.L2NodeURL)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("failed to dial l2: %w", err)
@@ -85,37 +78,32 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	return &Monitor{
 		log: log,
 
-		l1Client:   l1Client,
-		GnosisSafe: GnosisSafe,
+		l1Client:          l1Client,
+		GnosisSafe:        GnosisSafe,
+		GnosisSafeAddress: cfg.SafeAddress,
 		// optimismPortal: optimismPortal,
 		// l2ToL1MP:       l2ToL1MP,
 
 		/** Metrics **/
-		isDetectingForgeries: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "isDetectingForgeries",
-			Help:      "0 if state is ok. 1 if forged withdrawals are detected",
-		}),
-		withdrawalsValidated: m.NewCounter(prometheus.CounterOpts{
-			Namespace: MetricsNamespace,
-			Name:      "withdrawalsValidated",
-			Help:      "number of withdrawals succesfully validated",
-		}),
 		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "highestBlockNumber",
 			Help:      "observed l1 heights (checked and known)",
 		}, []string{"type"}),
-		nodeConnectionFailures: m.NewCounterVec(prometheus.CounterOpts{
+		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
-			Name:      "nodeConnectionFailures",
-			Help:      "number of times node connection has failed",
-		}, []string{"layer", "section"}),
+			Name:      "unexpectedRpcErrors",
+			Help:      "number of unexpcted rpc errors",
+		}, []string{"section", "name"}),
 	}, nil
 }
 
 func (m *Monitor) Run(ctx context.Context) {
-	latestL1Height, _ := m.l1Client.BlockNumber(ctx)
+	latestL1Height, err := m.l1Client.BlockNumber(ctx)
+	if err != nil {
+		m.log.Error("failed to query latest block number", "err", err)
+		m.unexpectedRpcErrors.WithLabelValues("l1", "blockNumber").Inc()
+	}
 
 	m.log.Info("", "BlockNumber", latestL1Height)
 
@@ -125,7 +113,8 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	GnosisSafe, err := m.GnosisSafe.GetOwners(nil)
 	if err != nil {
-		m.log.Error("failed to query latest block number", "err", err)
+		m.log.Error("failed to query the method `GetOwners`", "err", err, "blockNumber", latestL1Height)
+		m.unexpectedRpcErrors.WithLabelValues("l1", "GetOwners").Inc()
 	}
 
 	// 1. call the safe.owners()
@@ -133,7 +122,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	// 3. save the livenessInterval()
 	// 4. Need to understand this => (lock.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
 
-	m.log.Info("", "Owners", GnosisSafe)
+	m.log.Info("", "Current Owners", GnosisSafe, "SafeAddress", m.GnosisSafeAddress, "highestBlockNumber", latestL1Height)
 	// Update markers
 	// m.nextL1Height = toBlockNumber + 1
 	// m.isDetectingForgeries.Set(0)

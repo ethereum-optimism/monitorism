@@ -23,9 +23,7 @@ const (
 )
 
 type CLIConfig struct {
-	L1NodeURL string
-	L2NodeURL string
-
+	L1NodeURL             string
 	EventBlockRange       uint64
 	LoopIntervalMsec      uint64
 	StartingL1BlockHeight uint64
@@ -36,7 +34,6 @@ type CLIConfig struct {
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
 		L1NodeURL:             ctx.String(L1NodeURLFlagName),
-		L2NodeURL:             ctx.String(L2NodeURLFlagName),
 		EventBlockRange:       ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
 		LoopIntervalMsec:      ctx.Uint64(LoopIntervalMsecFlagName),
