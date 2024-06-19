@@ -139,11 +139,11 @@ jobs:
             # Create, start (bootstrap) and use a *named* docker builder
             # This allows us to cross-build multi-platform,
             # and naming allows us to use the DLC (docker-layer-cache)
-            # docker buildx create --driver=docker-container --name=buildx-build --bootstrap --use
+            gcloud auth configure-docker <<parameters.registry>>
+            docker buildx create --driver=docker-container --name=buildx-build --bootstrap --use
 
             DOCKER_OUTPUT_DESTINATION=""
             if [ "<<parameters.publish>>" == "true" ]; then
-              gcloud auth configure-docker <<parameters.registry>>
               echo "Building for platforms $PLATFORMS and then publishing to registry"
               DOCKER_OUTPUT_DESTINATION="--push"
               if [ "<<parameters.save_image_tag>>" != "" ]; then
