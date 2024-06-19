@@ -81,8 +81,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1Client:          l1Client,
 		GnosisSafe:        GnosisSafe,
 		GnosisSafeAddress: cfg.SafeAddress,
-		// optimismPortal: optimismPortal,
-		// l2ToL1MP:       l2ToL1MP,
 
 		/** Metrics **/
 		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
@@ -116,7 +114,8 @@ func (m *Monitor) Run(ctx context.Context) {
 		m.log.Error("failed to query the method `GetOwners`", "err", err, "blockNumber", latestL1Height)
 		m.unexpectedRpcErrors.WithLabelValues("l1", "GetOwners").Inc()
 	}
-
+	// Liveness module mainnet  -> https://etherscan.io/address/0x0454092516c9A4d636d3CAfA1e82161376C8a748
+	// Liveness guard mainnet  ->  https://etherscan.io/address/0x24424336F04440b1c28685a38303aC33C9D14a25
 	// 1. call the safe.owners()
 	// 2. livenessGuard.lastLive(owner)
 	// 3. save the livenessInterval()
