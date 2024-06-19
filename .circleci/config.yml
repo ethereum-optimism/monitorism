@@ -188,11 +188,14 @@ jobs:
                   - "<<parameters.docker_name>>.tar"
       - when:
           condition:
-            and:
-              - or:
-                - "<<parameters.publish>>"
-                - "<<parameters.release>>"
-              - equal: [main, << pipeline.git.branch >>]
+            or:
+              - "<<parameters.publish>>"
+              - "<<parameters.release>>"
+            # and:
+            #   - or:
+            #     - "<<parameters.publish>>"
+            #     - "<<parameters.release>>"
+            #   - equal: [main, << pipeline.git.branch >>]
           steps:
             - gcp-oidc-authenticate:
                 service_account_email: GCP_SERVICE_ATTESTOR_ACCOUNT_EMAIL
