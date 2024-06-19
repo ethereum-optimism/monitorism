@@ -170,7 +170,7 @@ jobs:
               -f docker-bake.hcl \
               $DOCKER_OUTPUT_DESTINATION \
               <<parameters.docker_name>>
-              
+
             echo << pipeline.git.branch >>
 
           no_output_timeout: 45m
@@ -215,6 +215,30 @@ jobs:
                       --attestor-key-id="//cloudkms.googleapis.com/v1/projects/$ATTESTOR_PROJECT_NAME/locations/global/keyRings/$ATTESTOR_NAME-key-ring/cryptoKeys/$ATTESTOR_NAME-key/cryptoKeyVersions/1"
   
 workflows:
+  release:
+    jobs:
+      - hold:
+          type: approval
+          filters:
+            tags:
+              only: /^op-monitorism\/v.*/
+            branches:
+              ignore: /.*/
+      - docker-build:
+          name: op-monitorism-docker-release
+          filters:
+            tags:
+              only: /^op-monitorism\/v.*/
+            branches:
+              ignore: /.*/
+          docker_name: op-monitorism
+          docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
+          requires: ['hold']
+          platforms: "linux/amd64,linux/arm64"
+          publish: true
+          release: true
+          context:
+            - oplabs-gcr-release
   main:
     when:
       and:
