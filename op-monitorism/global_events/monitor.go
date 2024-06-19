@@ -212,7 +212,7 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 				m.log.Info("Event Detected", "TxHash", vLog.TxHash.String(), "Address", vLog.Address, "Topics", vLog.Topics, "Config", config, "event_config.Signature", event_config.Signature, "event_config.Keccak256_Signature", event_config.Keccak256_Signature.Hex())
 				// m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, event_config.Signature, event_config.Keccak256_Signature.Hex(), vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Set(float64(1)) //inc
 
-				m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, event_config.Signature, vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Inc()
+				m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, event_config.Signature, event_config.Keccak256_Signature.Hex(), vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Inc()
 			}
 		}
 	}
