@@ -38,7 +38,7 @@ type Monitor struct {
 	yamlconfig Configuration
 
 	// Prometheus metrics
-	eventEmitted        *prometheus.GaugeVec
+	eventEmitted        *prometheus.CounterVec
 	unexpectedRpcErrors *prometheus.CounterVec
 	CurrentBlock        *prometheus.GaugeVec
 }
@@ -90,7 +90,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		globalconfig: globalConfig,
 
 		nickname: cfg.Nickname,
-		eventEmitted: m.NewGaugeVec(prometheus.GaugeOpts{
+		eventEmitted: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "eventEmitted",
 			Help:      "Event monitored emitted an log",
@@ -151,17 +151,17 @@ func (m *Monitor) Run(ctx context.Context) {
 }
 
 // metricsAllEventsRegistered allows to emit all the events at the start of the program with the values set to `0`.
-func metricsAllEventsRegistered(globalconfig GlobalConfiguration, eventEmitted *prometheus.GaugeVec, nickname string) {
+func metricsAllEventsRegistered(globalconfig GlobalConfiguration, eventEmitted *prometheus.CounterVec, nickname string) {
 	for _, config := range globalconfig.Configuration {
 		if len(config.Addresses) == 0 {
 			for _, event := range config.Events {
-				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, event.Keccak256_Signature.Hex(), "ANY_ADDRESSES_[]", "0", "N/A").Set(float64(0))
+				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, event.Keccak256_Signature.Hex(), "ANY_ADDRESSES_[]", "0", "N/A").Add(0)
 			}
 			continue //pass to the next config so the [] any are not displayed as metrics here.
 		}
 		for _, address := range config.Addresses {
 			for _, event := range globalconfig.ReturnEventsMonitoredForAnAddressFromAConfig(address, config) {
-				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, event.Keccak256_Signature.Hex(), address.String(), "0", "N/A").Set(float64(0))
+				eventEmitted.WithLabelValues(nickname, config.Name, config.Priority, event.Signature, event.Keccak256_Signature.Hex(), address.String(), "0", "N/A").Add(0)
 			}
 		}
 	}
@@ -210,7 +210,9 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 				// We matched an alert!
 				event_config := ReturnAndEventForAnTopic(vLog.Topics[0], config)
 				m.log.Info("Event Detected", "TxHash", vLog.TxHash.String(), "Address", vLog.Address, "Topics", vLog.Topics, "Config", config, "event_config.Signature", event_config.Signature, "event_config.Keccak256_Signature", event_config.Keccak256_Signature.Hex())
-				m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, event_config.Signature, event_config.Keccak256_Signature.Hex(), vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Set(float64(1))
+				// m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, event_config.Signature, event_config.Keccak256_Signature.Hex(), vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Set(float64(1)) //inc
+
+				m.eventEmitted.WithLabelValues(m.nickname, config.Name, config.Priority, event_config.Signature, vLog.Address.String(), latestBlockNumber.String(), vLog.TxHash.String()).Inc()
 			}
 		}
 	}
