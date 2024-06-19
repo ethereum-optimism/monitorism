@@ -3,6 +3,10 @@ A blockchain surveillance tool that supports monitoring for the OP Stack and EVM
 
 ⚠️  Caution: *Monitorism* is currently in its beta phase and is under active migration 🔨. This implies that *Monitorism* is presently not fully stable. ⚠️
 
+## Development
+After cloning, please run `./bootstrap.sh` to set up the development environment correctly.
+
+## Intro
 The cli has the ability to spin up a monitor for varying activities, each emmitting metrics used to setup alerts.
 ```
 COMMANDS:

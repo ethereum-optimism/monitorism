@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Run go mod tidy
+make tidy 
+
+# Check for uncommitted changes in go.mod and go.sum
+CHANGED=$(git status --porcelain | grep -E "go.mod|go.sum")
+if [ -n "$CHANGED" ]; then
+    echo "There are changes in go.mod or go.sum after running go mod tidy."
+    echo "Please commit the changes before pushing."
+    exit 1
+fi
+
+exit 0

@@ -234,7 +234,7 @@ workflows:
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>
           requires: ['hold']
-          platforms: "linux/amd64,linux/arm64"
+          platforms: "linux/amd64"
           publish: true
           release: true
           context:
@@ -250,6 +250,7 @@ workflows:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
+          platforms: "linux/amd64"
           publish: true
           context:
             - oplabs-gcr

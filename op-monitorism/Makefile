@@ -37,6 +37,12 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BUILD_DIR)/$(BINARY)
 
+# Run program
+.PHONY: tidy
+tidy:
+	@echo "Tidying..."
+	go mod tidy
+
 # Help
 .PHONY: help
 help:
