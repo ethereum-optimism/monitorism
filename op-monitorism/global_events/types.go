@@ -172,9 +172,9 @@ func (G GlobalConfiguration) DisplayMonitorAddresses(log log.Logger) {
 			}
 		} else {
 			for _, address := range config.Addresses {
-				log.Info("", "", "", "Address", address)
+				log.Info("   ", " Address", address)
 				for _, events := range G.ReturnEventsMonitoredForAnAddressFromAConfig(address, config) {
-					log.Info("", "", "", "", "", "Events", events)
+					log.Info("", "    Events", events)
 				}
 			}
 		}
