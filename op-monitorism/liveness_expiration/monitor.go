@@ -28,17 +28,18 @@ type Monitor struct {
 
 	l1Client *ethclient.Client
 
-	GnosisSafeAddress common.Address
 	// optimismPortal        *bindings.OptimismPortalCaller
 	// l2ToL1MP              *bindings.L2ToL1MessagePasserCaller
 
-	maxBlockRange uint64
-	nextL1Height  uint64
-	GnosisSafe    *bindings.GnosisSafe
-
-	// metrics
-	highestBlockNumber  *prometheus.GaugeVec
-	unexpectedRpcErrors *prometheus.CounterVec
+	maxBlockRange        uint64
+	nextL1Height         uint64
+	GnosisSafe           *bindings.GnosisSafe
+	GnosisSafeAddress    common.Address
+	LivenessGuard        *bindings.GnosisSafe
+	LivenessGuardAddress *bindings.GnosisSafe
+	LivenessModule       common.Address
+	highestBlockNumber   *prometheus.GaugeVec
+	unexpectedRpcErrors  *prometheus.CounterVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -48,9 +49,19 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to dial l1: %w", err)
 	}
 	if cfg.SafeAddress.Cmp(common.Address{}) == 0 {
-		return nil, fmt.Errorf("Incorrect SafeAddress specified is set to -> %s", cfg.SafeAddress)
+		return nil, fmt.Errorf("The `SafeAddress` specified is set to -> %s", cfg.SafeAddress)
 	}
 	GnosisSafe, err := bindings.NewGnosisSafe(cfg.SafeAddress, l1Client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
+	}
+
+	LivenessGuard, err := bindings.NewGnosisSafe(cfg.SafeAddress, l1Client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
+	}
+
+	LivenessModule, err := bindings.NewGnosisSafe(cfg.SafeAddress, l1Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
@@ -82,6 +93,10 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		GnosisSafe:        GnosisSafe,
 		GnosisSafeAddress: cfg.SafeAddress,
 
+		LivenessGuard:         GnosisSafe,
+		LivenessGuardAddress:  cfg.LivenessGuardAddress,
+		LivenessModule:        GnosisSafe,
+		LivenessModuleAddress: cfg.LivenessModuleAddress,
 		/** Metrics **/
 		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
@@ -114,6 +129,7 @@ func (m *Monitor) Run(ctx context.Context) {
 		m.log.Error("failed to query the method `GetOwners`", "err", err, "blockNumber", latestL1Height)
 		m.unexpectedRpcErrors.WithLabelValues("l1", "GetOwners").Inc()
 	}
+
 	// Liveness module mainnet  -> https://etherscan.io/address/0x0454092516c9A4d636d3CAfA1e82161376C8a748
 	// Liveness guard mainnet  ->  https://etherscan.io/address/0x24424336F04440b1c28685a38303aC33C9D14a25
 	// 1. call the safe.owners()

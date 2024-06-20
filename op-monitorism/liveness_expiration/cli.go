@@ -28,7 +28,9 @@ type CLIConfig struct {
 	LoopIntervalMsec      uint64
 	StartingL1BlockHeight uint64
 
-	SafeAddress common.Address
+	LivenessModuleAddress common.Address
+	LivenessGuardAddress  common.Address
+	SafeAddress           common.Address
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
