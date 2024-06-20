@@ -31,15 +31,16 @@ type Monitor struct {
 	// optimismPortal        *bindings.OptimismPortalCaller
 	// l2ToL1MP              *bindings.L2ToL1MessagePasserCaller
 
-	maxBlockRange        uint64
-	nextL1Height         uint64
-	GnosisSafe           *bindings.GnosisSafe
-	GnosisSafeAddress    common.Address
-	LivenessGuard        *bindings.GnosisSafe
-	LivenessGuardAddress *bindings.GnosisSafe
-	LivenessModule       common.Address
-	highestBlockNumber   *prometheus.GaugeVec
-	unexpectedRpcErrors  *prometheus.CounterVec
+	maxBlockRange         uint64
+	nextL1Height          uint64
+	GnosisSafe            *bindings.GnosisSafe
+	GnosisSafeAddress     common.Address
+	LivenessGuard         *bindings.LivenessGuard
+	LivenessGuardAddress  common.Address
+	LivenessModule        *bindings.LivenessModule
+	LivenessModuleAddress common.Address
+	highestBlockNumber    *prometheus.GaugeVec
+	unexpectedRpcErrors   *prometheus.CounterVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -56,18 +57,20 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
 
-	LivenessGuard, err := bindings.NewGnosisSafe(cfg.SafeAddress, l1Client)
+	LivenessGuard, err := bindings.NewLivenessGuard(cfg.SafeAddress, l1Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
 
-	LivenessModule, err := bindings.NewGnosisSafe(cfg.SafeAddress, l1Client)
+	LivenessModule, err := bindings.NewLivenessModule(cfg.SafeAddress, l1Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
 
 	log.Info("----------------------- Liveness Expiration Monitoring (Infos) -----------------------------")
 	log.Info("", "Safe Address", cfg.SafeAddress)
+	log.Info("", "LivenessModuleAddress", cfg.LivenessModuleAddress)
+	log.Info("", "LivenessGuardAddress", cfg.LivenessGuardAddress)
 	log.Info("", "Interval", cfg.LoopIntervalMsec)
 	log.Info("", "L1RpcUrl", cfg.L1NodeURL)
 	log.Info("--------------------------- End of Infos -------------------------------------------------------")
@@ -89,13 +92,13 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	return &Monitor{
 		log: log,
 
-		l1Client:          l1Client,
-		GnosisSafe:        GnosisSafe,
-		GnosisSafeAddress: cfg.SafeAddress,
+		l1Client: l1Client,
 
-		LivenessGuard:         GnosisSafe,
+		GnosisSafe:            GnosisSafe,
+		GnosisSafeAddress:     cfg.SafeAddress,
+		LivenessGuard:         LivenessGuard,
 		LivenessGuardAddress:  cfg.LivenessGuardAddress,
-		LivenessModule:        GnosisSafe,
+		LivenessModule:        LivenessModule,
 		LivenessModuleAddress: cfg.LivenessModuleAddress,
 		/** Metrics **/
 		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
