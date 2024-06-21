@@ -1,7 +1,7 @@
 # Liveness expiration Monitoring
 
 This Liveness expiration module is a monitoring dedicated for the safes of the Optimism network.
-Ensuring that owners that operates the safes or any important actions are still actives enough.
+Ensuring that owners that operates the safes and performs any important actions are still actives enough.
 
 ![ab27497cea05fbd51b7b1c2ecde5bc69307ac0f27349f6bba4f3f21423116071](https://github.com/ethereum-optimism/monitorism/assets/23560242/af7a7e29-fff5-4df3-82f0-94c2f28fde84)
 
@@ -41,6 +41,8 @@ This tools allows the monitoring of multiples metrics like:
 `highestBlockNumber`: The lastest block number height on L1.
 `lastLiveOfAOwner`: Get the last activities for a given safe owner on L1.
 `intervalLiveness`: the interval (in seconds) from the LivenessModule on L1.
+
+The logic for the rules detection is not inside the binary `liveness_expiration` as this is integrated with prometheus. The rules are located in the Prometheus/Grafana side.
 
 ### Execution
 
