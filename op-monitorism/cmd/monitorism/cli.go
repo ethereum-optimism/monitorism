@@ -9,10 +9,10 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/drippie"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/fault"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/global_events"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/secrets"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
-
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -82,7 +82,14 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Usage:       "Monitors global events with YAML configuration",
 				Description: "Monitors global events with YAML configuration",
 				Flags:       append(global_events.CLIFlags("GLOBAL_EVENT_MON"), defaultFlags...),
-				Action:      cliapp.LifecycleCmd(global_eventsMain),
+				Action:      cliapp.LifecycleCmd(GlobalEventMain),
+			},
+			{
+				Name:        "liveness_expiration",
+				Usage:       "Monitor the liveness expiration on Gnosis Safe.",
+				Description: "Monitor the liveness expiration on Gnosis Safe.",
+				Flags:       append(liveness_expiration.CLIFlags("LIVENESS_EXPIRATION_MON"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(LivenessExpirationMain),
 			},
 			{
 				Name:        "version",
@@ -97,7 +104,22 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 	}
 }
 
-func global_eventsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+func LivenessExpirationMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := liveness_expiration.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse LivenessExpiration config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := liveness_expiration.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create LivenessExpiration monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+func GlobalEventMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := global_events.ReadCLIFlags(ctx)
 	if err != nil {
