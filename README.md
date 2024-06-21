@@ -7,47 +7,45 @@ A blockchain surveillance tool that supports monitoring for the OP Stack and EVM
 The list of all the monitors currently built into monitorism is below.
 
 ### Global Events Monitor
- ![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
+
+![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
 
 The Gloval Events Monitor is made for to taking YAML rules as configuration and monitoring the events that are emitted on the chain.
 
-| `op-monitorism/global_events` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/global_events/README.md) |
-| - | - |
+| `op-monitorism/global_events` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/global_events/README.md) |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
 
 ### Liveness Expiration Monitor
 
- ![ab27497cea05fbd51b7b1c2ecde5bc69307ac0f27349f6bba4f3f21423116071](https://github.com/ethereum-optimism/monitorism/assets/23560242/af7a7e29-fff5-4df3-82f0-94c2f28fde84)
-
+![ab27497cea05fbd51b7b1c2ecde5bc69307ac0f27349f6bba4f3f21423116071](https://github.com/ethereum-optimism/monitorism/assets/23560242/af7a7e29-fff5-4df3-82f0-94c2f28fde84)
 
 The Liveness Expiration Monitor is made for monitoring the liveness expiration on Safes.
 
-| `op-monitorism/liveness_expiration` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/liveness_expiration/README.md) |
-| - | - |
-
+| `op-monitorism/liveness_expiration` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/liveness_expiration/README.md) |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 
 ### Fault Monitor
 
- The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract.
- On change, reconstructing the output root from a trusted L2 source and looking for a match.
+The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract.
+On change, reconstructing the output root from a trusted L2 source and looking for a match.
 
-| `op-monitorism/fault` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/fault/README.md) |
-| - | - |
+| `op-monitorism/fault` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/fault/README.md) |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
 
 ### Withdrawals Monitor
 
- The withdrawals monitor checks for new withdrawals that have been proven to the `OptimismPortal` contract.
- Each withdrawal is checked against the `L2ToL1MessagePasser` contract.
+The withdrawals monitor checks for new withdrawals that have been proven to the `OptimismPortal` contract.
+Each withdrawal is checked against the `L2ToL1MessagePasser` contract.
 
-
-| `op-monitorism/withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/withdrawals/README.md) |
-| - | - |
+| `op-monitorism/withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/withdrawals/README.md) |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
 
 ### Balances Monitor
 
 The balances monitor simply emits a metric reporting the balances for the configured accounts.
 
-| `op-monitorism/balances` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/balances/README.md) |
-| - | - |
+| `op-monitorism/balances` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/balances/README.md) |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
 
 ### Multisig Monitor
 
@@ -56,22 +54,22 @@ If set, the latest nonce of the configued `Safe` address. And also if set, the l
 The latest presigned nonce is identifyed by looking for items in the configued vault that follow a `ready-<nonce>.json` name.
 The highest nonce of this item name format is reported.
 
-| `op-monitorism/multisig` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/multisig/README.md) |
-| - | - |
+| `op-monitorism/multisig` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/multisig/README.md) |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
 
 ### Drippie Monitor
 
 The drippie monitor tracks the execution and executability of drips within a Drippie contract.
 
-| `op-monitorism/drippie` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/drippie/README.md) |
-| - | - |
+| `op-monitorism/drippie` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/multisig/README.md) |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
 
 ### Secrets Monitor
 
 The secrets monitor takes a Drippie contract as a parameter and monitors for any drips within that contract that use the CheckSecrets dripcheck contract. CheckSecrets is a dripcheck that allows a drip to begin once a specific secret has been revealed (after a delay period) and cancels the drip if a second secret is revealed. It's important to monitor for these secrets being revealed as this could be a sign that the secret storage platform has been compromised and someone is attempting to exflitrate the ETH controlled by that drip.
 
-| `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/aba37ff58b3503018ae5dbad5e5473af670834bc/op-monitorism/secrets/README.md) |
-| - | - |
+| `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/multisig/README.md) |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
 
 ## CLI and Docs
 
