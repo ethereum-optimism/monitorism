@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	L1NodeURLFlagName = "l1.node.url"
-	L2NodeURLFlagName = "l2.node.url"
-
+	L1NodeURLFlagName             = "l1.node.url"
 	EventBlockRangeFlagName       = "event.block.range"
 	StartingL1BlockHeightFlagName = "start.block.height"
 
-	SafeAddressFlagName      = "safe.address"
-	LoopIntervalMsecFlagName = "loop.interval.msec"
+	SafeAddressFlagName           = "safe.address"
+	LivenessModuleAddressFlagName = "livenessmodule.address"
+	LivenessGuardAddressFlagName  = "livenessguard.address"
+	LoopIntervalMsecFlagName      = "loop.interval.msec"
 )
 
 type CLIConfig struct {
@@ -40,6 +40,8 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
 		LoopIntervalMsec:      ctx.Uint64(LoopIntervalMsecFlagName),
 		SafeAddress:           common.HexToAddress(ctx.String(SafeAddressFlagName)),
+		LivenessModuleAddress: common.HexToAddress(ctx.String(LivenessModuleAddressFlagName)),
+		LivenessGuardAddress:  common.HexToAddress(ctx.String(LivenessGuardAddressFlagName)),
 	}
 
 	if cfg.LoopIntervalMsec == 0 {
@@ -70,9 +72,21 @@ func CLIFlags(envVar string) []cli.Flag {
 			Required: false,
 		},
 		&cli.StringFlag{
+			Name:     LivenessModuleAddressFlagName,
+			Usage:    "Address of the LivenessModuleAddress contract",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "LIVENESS_MODULE_ADDRESS"),
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     LivenessGuardAddressFlagName,
+			Usage:    "Address of the LivenessGuardAddress contract",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "LIVENESS_GUARD_ADDRESS"),
+			Required: true,
+		},
+		&cli.StringFlag{
 			Name:     SafeAddressFlagName,
 			Usage:    "Address of the safe contract",
-			EnvVars:  opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			EnvVars:  opservice.PrefixEnvVar(envVar, "SAFE_ADDRESS"),
 			Required: true,
 		},
 	}
