@@ -3,19 +3,11 @@ package liveness_expiration
 import (
 	"context"
 	"fmt"
-	// "math/big"
-
 	"github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration/bindings"
-	// "github.com/ethereum/go-ethereum/accounts/abi/bind"
-	// "github.com/ethereum-optimism/optimism/op-bindings/bindings"
-	// "github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
-
-	// "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -24,15 +16,10 @@ const (
 )
 
 type Monitor struct {
-	log log.Logger
-
+	log      log.Logger
 	l1Client *ethclient.Client
 
-	// optimismPortal        *bindings.OptimismPortalCaller
-	// l2ToL1MP              *bindings.L2ToL1MessagePasserCaller
-
-	maxBlockRange         uint64
-	nextL1Height          uint64
+	/** Contracts **/
 	GnosisSafe            *bindings.GnosisSafe
 	GnosisSafeAddress     common.Address
 	LivenessGuard         *bindings.LivenessGuard
@@ -47,6 +34,7 @@ type Monitor struct {
 	blockTimestamp      *prometheus.GaugeVec
 }
 
+// NewMonitor creates a new monitor.
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	log.Info("Starting the liveness expiration monitoring...")
 	l1Client, err := ethclient.Dial(cfg.L1NodeURL)
@@ -87,20 +75,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	log.Info("", "L1RpcUrl", cfg.L1NodeURL)
 	log.Info("--------------------------- End of Infos -------------------------------------------------------")
 
-	// l2Client, err := ethclient.Dial(cfg.L2NodeURL)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to dial l2: %w", err)
-	// }
-	//
-	// optimismPortal, err := bindings.NewOptimismPortalCaller(cfg.OptimismPortalAddress, l1Client)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
-	// }
-	// l2ToL1MP, err := bindings.NewL2ToL1MessagePasserCaller(predeploys.L2ToL1MessagePasserAddr, l2Client)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
-	// }
-
 	return &Monitor{
 		log: log,
 
@@ -117,7 +91,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Namespace: MetricsNamespace,
 			Name:      "highestBlockNumber",
 			Help:      "observed l1 heights (checked and known)",
-		}, []string{"type"}),
+		}, []string{"blockNumber"}),
 		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "unexpectedRpcErrors",
@@ -141,6 +115,15 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}, nil
 }
 
+// Run is the main loop of the monitor.
+// This loop will update the metrics `blockTimestamp`, `highestBlockNumber`, `lastLiveOfAOwner`, `intervalLiveness`.
+// Thanks to these metrics we can monitor the liveness expiration through  (block.timestamp + BUFFER > lastLive(owner) + livenessInterval).
+// NOTE: 	// Liveness module mainnet  -> https://etherscan.io/address/0x0454092516c9A4d636d3CAfA1e82161376C8a748
+// Liveness guard mainnet  ->  https://etherscan.io/address/0x24424336F04440b1c28685a38303aC33C9D14a25
+// 1. call the safe.owners()
+// 2. livenessGuard.lastLive(owner)
+// 3. save the livenessInterval()
+// 4. Ensure that the invariant is not broken -> (block.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
 func (m *Monitor) Run(ctx context.Context) {
 	latestL1Height, err := m.l1Client.BlockNumber(ctx)
 	if err != nil {
@@ -150,18 +133,14 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	m.log.Info("", "BlockNumber", latestL1Height)
 
-	// callOpts := bind.CallOpts{
-	// 	BlockNumber: big.NewInt(int64(latestL1Height)),
-	// }
-
-	listOwners, err := m.GnosisSafe.GetOwners(nil) // 1. Get the owners from the safe.
+	listOwners, err := m.GnosisSafe.GetOwners(nil) // 1. Get the list of owner from the safe.
 	if err != nil {
 		m.log.Error("failed to query the method `GetOwners`", "err", err, "blockNumber", latestL1Height)
 		m.unexpectedRpcErrors.WithLabelValues("l1", "GetOwners").Inc()
 	}
 
 	for _, owner := range listOwners {
-		lastLive, err := m.LivenessGuard.LastLive(nil, owner) // 2. Get the last live from the liveness guard.
+		lastLive, err := m.LivenessGuard.LastLive(nil, owner) // 2. Get the last live from the liveness guard for each owner
 		if err != nil {
 			m.log.Error("failed to query the method `LastLive`", "err", err, "blockNumber", latestL1Height)
 			m.unexpectedRpcErrors.WithLabelValues("l1", "LastLive").Inc()
@@ -176,23 +155,13 @@ func (m *Monitor) Run(ctx context.Context) {
 		m.unexpectedRpcErrors.WithLabelValues("l1", "LivenessInterval").Inc()
 	}
 	m.intervalLiveness.WithLabelValues("interval").Set(float64(interval.Uint64()))
-	// (block.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
 
 	m.log.Info("", "interval", interval, "Owners", listOwners, "SafeAddress", m.GnosisSafeAddress, "highestBlockNumber", latestL1Height)
 
-	// Liveness module mainnet  -> https://etherscan.io/address/0x0454092516c9A4d636d3CAfA1e82161376C8a748
-	// Liveness guard mainnet  ->  https://etherscan.io/address/0x24424336F04440b1c28685a38303aC33C9D14a25
-	// 1. call the safe.owners()
-	// 2. livenessGuard.lastLive(owner)
-	// 3. save the livenessInterval()
-	// 4. Need to understand this => (lock.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
-
-	// Update markers
-	// m.nextL1Height = toBlockNumber + 1
-	// m.isDetectingForgeries.Set(0)
-	// m.highestBlockNumber.WithLabelValues("checked").Set(float64(toBlockNumber))
+	m.highestBlockNumber.WithLabelValues("blockNumber").Set(float64(latestL1Height))
 }
 
+// Close closes the monitor.
 func (m *Monitor) Close(_ context.Context) error {
 	m.l1Client.Close()
 	return nil
