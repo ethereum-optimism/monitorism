@@ -2,8 +2,6 @@ package liveness_expiration
 
 import (
 	"errors"
-	"fmt"
-
 	"github.com/ethereum/go-ethereum/common"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
@@ -48,12 +46,6 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		return cfg, errors.New("no loop interval configured")
 	}
 
-	portalAddress := ctx.String(SafeAddressFlagName)
-	if !common.IsHexAddress(portalAddress) {
-		return cfg, fmt.Errorf("--%s is not a hex-encoded address", SafeAddressFlagName)
-	}
-	// cfg.OptimismPortalAddress = common.HexToAddress(portalAddress)
-
 	return cfg, nil
 }
 
@@ -67,7 +59,7 @@ func CLIFlags(envVar string) []cli.Flag {
 		},
 		&cli.Uint64Flag{
 			Name:     StartingL1BlockHeightFlagName,
-			Usage:    "Starting height to scan for events",
+			Usage:    "Starting height to scan for events (still not implemented for now.. The monitoring will start at the last block number)",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
 			Required: false,
 		},
