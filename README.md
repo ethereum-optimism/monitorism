@@ -10,7 +10,7 @@ The list of all the monitors currently built into monitorism is below.
 
 ![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
 
-The Gloval Events Monitor is made for to taking YAML rules as configuration and monitoring the events that are emitted on the chain.
+The Global Events Monitor is made for to taking YAML rules as configuration and monitoring the events that are emitted on the chain.
 
 | `op-monitorism/global_events` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/global_events/README.md) |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
