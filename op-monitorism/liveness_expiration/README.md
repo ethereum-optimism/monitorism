@@ -52,12 +52,14 @@ To execute with a oneliner:
 go run ../cmd/monitorism liveness_expiration --safe.address 0xc2819DC788505Aac350142A7A707BF9D03E3Bd03 --l1.node.url https://MySuperRPC --loop.interval.msec 12000 --livenessmodule.address 0x0454092516c9A4d636d3CAfA1e82161376C8a748 --livenessguard.address 0x24424336F04440b1c28685a38303aC33C9D14a25
 ```
 
-Otherwise create an env files with the environment variables present into the Help section.
+Otherwise create an `.env` file with the environment variables present into the _help section_.
+This is useful to run without any CLI arguments.
 
+````bash
 Example:
 
 ```bash
 LIVENESS_EXPIRATION_MON_SAFE_ADDRESS=0xc2819DC788505Aac350142A7A707BF9D03E3Bd03
 LIVENESS_EXPIRATION_MON_LIVENESS_MODULE_ADDRESS=0x0454092516c9A4d636d3CAfA1e82161376C8a748
 LIVENESS_EXPIRATION_MON_LIVENESS_GUARD_ADDRESS=0x24424336F04440b1c28685a38303aC33C9D14a25
-```
+````
