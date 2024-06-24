@@ -29,12 +29,13 @@ type Monitor struct {
 	LivenessModule        *bindings.LivenessModule
 	LivenessModuleAddress common.Address
 	/** Metrics **/
-	highestBlockNumber  *prometheus.GaugeVec
-	unexpectedRpcErrors *prometheus.CounterVec
-	intervalLiveness    *prometheus.GaugeVec
-	lastLiveOfAOwner    *prometheus.GaugeVec
-	blockTimestamp      *prometheus.GaugeVec
-	ownerStalePeriod    *prometheus.GaugeVec
+	highestBlockNumber      *prometheus.GaugeVec
+	unexpectedRpcErrors     *prometheus.CounterVec
+	intervalLiveness        *prometheus.GaugeVec
+	lastLiveOfAOwner        *prometheus.GaugeVec
+	blockTimestamp          *prometheus.GaugeVec
+	ownerStalePeriod        *prometheus.GaugeVec
+	ownerDaysBeforeDeadline *prometheus.GaugeVec
 }
 
 // NewMonitor creates a new monitor.
@@ -110,6 +111,11 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Name:      "lastLiveOfAOwner",
 			Help:      "Last Live of an owner from the liveness guard, means the last time an owner make an action.",
 		}, []string{"address"}),
+		ownerDaysBeforeDeadline: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "ownerDaysBeforeDeadline",
+			Help:      "Number of days before the deadline is reached for a specific owner.",
+		}, []string{"safeOwnerAddress"}),
 		ownerStalePeriod: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "ownerStalePeriod",
@@ -152,8 +158,6 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 	now := blockTimestamp.Time()
 
-	m.log.Info("", "BlockNumber", latestL1Height)
-
 	listOwners, err := m.GnosisSafe.GetOwners(nil) // 1. Get the list of owner from the safe.
 	if err != nil {
 		m.log.Error("failed to query the method `GetOwners`", "err", err, "blockNumber", latestL1Height)
@@ -185,13 +189,14 @@ func (m *Monitor) Run(ctx context.Context) {
 
 		deadline_date := time.Unix(int64(deadline), 0)
 		formattedDate := deadline_date.Format("Monday, January 2, 2006")
-
 		// 4. Ensure that the invariant is not broken -> (block.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
 		if (deadline - now) < 0 {
 			m.log.Warn("`dealine - now` is negative means that the `owner` is not active anymore at all and should be removed fast! This is not suppose to happen because we will be intervening before ensure that is not happening", "deadline", (deadline - now), "owner", owner)
 		}
 
-		m.log.Info("", "owner", owner, "now", now, "deadline", deadline, "lastlive", lastLive, "interval", interval, "deadline_date", formattedDate, "days_left_before_deadline", (deadline-now)/day)
+		days_left_before_deadline := (deadline - now) / day
+		m.log.Info("", "owner", owner, "now", now, "deadline", deadline, "lastlive", lastLive, "interval", interval, "deadline_date", formattedDate, "days_left_before_deadline", days_left_before_deadline)
+		m.ownerDaysBeforeDeadline.WithLabelValues(owner.String()).Set(float64(days_left_before_deadline))
 
 		if (deadline - now) <= 1*day {
 			m.log.Info("deadline is less than 1 day we need to ensure that the owner is doing something in the last 24h otherwise we need to remove it!", "lastLive", lastLive, "owner", owner)
