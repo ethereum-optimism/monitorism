@@ -1,13 +1,14 @@
-# Global Events monitoring
+# Global Events Monitoring
 
-This monitoring modules is made for to taking YAML rules as configuration. 
+This monitoring modules is made for to taking YAML rules as configuration.
 ![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
 
 Once the Yaml rules is configured correctly, we can listen to an event choosen to send the data through prometheus.
 
+## CLI and Docs:
 
-## CLI and Docs: 
 ### CLI Args
+
 ```bash
 NAME:
    Monitorism global_events - Monitors global events with YAML configuration
@@ -32,8 +33,11 @@ OPTIONS:
    --help, -h                  show help
 
 ```
+
 ### Yaml rules
+
 The rules are located here: `op-monitorism/global_events/rules/` then we have multiples folders depending the networks you want to monitore (`mainnet` or `sepolia`) for now.
+
 ```yaml
 # This is a TEMPLATE file please copy this one
 # This watches all contacts for OP, Mode, and Base mainnets for two logs.
@@ -47,7 +51,9 @@ events:
   - signature: ExecutionFailure(bytes32,uint256) # List of the events to watch for the addresses.
   - signature: ExecutionSuccess(bytes32,uint256) # List of the events to watch for the addresses.
 ```
+
 ### Execution
+
 To run it:
 
 ```bash
