@@ -1,4 +1,4 @@
-# Liveness expiration Monitoring
+# Liveness Expiration Monitoring
 
 This Liveness expiration module is a monitoring dedicated for the safes of the Optimism network.
 Ensuring that owners that operates the safes and performs any important actions are still actives enough.
