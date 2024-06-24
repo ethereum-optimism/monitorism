@@ -134,13 +134,23 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 // 4. Ensure that the invariant is not broken -> (block.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
 func (m *Monitor) Run(ctx context.Context) {
 	day := uint64(86400) // 1 day in seconds
+	blocknumber := new(big.Int)
 
 	latestL1Height, err := m.l1Client.BlockNumber(ctx)
-	now := latestL1Height
 	if err != nil {
 		m.log.Error("failed to query latest block number", "err", err)
 		m.unexpectedRpcErrors.WithLabelValues("l1", "blockNumber").Inc()
+		return
 	}
+
+	blocknumber.SetUint64(uint64(latestL1Height))
+	blockTimestamp, err := m.l1Client.BlockByNumber(ctx, blocknumber)
+	if err != nil {
+		m.log.Error("failed to query the method `BlockByNumber`", "err", err, "blockNumber", latestL1Height)
+		m.unexpectedRpcErrors.WithLabelValues("l1", "BlockByNumber").Inc()
+		return
+	}
+	now := blockTimestamp.Time()
 
 	m.log.Info("", "BlockNumber", latestL1Height)
 
@@ -148,12 +158,14 @@ func (m *Monitor) Run(ctx context.Context) {
 	if err != nil {
 		m.log.Error("failed to query the method `GetOwners`", "err", err, "blockNumber", latestL1Height)
 		m.unexpectedRpcErrors.WithLabelValues("l1", "GetOwners").Inc()
+		return
 	}
 
 	interval, err := m.LivenessModule.LivenessInterval(nil) // 2. Get the interval from the liveness module.
 	if err != nil {
 		m.log.Error("failed to query the method `LivenessInterval`", "err", err, "blockNumber", latestL1Height)
 		m.unexpectedRpcErrors.WithLabelValues("l1", "LivenessInterval").Inc()
+		return
 	}
 	m.intervalLiveness.WithLabelValues("interval").Set(float64(interval.Uint64()))
 
@@ -163,6 +175,7 @@ func (m *Monitor) Run(ctx context.Context) {
 		if err != nil {
 			m.log.Error("failed to query the method `LastLive`", "err", err, "blockNumber", latestL1Height)
 			m.unexpectedRpcErrors.WithLabelValues("l1", "LastLive").Inc()
+			return
 		}
 
 		m.lastLiveOfAOwner.WithLabelValues(owner.String()).Set(float64(lastLive.Uint64()))
@@ -172,11 +185,14 @@ func (m *Monitor) Run(ctx context.Context) {
 
 		deadline_date := time.Unix(int64(deadline), 0)
 		formattedDate := deadline_date.Format("Monday, January 2, 2006")
-		m.log.Info("", "owner", owner, "deadline", deadline, "lastlive", lastLive, "interval", interval, "deadline_date", formattedDate)
 
+		// 4. Ensure that the invariant is not broken -> (block.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
 		if (deadline - now) < 0 {
 			m.log.Warn("`dealine - now` is negative means that the `owner` is not active anymore at all and should be removed fast! This is not suppose to happen because we will be intervening before ensure that is not happening", "deadline", (deadline - now), "owner", owner)
 		}
+
+		m.log.Info("", "owner", owner, "now", now, "deadline", deadline, "lastlive", lastLive, "interval", interval, "deadline_date", formattedDate, "days_left_before_deadline", (deadline-now)/day)
+
 		if (deadline - now) <= 1*day {
 			m.log.Info("deadline is less than 1 day we need to ensure that the owner is doing something in the last 24h otherwise we need to remove it!", "lastLive", lastLive, "owner", owner)
 			m.ownerStalePeriod.WithLabelValues(owner.String()).Set(float64(1))
@@ -188,7 +204,7 @@ func (m *Monitor) Run(ctx context.Context) {
 			m.log.Info("deadline is less than 14 days we need to ensure that the owner is doing something in the last 14 days otherwise we need to remove it!", "lastLive", lastLive, "owner", owner)
 			m.ownerStalePeriod.WithLabelValues(owner.String()).Set(float64(14))
 
-		} else { //set the metric to 0 for the owner because is not stalling.
+		} else { //If Owner is not stalling (most of the time) we set the metric to 0 for the owner because he is not stalling.
 			m.ownerStalePeriod.WithLabelValues(owner.String()).Set(float64(0))
 		}
 	}
