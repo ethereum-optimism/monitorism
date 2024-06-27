@@ -145,8 +145,8 @@ jobs:
                 export GIT_VERSION=$(echo "$full_release_tag" | tail -n 1)
               fi
               
-              export GIT_COMMIT="$GIT_VERSION,$GIT_COMMIT"
-              echo "Setting GIT_COMMIT=$GIT_COMMIT"
+              export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS"
+              echo "Setting IMAGE_TAGS=$IMAGE_TAGS"
             fi
 
 
