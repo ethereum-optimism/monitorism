@@ -133,8 +133,31 @@ jobs:
             export IMAGE_TAGS="$(echo -ne "<<parameters.docker_tags>>" | sed "s/[^a-zA-Z0-9\n,]/-/g")"
             export GIT_COMMIT="$(git rev-parse HEAD)"
             export GIT_DATE="$(git show -s --format='%ct')"
-            export GIT_VERSION="<<pipeline.git.tag>>"
             export PLATFORMS="<<parameters.platforms>>"
+
+            echo "Checking git tags pointing at $GIT_COMMIT:"
+            tags_at_commit=$(git tag --points-at $GIT_COMMIT)
+            echo "Tags at commit:\n$tags_at_commit"
+
+            filtered_tags=$(echo "$tags_at_commit" | grep "^<<parameters.docker_name>>/" || true)
+            echo "Filtered tags: $filtered_tags"
+
+            if [ -z "$filtered_tags" ]; then
+              export GIT_VERSION="untagged"
+            else
+              sorted_tags=$(echo "$filtered_tags" | sed "s/<<parameters.docker_name>>\///" | sort -V)
+              echo "Sorted tags: $sorted_tags"
+
+              # prefer full release tag over "-rc" release candidate tag if both exist
+              full_release_tag=$(echo "$sorted_tags" | grep -v -- "-rc" || true)
+              if [ -z "$full_release_tag" ]; then
+                export GIT_VERSION=$(echo "$sorted_tags" | tail -n 1)
+              else
+                export GIT_VERSION=$(echo "$full_release_tag" | tail -n 1)
+              fi
+            fi
+
+            echo "Setting GIT_VERSION=$GIT_VERSION"
 
             # Create, start (bootstrap) and use a *named* docker builder
             # This allows us to cross-build multi-platform,
@@ -237,6 +260,7 @@ workflows:
           platforms: "linux/amd64"
           publish: true
           release: true
+          save_image_tag: true
           context:
             - oplabs-gcr
   main:
