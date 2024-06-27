@@ -257,6 +257,7 @@ workflows:
               ignore: /.*/
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>
+          save_image_tag: <<pipeline.git.revision>>
           requires: ['hold']
           platforms: "linux/amd64"
           publish: true
