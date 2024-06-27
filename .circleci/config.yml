@@ -124,6 +124,7 @@ jobs:
           command: |
             # Check to see if DOCKER_HUB_READ_ONLY_TOKEN is set (i.e. we are in repo) before attempting to use secrets.
             # Building should work without this read only login, but may get rate limited.
+            echo <<pipeline.git.revision>>
             if [[ -v DOCKER_HUB_READ_ONLY_TOKEN ]]; then
               echo "$DOCKER_HUB_READ_ONLY_TOKEN" | docker login -u "$DOCKER_HUB_READ_ONLY_USER" --password-stdin
             fi
