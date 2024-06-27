@@ -78,10 +78,6 @@ jobs:
         description: Docker repo
         type: string
         default: "oplabs-tools-artifacts/images"
-      save_image_tag:
-        description: Save docker image with given tag
-        type: string
-        default: ""
       platforms:
         description: Platforms to build for, comma-separated
         type: string
@@ -122,13 +118,7 @@ jobs:
       - run:
           name: Build
           command: |
-            # Check to see if DOCKER_HUB_READ_ONLY_TOKEN is set (i.e. we are in repo) before attempting to use secrets.
-            # Building should work without this read only login, but may get rate limited.
-            echo <<pipeline.git.revision>>
-            if [[ -v DOCKER_HUB_READ_ONLY_TOKEN ]]; then
-              echo "$DOCKER_HUB_READ_ONLY_TOKEN" | docker login -u "$DOCKER_HUB_READ_ONLY_USER" --password-stdin
-            fi
-
+           
             export REGISTRY="<<parameters.registry>>"
             export REPOSITORY="<<parameters.repo>>"
             export IMAGE_TAGS="$(echo -ne "<<parameters.docker_tags>>" | sed "s/[^a-zA-Z0-9\n,]/-/g")"
@@ -160,6 +150,7 @@ jobs:
 
             echo "Setting GIT_VERSION=$GIT_VERSION"
 
+
             # Create, start (bootstrap) and use a *named* docker builder
             # This allows us to cross-build multi-platform,
             # and naming allows us to use the DLC (docker-layer-cache)
@@ -170,15 +161,8 @@ jobs:
               gcloud auth configure-docker <<parameters.registry>>
               echo "Building for platforms $PLATFORMS and then publishing to registry"
               DOCKER_OUTPUT_DESTINATION="--push"
-              if [ "<<parameters.save_image_tag>>" != "" ]; then
-                echo "ERROR: cannot save image to docker when publishing to registry"
-                exit 1
-              fi
             else
-              if [ "<<parameters.save_image_tag>>" == "" ]; then
-                echo "Running $PLATFORMS build without destination (cache warm-up)"
-                DOCKER_OUTPUT_DESTINATION=""
-              elif [[ $PLATFORMS == *,* ]]; then
+              if [[ $PLATFORMS == *,* ]]; then
                 echo "ERROR: cannot perform multi-arch (platforms: $PLATFORMS) build while also loading the result into regular docker"
                 exit 1
               else
@@ -196,18 +180,6 @@ jobs:
               <<parameters.docker_name>>
 
           no_output_timeout: 45m
-      - when:
-          condition: "<<parameters.save_image_tag>>"
-          steps:
-            - run:
-                name: Save
-                command: |
-                  IMAGE_NAME="<<parameters.registry>>/<<parameters.repo>>/<<parameters.docker_name>>:<<parameters.save_image_tag>>"
-                  docker save -o /tmp/docker_images/<<parameters.docker_name>>.tar $IMAGE_NAME
-            - persist_to_workspace:
-                root: /tmp/docker_images
-                paths:  # only write the one file, to avoid concurrent workspace-file additions
-                  - "<<parameters.docker_name>>.tar"
       - when:
           condition:
             or:
@@ -257,10 +229,9 @@ workflows:
               ignore: /.*/
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>
-          save_image_tag: <<pipeline.git.revision>>
           requires: ['hold']
           platforms: "linux/amd64"
-          publish: false
+          publish: true
           release: true
           context:
             - oplabs-gcr
