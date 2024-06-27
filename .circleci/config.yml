@@ -260,7 +260,7 @@ workflows:
           save_image_tag: <<pipeline.git.revision>>
           requires: ['hold']
           platforms: "linux/amd64"
-          publish: true
+          publish: false
           release: true
           context:
             - oplabs-gcr
