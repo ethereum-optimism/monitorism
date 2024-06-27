@@ -260,7 +260,6 @@ workflows:
           platforms: "linux/amd64"
           publish: true
           release: true
-          save_image_tag: true
           context:
             - oplabs-gcr
   main:
