@@ -34,8 +34,6 @@ target "op-monitorism" {
     GITDATE = "${GIT_DATE}"
   }
   platforms = split(",", PLATFORMS)
-   tags = [
-    for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-monitorism:${tag}",
-    if GIT_VERSION != "" && GIT_VERSION != "untagged" "${REGISTRY}/${REPOSITORY}/op-monitorism:${GIT_VERSION}"
-  ]
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-monitorism:${tag}"]
 }
+
