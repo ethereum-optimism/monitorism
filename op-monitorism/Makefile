@@ -50,4 +50,5 @@ help:
 	@echo "  make build"
 	@echo "  make run"
 	@echo "  make clean"
+	@echo "  make tidy"
 	@echo "  make help"

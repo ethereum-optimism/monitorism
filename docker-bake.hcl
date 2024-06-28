@@ -37,3 +37,14 @@ target "op-monitorism" {
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-monitorism:${tag}"]
 }
 
+target "chain-mon" {
+  dockerfile = "Dockerfile"
+  context = "./chain-mon"
+  args = {
+    GITCOMMIT = "${GIT_COMMIT}"
+    GITDATE = "${GIT_DATE}"
+  }
+  platforms = split(",", PLATFORMS)
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/chain-mon:monitorism${tag}"]
+}
+

@@ -7,7 +7,7 @@ build: build-go
 build-go: op-monitorism
 .PHONY: build-go
 
-golang-docker:
+op-monitorism-docker:
 	# We don't use a buildx builder here, and just load directly into regular docker, for convenience.
 	GIT_COMMIT=$$(git rev-parse HEAD) \
 	GIT_DATE=$$(git show -s --format='%ct') \
@@ -17,7 +17,19 @@ golang-docker:
 			--load \
 			-f docker-bake.hcl \
 			op-monitorism
-.PHONY: golang-docker
+.PHONY: op-monitorism-docker
+
+chain-mon-docker:
+	# We don't use a buildx builder here, and just load directly into regular docker, for convenience.
+	GIT_COMMIT=$$(git rev-parse HEAD) \
+	GIT_DATE=$$(git show -s --format='%ct') \
+	IMAGE_TAGS=$$(git rev-parse HEAD),latest \
+	docker buildx bake \
+			--progress plain \
+			--load \
+			-f docker-bake.hcl \
+			chain-mon
+.PHONY: chain-mon-docker
 
 op-monitorism:
 	make -C ./op-monitorism 
@@ -27,10 +39,6 @@ tidy:
 	make -C ./op-monitorism tidy
 .PHONY: tidy
 
-clean:
-	rm -rf ./bin
-.PHONY: clean
-
-nuke: clean devnet-clean
-	git clean -Xdf
-.PHONY: nuke
+chain-mon:
+	make -C ./chain-mon build 
+.PHONY: chain-mon
