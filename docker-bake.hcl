@@ -14,10 +14,6 @@ variable "GIT_DATE" {
   default = "0"
 }
 
-variable "GIT_VERSION" {
-  default = "docker"  // original default as set in proxyd file, not used by full go stack, yet
-}
-
 variable "IMAGE_TAGS" {
   default = "${GIT_COMMIT}" // split by ","
 }
@@ -36,8 +32,8 @@ target "op-monitorism" {
   args = {
     GITCOMMIT = "${GIT_COMMIT}"
     GITDATE = "${GIT_DATE}"
-    GITVERSION = "${GIT_VERSION}"
   }
   platforms = split(",", PLATFORMS)
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-monitorism:${tag}"]
 }
+

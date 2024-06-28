@@ -78,10 +78,6 @@ jobs:
         description: Docker repo
         type: string
         default: "oplabs-tools-artifacts/images"
-      save_image_tag:
-        description: Save docker image with given tag
-        type: string
-        default: ""
       platforms:
         description: Platforms to build for, comma-separated
         type: string
@@ -122,19 +118,38 @@ jobs:
       - run:
           name: Build
           command: |
-            # Check to see if DOCKER_HUB_READ_ONLY_TOKEN is set (i.e. we are in repo) before attempting to use secrets.
-            # Building should work without this read only login, but may get rate limited.
-            if [[ -v DOCKER_HUB_READ_ONLY_TOKEN ]]; then
-              echo "$DOCKER_HUB_READ_ONLY_TOKEN" | docker login -u "$DOCKER_HUB_READ_ONLY_USER" --password-stdin
-            fi
-
+           
             export REGISTRY="<<parameters.registry>>"
             export REPOSITORY="<<parameters.repo>>"
             export IMAGE_TAGS="$(echo -ne "<<parameters.docker_tags>>" | sed "s/[^a-zA-Z0-9\n,]/-/g")"
             export GIT_COMMIT="$(git rev-parse HEAD)"
             export GIT_DATE="$(git show -s --format='%ct')"
-            export GIT_VERSION="<<pipeline.git.tag>>"
             export PLATFORMS="<<parameters.platforms>>"
+
+            echo "Checking git tags pointing at $GIT_COMMIT:"
+            tags_at_commit=$(git tag --points-at $GIT_COMMIT)
+            echo "Tags at commit:\n$tags_at_commit"
+
+            filtered_tags=$(echo "$tags_at_commit" | grep "^<<parameters.docker_name>>/" || true)
+            echo "Filtered tags: $filtered_tags"
+
+            if [ -n "$filtered_tags" ]; then
+              sorted_tags=$(echo "$filtered_tags" | sed "s/<<parameters.docker_name>>\///" | sort -V)
+              echo "Sorted tags: $sorted_tags"
+
+              # prefer full release tag over "-rc" release candidate tag if both exist
+              full_release_tag=$(echo "$sorted_tags" | grep -v -- "-rc" || true)
+              if [ -z "$full_release_tag" ]; then
+                export GIT_VERSION=$(echo "$sorted_tags" | tail -n 1)
+              else
+                export GIT_VERSION=$(echo "$full_release_tag" | tail -n 1)
+              fi
+              
+              export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS"
+              echo "Setting IMAGE_TAGS=$IMAGE_TAGS"
+            fi
+
+
 
             # Create, start (bootstrap) and use a *named* docker builder
             # This allows us to cross-build multi-platform,
@@ -146,15 +161,8 @@ jobs:
               gcloud auth configure-docker <<parameters.registry>>
               echo "Building for platforms $PLATFORMS and then publishing to registry"
               DOCKER_OUTPUT_DESTINATION="--push"
-              if [ "<<parameters.save_image_tag>>" != "" ]; then
-                echo "ERROR: cannot save image to docker when publishing to registry"
-                exit 1
-              fi
             else
-              if [ "<<parameters.save_image_tag>>" == "" ]; then
-                echo "Running $PLATFORMS build without destination (cache warm-up)"
-                DOCKER_OUTPUT_DESTINATION=""
-              elif [[ $PLATFORMS == *,* ]]; then
+              if [[ $PLATFORMS == *,* ]]; then
                 echo "ERROR: cannot perform multi-arch (platforms: $PLATFORMS) build while also loading the result into regular docker"
                 exit 1
               else
@@ -172,18 +180,6 @@ jobs:
               <<parameters.docker_name>>
 
           no_output_timeout: 45m
-      - when:
-          condition: "<<parameters.save_image_tag>>"
-          steps:
-            - run:
-                name: Save
-                command: |
-                  IMAGE_NAME="<<parameters.registry>>/<<parameters.repo>>/<<parameters.docker_name>>:<<parameters.save_image_tag>>"
-                  docker save -o /tmp/docker_images/<<parameters.docker_name>>.tar $IMAGE_NAME
-            - persist_to_workspace:
-                root: /tmp/docker_images
-                paths:  # only write the one file, to avoid concurrent workspace-file additions
-                  - "<<parameters.docker_name>>.tar"
       - when:
           condition:
             or:
