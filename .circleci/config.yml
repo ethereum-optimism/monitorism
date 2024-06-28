@@ -221,17 +221,32 @@ workflows:
           type: approval
           filters:
             tags:
-              only: /^op-monitorism\/v.*/
+              only: /^op-monitorism\/v.*$|^chain-mon\/v.*$/
             branches:
               ignore: /.*/
       - docker-build:
           name: op-monitorism-docker-release
           filters:
             tags:
-              only: /^op-monitorism\/v.*/
+              only: /^op-monitorism\/v.*$/
             branches:
               ignore: /.*/
           docker_name: op-monitorism
+          docker_tags: <<pipeline.git.revision>>
+          requires: ['hold']
+          platforms: "linux/amd64"
+          publish: true
+          release: true
+          context:
+            - oplabs-gcr
+      - docker-build:
+          name: chain-mon-docker-release
+          filters:
+            tags:
+              only: /^chain-mon\/v.*$/
+            branches:
+              ignore: /.*/
+          docker_name: chain-mon
           docker_tags: <<pipeline.git.revision>>
           requires: ['hold']
           platforms: "linux/amd64"
@@ -247,8 +262,8 @@ workflows:
           - equal: [ webhook, << pipeline.trigger_source >> ]
     jobs:
       - docker-build:
-          name: op-monitorism-docker-build
-          docker_name: op-monitorism
+          name: chain-mon-docker-build
+          docker_name: chain-mon
           docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
           platforms: "linux/amd64"
           publish: true
