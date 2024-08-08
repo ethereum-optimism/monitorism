@@ -9,15 +9,17 @@ import (
 )
 
 const (
-	NodeURLFlagName    = "node.url"
-	PrivateKeyFlagName = "privatekey"
-	PortAPIFlagName    = "port.api"
+	NodeURLFlagName         = "node.url"
+	PrivateKeyFlagName      = "privatekey"
+	PortAPIFlagName         = "port.api"
+	ReceiverAddressFlagName = "receiver.address"
 )
 
 type CLIConfig struct {
-	NodeUrl        string
-	privatekeyflag string
-	portapi        string
+	NodeUrl                 string
+	privatekeyflag          string
+	portapi                 string
+	ReceiverAddressFlagName string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -29,6 +31,11 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	if len(PortAPIFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a PortAPIFlagName set to execute the pause on mainnet")
 	}
+	cfg.ReceiverAddressFlagName = ctx.String(ReceiverAddressFlagName)
+	if len(ReceiverAddressFlagName) == 0 {
+		return cfg, fmt.Errorf("must have a ReceiverAddressFlagName set to receive the pause on mainnet.")
+	}
+
 	cfg.portapi = ctx.String(PortAPIFlagName)
 	return cfg, nil
 }
@@ -38,13 +45,20 @@ func CLIFlags(envPrefix string) []cli.Flag {
 		&cli.StringFlag{
 			Name:    NodeURLFlagName,
 			Usage:   "Node URL of a peer",
-			Value:   "127.0.0.1:8545",
+			Value:   "http://127.0.0.1:8545",
 			EnvVars: opservice.PrefixEnvVar(envPrefix, "NODE_URL"),
 		},
 		&cli.StringFlag{
 			Name:     PrivateKeyFlagName,
 			Usage:    "Private key of the account that will issue the pause ()",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PRIVATE_KEY"),
+			Required: true,
+		},
+
+		&cli.StringFlag{
+			Name:     ReceiverAddressFlagName,
+			Usage:    "The receiver address of the pause request.",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "RECEIVER_ADDRESS"),
 			Required: true,
 		},
 
