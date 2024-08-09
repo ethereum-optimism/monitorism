@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	NodeURLFlagName         = "node.url"
+	NodeURLFlagName         = "rpc-url"
 	PrivateKeyFlagName      = "privatekey"
 	PortAPIFlagName         = "port.api"
 	ReceiverAddressFlagName = "receiver.address"
+	DataFlagName            = "data"
 )
 
 type CLIConfig struct {
@@ -20,6 +21,7 @@ type CLIConfig struct {
 	privatekeyflag          string
 	portapi                 string
 	ReceiverAddressFlagName string
+	hexString               string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -36,6 +38,10 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		return cfg, fmt.Errorf("must have a ReceiverAddressFlagName set to receive the pause on mainnet.")
 	}
 
+	cfg.hexString = ctx.String(DataFlagName)
+	if len(DataFlagName) == 0 {
+		return cfg, fmt.Errorf("must have a `data` set to execute the calldata on mainnet.")
+	}
 	cfg.portapi = ctx.String(PortAPIFlagName)
 	return cfg, nil
 }
@@ -68,6 +74,13 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Usage:    "Port of the API server you want to listen on (e.g. 8080).",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PORT_API"),
 			Required: false,
+		},
+		&cli.StringFlag{
+			Name:     DataFlagName,
+			Value:    "",
+			Usage:    "calldata to execute the pause on mainnet with the signatures.",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "CALLDATA"),
+			Required: true,
 		},
 	}
 }
