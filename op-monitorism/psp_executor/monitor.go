@@ -6,8 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
+
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -17,6 +20,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"math/big"
 )
+
+// Informations:
+// deputyGuardianSepolia: 0x4220C5deD9dC2C8a8366e684B098094790C72d3c
+// SuperChainConfigSepolia: 0xC2Be75506d5724086DEB7245bd260Cc9753911Be
+// deputyGuardianMainnet: 0x5dC91D01290af474CE21DE14c17335a6dEe4d2a8
 
 const (
 	MetricsNamespace = "psp_executor"
@@ -53,24 +61,37 @@ func NewAPI(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfi
 	if err != nil {
 		log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
 	}
+	println("hexString", cfg.hexString)
 	data, err := hex.DecodeString(cfg.hexString)
 	if err != nil {
 		fmt.Println("Error decoding hex string:", err)
 		return &Monitor{}, err
 	}
+	println("Data: ", string(data))
+	superchainconfig_address := "0xC2Be75506d5724086DEB7245bd260Cc9753911Be" //for now hardcoded for sepolia but will dynamically get from the config in the future
+	// Here need to extract all the information from the calldata to retrieve the address of the superchainConfig.
+	PspExecutionOnChain(ctx, client, superchainconfig_address, cfg.privatekeyflag, cfg.receiverAddress, data)
 
-	txHash, err := sendTransaction(client, cfg.privatekeyflag, cfg.ReceiverAddressFlagName, big.NewInt(1), data) // 1 wei
+	return &Monitor{}, errors.New("")
+}
+
+// PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
+func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address string, data []byte) {
+	fmt.Println("PSP Execution Pause")
+	pause_before_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	if pause_before_transaction {
+		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
+	}
+	println("Before the transaction the status of the `pause` is set to: ", pause_before_transaction)
+	txHash, err := sendTransaction(l1client, privatekey, safe_address, big.NewInt(1), data) // 1 wei
 	if err != nil {
-		log.Crit("Failed to send transaction: %v", err)
+		log.Crit("Failed to send transaction:", "error", err)
 	}
 
 	fmt.Printf("Transaction sent! Tx Hash: %s\n", txHash)
 
-	return &Monitor{}, errors.New("Not implemented")
-}
-
-func PSPExecutionPause(request_operator string, request_timestamp string) {
-	fmt.Println("PSP Execution Pause")
+	pause_after_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	println("After the transaction the status of the `pause` is set to: ", pause_after_transaction)
 
 	// txHash, err := sendTransaction(client, "YOUR_PRIVATE_KEY", "RECIPIENT_ADDRESS", big.NewInt(1000000000000000000)) // 1 ETH
 	// if err != nil {
@@ -93,14 +114,14 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 	// TODO: Need to check if there is the `0x` if yes remove it from the string.
 	privateKey, err := crypto.HexToECDSA(privateKeyStr)
 	if err != nil {
-		return "", fmt.Errorf("invalid private key: %v", err)
+		return "", fmt.Errorf("Invalid private key: %v", err)
 	}
 
 	// Derive the public key from the private key
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return "", fmt.Errorf("error casting public key to ECDSA")
+		return "", fmt.Errorf("Error casting public key to ECDSA")
 	}
 
 	// Derive the sender address from the public key
@@ -109,7 +130,7 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 	// Ensure the toAddress is valid
 	toAddress := common.HexToAddress(toAddressStr)
 	if !common.IsHexAddress(toAddressStr) {
-		return "", fmt.Errorf("invalid to address: %s", toAddressStr)
+		return "", fmt.Errorf("Invalid to address: %s", toAddressStr)
 	}
 
 	// Get the nonce for the next transaction
@@ -119,11 +140,11 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 	}
 
 	// Set up the transaction parameters
-	value := amount                // Amount of Ether to send
-	gasLimit := uint64(10 * 21000) // In units
+	value := amount                  // Amount of Ether to send
+	gasLimit := uint64(1000 * 21008) // In units
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to suggest gas price: %v", err)
+		return "", fmt.Errorf("Failed to suggest gas price: %v", err)
 	}
 
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
@@ -131,22 +152,39 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 	// Sign the transaction with the private key
 	chainID, err := client.NetworkID(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to get network ID: %v", err)
+		return "", fmt.Errorf("Failed to get network ID: %v", err)
 	}
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign transaction: %v", err)
+		return "", fmt.Errorf("Failed to sign transaction: %v", err)
 	}
 
 	// Send the transaction
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", err)
+		return "", fmt.Errorf("Failed to send transaction: %v", err)
 	}
 
 	return signedTx.Hash().Hex(), nil
 }
 
+// checkPauseStatus(): Is a function made for checking the pause status of the SuperChainConfigAddress
+func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChainConfigAddress string) bool {
+	// Get the contract instance
+	contractAddress := common.HexToAddress(SuperChainConfigAddress)
+	optimismPortal, err := bindings.NewSuperchainConfig(contractAddress, l1client)
+	if err != nil {
+		log.Crit("Failed to create SuperChainConfig instance: %v", err)
+	}
+
+	paused, err := optimismPortal.Paused(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		log.Error("failed to query OptimismPortal paused status", "err", err)
+		return false
+	}
+
+	return paused
+}
 func weiToEther(wei *big.Int) float64 {
 	num := new(big.Rat).SetInt(wei)
 	denom := big.NewRat(params.Ether, 1)

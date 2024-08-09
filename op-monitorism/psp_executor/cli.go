@@ -17,11 +17,11 @@ const (
 )
 
 type CLIConfig struct {
-	NodeUrl                 string
-	privatekeyflag          string
-	portapi                 string
-	ReceiverAddressFlagName string
-	hexString               string
+	NodeUrl         string
+	privatekeyflag  string
+	portapi         string
+	receiverAddress string
+	hexString       string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -33,7 +33,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	if len(PortAPIFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a PortAPIFlagName set to execute the pause on mainnet")
 	}
-	cfg.ReceiverAddressFlagName = ctx.String(ReceiverAddressFlagName)
+	cfg.receiverAddress = ctx.String(ReceiverAddressFlagName)
 	if len(ReceiverAddressFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a ReceiverAddressFlagName set to receive the pause on mainnet.")
 	}
