@@ -28,6 +28,9 @@ import (
 
 const (
 	MetricsNamespace = "psp_executor"
+	SepoliaRPC       = "https://proxyd-l1-consensus.primary.sepolia.prod.oplabs.cloud"
+	MainnetRPC       = "https://proxyd-l1-consensus.primary.mainnet.prod.oplabs.cloud"
+	LocalhostRPC     = "http://localhost:8545"
 )
 
 type Account struct {
@@ -70,9 +73,60 @@ func NewAPI(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfi
 	println("Data: ", string(data))
 	superchainconfig_address := "0xC2Be75506d5724086DEB7245bd260Cc9753911Be" //for now hardcoded for sepolia but will dynamically get from the config in the future
 	// Here need to extract all the information from the calldata to retrieve the address of the superchainConfig.
+
 	PspExecutionOnChain(ctx, client, superchainconfig_address, cfg.privatekeyflag, cfg.receiverAddress, data)
 
 	return &Monitor{}, errors.New("")
+}
+func main() {
+	//1. Fetch the privatekey of the account in GCP secret Manager.
+	privatekey, err := FetchPrivateKeyInGcp()
+	if err != nil {
+		log.Crit("Failed to fetch the privatekey from GCP secret manager: %v", err.Error())
+	}
+	// 2. Fetch the CORRECT Nounce PSP in the GCP secret Manager and return the data to execute.
+	superchainconfig_address, safe_address, data, err := FetchPSPInGCP()
+	if err != nil {
+		log.Crit("Failed to fetch the PSP from GCP secret manager: %v", err.Error())
+	}
+
+	// 3. Get the L1 client and ensure RPC is correct.
+	l1client, err := GetTheL1Client()
+	if err != nil {
+		log.Crit("Failed to get the L1client: %v", err.Error())
+	}
+
+	// 4. Execute the PSP on the chain.
+	ctx := context.Background() //TODO: Check if we really do need to context if yes we will keep it otherwise we will remove this.
+	PspExecutionOnChain(ctx, l1client, superchainconfig_address, privatekey, safe_address, data)
+}
+
+func GetTheL1Client() (*ethclient.Client, error) {
+	client, err := ethclient.Dial(LocalhostRPC) //Need to change this to the correct RPC (mainnet or sepolia) but for now hardcoded to localhost.
+	if LocalhostRPC != "http://localhost:8545" {
+		log.Warn("This is not the RPC localhost are you sure you want to continue (yes/no)")
+		var response string
+		fmt.Scanln(&response)
+		if response != "yes" {
+			log.Crit("Not yes, We Exiting the program.")
+		}
+	}
+	if err != nil {
+		log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
+	}
+	return client, nil
+}
+
+// FetchPrivateKey() will fetch the privatekey of the account that will execute the pause (from the GCP secret manager).
+func FetchPrivateKeyInGcp() (string, error) {
+	return "", errors.New("Not implemented")
+}
+
+// FetchPSPInGCP() will fetch the correct PSPs into GCP and return the Data.
+func FetchPSPInGCP() (string, string, []byte, error) {
+	// need to fetch check first the nonce with the same method with `checkPauseStatus` and then return the data for this PSP.
+
+	return "", "", []byte{}, errors.New("Not implemented")
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
@@ -92,12 +146,6 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 
 	pause_after_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
 	println("After the transaction the status of the `pause` is set to: ", pause_after_transaction)
-
-	// txHash, err := sendTransaction(client, "YOUR_PRIVATE_KEY", "RECIPIENT_ADDRESS", big.NewInt(1000000000000000000)) // 1 ETH
-	// if err != nil {
-	// 	log.Crit("Failed to send transaction: %v", err)
-	// }
-	// fmt.Printf("Transaction sent! Tx Hash: %s\n", txHash)
 
 }
 
@@ -141,7 +189,7 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 
 	// Set up the transaction parameters
 	value := amount                  // Amount of Ether to send
-	gasLimit := uint64(1000 * 21008) // In units
+	gasLimit := uint64(1000 * 21008) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
 		return "", fmt.Errorf("Failed to suggest gas price: %v", err)
