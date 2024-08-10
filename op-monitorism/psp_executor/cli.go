@@ -80,7 +80,7 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Value:    "",
 			Usage:    "calldata to execute the pause on mainnet with the signatures.",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "CALLDATA"),
-			Required: true,
+			Required: false,
 		},
 	}
 }
