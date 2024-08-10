@@ -3,11 +3,10 @@ package psp_executor
 import (
 	"context"
 	"crypto/ecdsa"
-	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
-
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -17,15 +16,20 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"math/big"
+	"net/http"
 )
 
 // Informations:
+// Sepolia:
 // deputyGuardianSepolia: 0x4220C5deD9dC2C8a8366e684B098094790C72d3c
 // SuperChainConfigSepolia: 0xC2Be75506d5724086DEB7245bd260Cc9753911Be
-// deputyGuardianMainnet: 0x5dC91D01290af474CE21DE14c17335a6dEe4d2a8
+// FoS on Sepolia: 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E
 
+// Mainnet:
+// deputyGuardianMainnet: 0x5dC91D01290af474CE21DE14c17335a6dEe4d2a8
 const (
 	MetricsNamespace = "psp_executor"
 	SepoliaRPC       = "https://proxyd-l1-consensus.primary.sepolia.prod.oplabs.cloud"
@@ -49,36 +53,88 @@ type Monitor struct {
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
+// Define a struct that represents the data structure of your response
+type Response struct {
+	Message string `json:"message"`
+	Status  int    `json:"status"`
+}
+
+type RequestData struct {
+	Pause     bool   `json:"pause"`
+	Timestamp int64  `json:"timestamp"`
+	Operator  string `json:"operator"`
+	Calldata  string `json:"calldata"` //temporary field as the calldata will be fetched from the GCP in the future.
+}
+
+// handlePost handles POST requests and processes the JSON body
+func handlePost(w http.ResponseWriter, r *http.Request) {
+	var data RequestData
+
+	// Decode the JSON body into the struct
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Check for zero values
+	if data.Pause == false || data.Timestamp == 0 || data.Operator == "" || data.Calldata == "" {
+		http.Error(w, "All fields are required and must be non-zero", http.StatusBadRequest)
+		log.Warn("A field is set to empty or 0", "data", data)
+		return
+	}
+	// Log the received data
+	log.Info("HandlePost Received data", "data", data)
+	// Call the Fetch and Execute
+	FetchAndExecute()
+	// Respond back with the received data or a success message
+	response := map[string]interface{}{
+		"status": "success",
+		"data":   data,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // For now new API will serve the purpose of sending a transaction
 func NewAPI(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
-	log.Info("Creating the API psp_executor.")
-	client, err := ethclient.Dial(cfg.NodeUrl)
-	if cfg.NodeUrl != "http://localhost:8545" {
-		log.Warn("This is not the RPC localhost are you sure you want to continue (yes/no)")
-		var response string
-		fmt.Scanln(&response)
-		if response != "yes" {
-			log.Crit("Not yes, We Exiting the program.")
-		}
-	}
-	if err != nil {
-		log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
-	}
-	println("hexString", cfg.hexString)
-	data, err := hex.DecodeString(cfg.hexString)
-	if err != nil {
-		fmt.Println("Error decoding hex string:", err)
-		return &Monitor{}, err
-	}
-	println("Data: ", string(data))
-	superchainconfig_address := "0xC2Be75506d5724086DEB7245bd260Cc9753911Be" //for now hardcoded for sepolia but will dynamically get from the config in the future
-	// Here need to extract all the information from the calldata to retrieve the address of the superchainConfig.
+	// Set the route and handler function
+	router := mux.NewRouter()
+	router.HandleFunc("/api/psp_execution", handlePost).Methods("POST")
 
-	PspExecutionOnChain(ctx, client, superchainconfig_address, cfg.privatekeyflag, cfg.receiverAddress, data)
-
+	// Start the server
+	log.Info("Starting API server", "port", cfg.portapi)
+	err := http.ListenAndServe(":8080", router)
+	if err != nil {
+		log.Crit("Failed to start the API server", "error", err)
+	}
+	// client, err := ethclient.Dial(cfg.NodeUrl)
+	// if cfg.NodeUrl != "http://localhost:8545" {
+	// 	log.Warn("This is not the RPC localhost are you sure you want to continue (yes/no)")
+	// 	var response string
+	// 	fmt.Scanln(&response)
+	// 	if response != "yes" {
+	// 		log.Crit("Not yes, We Exiting the program.")
+	// 	}
+	// }
+	// if err != nil {
+	// 	log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
+	// }
+	// println("hexString", cfg.hexString)
+	// data, err := hex.DecodeString(cfg.hexString)
+	// if err != nil {
+	// 	fmt.Println("Error decoding hex string:", err)
+	// 	return &Monitor{}, err
+	// }
+	// println("Data: ", string(data))
+	// superchainconfig_address := "0xC2Be75506d5724086DEB7245bd260Cc9753911Be" //for now hardcoded for sepolia but will dynamically get from the config in the future
+	// // Here need to extract all the information from the calldata to retrieve the address of the superchainConfig.
+	//
+	// PspExecutionOnChain(ctx, client, superchainconfig_address, cfg.privatekeyflag, cfg.receiverAddress, data)
+	//
 	return &Monitor{}, errors.New("")
 }
-func main() {
+
+func FetchAndExecute() {
 	//1. Fetch the privatekey of the account in GCP secret Manager.
 	privatekey, err := FetchPrivateKeyInGcp()
 	if err != nil {
@@ -119,14 +175,14 @@ func GetTheL1Client() (*ethclient.Client, error) {
 
 // FetchPrivateKey() will fetch the privatekey of the account that will execute the pause (from the GCP secret manager).
 func FetchPrivateKeyInGcp() (string, error) {
-	return "", errors.New("Not implemented")
+	return "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", nil // Mock with a well-known private key from test test ... test junk derivation (9).
 }
 
 // FetchPSPInGCP() will fetch the correct PSPs into GCP and return the Data.
-func FetchPSPInGCP() (string, string, []byte, error) {
+func FetchPSPInGCP() (string, string, []byte, error) { //superchainconfig_address, safe_address, data, error
 	// need to fetch check first the nonce with the same method with `checkPauseStatus` and then return the data for this PSP.
 
-	return "", "", []byte{}, errors.New("Not implemented")
+	return "0xC2Be75506d5724086DEB7245bd260Cc9753911Be", "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil //errors.New("Not implemented") mock with simple value to make a call on L1.
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
