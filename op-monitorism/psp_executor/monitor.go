@@ -103,21 +103,22 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	// json.NewEncoder(w).Encode(response)
 }
 
-// For now new API will serve the purpose of sending a transaction
+// NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewAPI(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
-	// Set the route and handler function
+	// Set the route and handler function for the `/api/psp_execution` endpoint.
 	router := mux.NewRouter()
 	router.HandleFunc("/api/psp_execution", handlePost).Methods("POST")
 
 	// Start the server
 	log.Info("Starting API server", "port", cfg.portapi)
-	err := http.ListenAndServe(":8080", router)
+	err := http.ListenAndServe(":"+cfg.portapi, router)
 	if err != nil {
 		log.Crit("Failed to start the API server", "error", err)
 	}
 	return &Monitor{}, errors.New("")
 }
 
+// FetchAndExecute() will fetch the privatekey, and correct PSP from GCP and execute it on the correct chain.
 func FetchAndExecute() {
 	//1. Fetch the privatekey of the account in GCP secret Manager.
 	privatekey, err := FetchPrivateKeyInGcp()
@@ -141,6 +142,7 @@ func FetchAndExecute() {
 	PspExecutionOnChain(ctx, l1client, superchainconfig_address, privatekey, safe_address, data)
 }
 
+// GetTheL1Client() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
 func GetTheL1Client() (*ethclient.Client, error) {
 	client, err := ethclient.Dial(LocalhostRPC) //Need to change this to the correct RPC (mainnet or sepolia) but for now hardcoded to localhost.
 	if LocalhostRPC != "http://localhost:8545" {
@@ -197,6 +199,7 @@ func (m *Monitor) Close(_ context.Context) error {
 	return nil
 }
 
+// sendTransaction(): Is a function made for sending a transaction on chain with the parameters : client, privatekey, toAddress, amount, data.
 func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressStr string, amount *big.Int, data []byte) (string, error) {
 	// Convert the private key string to a private key type
 	// TODO: Need to check if there is the `0x` if yes remove it from the string.
