@@ -15,21 +15,24 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"math/big"
 	"net/http"
 )
 
-// Informations:
-// Sepolia:
-// deputyGuardianSepolia: 0x4220C5deD9dC2C8a8366e684B098094790C72d3c
-// SuperChainConfigSepolia: 0xC2Be75506d5724086DEB7245bd260Cc9753911Be
-// FoS on Sepolia: 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E
+// **********************************************************************
+// *                        Informations:                               *
+// **********************************************************************
+// * Sepolia:                                                           *
+// * deputyGuardianSepolia: 0x4220C5deD9dC2C8a8366e684B098094790C72d3c *
+// * SuperChainConfigSepolia: 0xC2Be75506d5724086DEB7245bd260Cc9753911Be *
+// * FoS on Sepolia: 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E        *
+// **********************************************************************
+// * Mainnet:                                                           *
+// * deputyGuardianMainnet: 0x5dC91D01290af474CE21DE14c17335a6dEe4d2a8  *
+// **********************************************************************
 
-// Mainnet:
-// deputyGuardianMainnet: 0x5dC91D01290af474CE21DE14c17335a6dEe4d2a8
 const (
 	MetricsNamespace = "psp_executor"
 	SepoliaRPC       = "https://proxyd-l1-consensus.primary.sepolia.prod.oplabs.cloud"
@@ -63,36 +66,41 @@ type RequestData struct {
 	Pause     bool   `json:"pause"`
 	Timestamp int64  `json:"timestamp"`
 	Operator  string `json:"operator"`
-	Calldata  string `json:"calldata"` //temporary field as the calldata will be fetched from the GCP in the future.
+	Calldata  string `json:"calldata"` //temporary field as the calldata will be fetched from the GCP in the future (so will be removed in the future PR).
 }
 
 // handlePost handles POST requests and processes the JSON body
 func handlePost(w http.ResponseWriter, r *http.Request) {
 	var data RequestData
-
 	// Decode the JSON body into the struct
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// return HTTP code 511 for the first PR.
+	http.Error(w, "Network Authentication Required", 511)
+	return
 
-	// Check for zero values
-	if data.Pause == false || data.Timestamp == 0 || data.Operator == "" || data.Calldata == "" {
-		http.Error(w, "All fields are required and must be non-zero", http.StatusBadRequest)
-		log.Warn("A field is set to empty or 0", "data", data)
-		return
-	}
-	// Log the received data
-	log.Info("HandlePost Received data", "data", data)
-	// Call the Fetch and Execute
-	FetchAndExecute()
-	// Respond back with the received data or a success message
-	response := map[string]interface{}{
-		"status": "success",
-		"data":   data,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	// The next code after the `return` is commented for next PRs and don't require review for now.
+
+	// if data.Pause == false || data.Timestamp == 0 || data.Operator == "" || data.Calldata == "" {
+	// 	http.Error(w, "All fields are required and must be non-zero", http.StatusBadRequest)
+	// 	log.Warn("A field is set to empty or 0", "data", data)
+	// 	return
+	// }
+	// // Log the received data
+	// log.Info("HandlePost Received data", "data", data)
+	//
+	// // Call the Fetch and Execute -> This will be commented for the first PR.
+	// // FetchAndExecute()
+	//
+	// // Respond back with the received data or a success message
+	// response := map[string]interface{}{
+	// 	"status": "success",
+	// 	"data":   data,
+	// }
+	// w.Header().Set("Content-Type", "application/json")
+	// json.NewEncoder(w).Encode(response)
 }
 
 // For now new API will serve the purpose of sending a transaction
@@ -107,30 +115,6 @@ func NewAPI(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfi
 	if err != nil {
 		log.Crit("Failed to start the API server", "error", err)
 	}
-	// client, err := ethclient.Dial(cfg.NodeUrl)
-	// if cfg.NodeUrl != "http://localhost:8545" {
-	// 	log.Warn("This is not the RPC localhost are you sure you want to continue (yes/no)")
-	// 	var response string
-	// 	fmt.Scanln(&response)
-	// 	if response != "yes" {
-	// 		log.Crit("Not yes, We Exiting the program.")
-	// 	}
-	// }
-	// if err != nil {
-	// 	log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
-	// }
-	// println("hexString", cfg.hexString)
-	// data, err := hex.DecodeString(cfg.hexString)
-	// if err != nil {
-	// 	fmt.Println("Error decoding hex string:", err)
-	// 	return &Monitor{}, err
-	// }
-	// println("Data: ", string(data))
-	// superchainconfig_address := "0xC2Be75506d5724086DEB7245bd260Cc9753911Be" //for now hardcoded for sepolia but will dynamically get from the config in the future
-	// // Here need to extract all the information from the calldata to retrieve the address of the superchainConfig.
-	//
-	// PspExecutionOnChain(ctx, client, superchainconfig_address, cfg.privatekeyflag, cfg.receiverAddress, data)
-	//
 	return &Monitor{}, errors.New("")
 }
 
@@ -288,11 +272,4 @@ func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChai
 	}
 
 	return paused
-}
-func weiToEther(wei *big.Int) float64 {
-	num := new(big.Rat).SetInt(wei)
-	denom := big.NewRat(params.Ether, 1)
-	num = num.Quo(num, denom)
-	f, _ := num.Float64()
-	return f
 }
