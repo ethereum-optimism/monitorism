@@ -1,7 +1,6 @@
 package withdrawals
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -38,10 +37,6 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		L2NodeURL:             ctx.String(L2NodeURLFlagName),
 		EventBlockRange:       ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
-	}
-
-	if cfg.LoopIntervalMsec == 0 {
-		return cfg, errors.New("no loop interval configured")
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
