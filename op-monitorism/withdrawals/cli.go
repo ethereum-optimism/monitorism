@@ -2,7 +2,7 @@ package withdrawals
 
 import (
 	"fmt"
-
+  "errors"
 	"github.com/ethereum/go-ethereum/common"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
@@ -18,6 +18,8 @@ const (
 	StartingL1BlockHeightFlagName = "start.block.height"
 
 	OptimismPortalAddressFlagName = "optimismportal.address"
+  LoopIntervalMsecFlagName      = "loop.interval.msec"
+
 )
 
 type CLIConfig struct {
@@ -25,9 +27,8 @@ type CLIConfig struct {
 	L2NodeURL string
 
 	EventBlockRange       uint64
-	LoopIntervalMsec      uint64
 	StartingL1BlockHeight uint64
-
+	LoopIntervalMsec      uint64
 	OptimismPortalAddress common.Address
 }
 
@@ -37,6 +38,11 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		L2NodeURL:             ctx.String(L2NodeURLFlagName),
 		EventBlockRange:       ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
+		LoopIntervalMsec:      ctx.Uint64(LoopIntervalMsecFlagName),
+	}
+
+	if cfg.LoopIntervalMsec == 0 {
+		return cfg, errors.New("no loop interval configured")
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
