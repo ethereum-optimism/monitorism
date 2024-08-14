@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
-	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -45,14 +43,14 @@ type Account struct {
 	Nickname string
 }
 
-type Monitor struct {
-	log log.Logger
-
-	rpc      client.RPC
-	accounts []Account
-
+type Defender struct {
+	log                     log.Logger
+	port                    string
+	SuperChainConfigAddress string
+	l1Client                *ethclient.Client
+	router                  *mux.Router
 	// metrics
-	balances            *prometheus.GaugeVec
+	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
@@ -104,18 +102,27 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 }
 
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
-func NewAPI(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
+func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
 	router := mux.NewRouter()
 	router.HandleFunc("/api/psp_execution", handlePost).Methods("POST")
-
-	// Start the server
-	log.Info("Starting API server", "port", cfg.portapi)
-	err := http.ListenAndServe(":"+cfg.portapi, router)
+	l1client, err := GetTheL1Client()
 	if err != nil {
-		log.Crit("Failed to start the API server", "error", err)
+		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
-	return &Monitor{}, errors.New("")
+
+	if cfg.portapi == "" {
+		return nil, fmt.Errorf("port.api is not set.")
+	}
+
+	defender := &Defender{
+		log:      log,
+		l1Client: l1client,
+		port:     cfg.portapi,
+		router:   router,
+	}
+
+	return defender, nil
 }
 
 // FetchAndExecute() will fetch the privatekey, and correct PSP from GCP and execute it on the correct chain.
@@ -191,11 +198,18 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 
 }
 
-func (m *Monitor) Run(ctx context.Context) {
+func (d *Defender) Run(ctx context.Context) {
+	// logic
+
+	d.log.Info("Starting HTTP JSON API PSP Execution server...", "port", d.port)
+	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
+	if err != nil {
+		log.Crit("Failed to start the API server", "error", err)
+	}
 }
 
-func (m *Monitor) Close(_ context.Context) error {
-	m.rpc.Close()
+func (d *Defender) Close(_ context.Context) error {
+	// d.rpc.Close()
 	return nil
 }
 
