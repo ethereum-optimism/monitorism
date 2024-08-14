@@ -48,7 +48,7 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 	}
 }
 
-// PSPExecutorMain() is a the entrypoint for the PSPExecutor monitor.
+// PSPExecutorMain() is a the entrypoint for the PSPExecutor API HTTP server.
 func PSPExecutorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := psp_executor.ReadCLIFlags(ctx)
@@ -57,10 +57,9 @@ func PSPExecutorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
-	monitor, err := psp_executor.NewAPI(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	defender_thread, err := psp_executor.NewDefender(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create psp_executor monitor: %w", err)
+		return nil, fmt.Errorf("Failed to create psp_executor HTTP API service: %w", err)
 	}
-
-	return defender.NewCliApp(ctx, log, metricsRegistry, monitor)
+	return defender.NewCliApp(ctx, log, metricsRegistry, defender_thread)
 }
