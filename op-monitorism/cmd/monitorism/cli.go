@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/global_events"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
-	"github.com/ethereum-optimism/monitorism/op-monitorism/psp_executor"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/secrets"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
@@ -93,14 +92,6 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Action:      cliapp.LifecycleCmd(LivenessExpirationMain),
 			},
 			{
-				Name:        "psp_executor",
-				Usage:       "Service to execute PSPs through API.",
-				Description: "Service to execute PSPs through API.",
-				Flags:       append(psp_executor.CLIFlags("PSPEXECUTOR_MON"), defaultFlags...),
-				Action:      cliapp.LifecycleCmd(PSPExecutorMain),
-			},
-
-			{
 				Name:        "version",
 				Usage:       "Show version",
 				Description: "Show version",
@@ -111,23 +102,6 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 			},
 		},
 	}
-}
-
-// PSPExecutorMain() is a the entrypoint for the PSPExecutor monitor.
-func PSPExecutorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
-	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
-	cfg, err := psp_executor.ReadCLIFlags(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to parse psp_executor config from flags: %w", err)
-	}
-
-	metricsRegistry := opmetrics.NewRegistry()
-	monitor, err := psp_executor.NewAPI(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create psp_executor monitor: %w", err)
-	}
-
-	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
 }
 
 func LivenessExpirationMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
