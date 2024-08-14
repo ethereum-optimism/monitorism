@@ -75,7 +75,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	log.Info("", "Safe Address", cfg.SafeAddress)
 	log.Info("", "LivenessModuleAddress", cfg.LivenessModuleAddress)
 	log.Info("", "LivenessGuardAddress", cfg.LivenessGuardAddress)
-	log.Info("", "Interval", cfg.LoopIntervalMsec)
 	log.Info("", "L1RpcUrl", cfg.L1NodeURL)
 	log.Info("--------------------------- End of Infos -------------------------------------------------------")
 

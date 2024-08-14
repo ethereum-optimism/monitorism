@@ -1,7 +1,6 @@
 package liveness_expiration
 
 import (
-	"errors"
 	"github.com/ethereum/go-ethereum/common"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
@@ -17,13 +16,11 @@ const (
 	SafeAddressFlagName           = "safe.address"
 	LivenessModuleAddressFlagName = "livenessmodule.address"
 	LivenessGuardAddressFlagName  = "livenessguard.address"
-	LoopIntervalMsecFlagName      = "loop.interval.msec"
 )
 
 type CLIConfig struct {
 	L1NodeURL             string
 	EventBlockRange       uint64
-	LoopIntervalMsec      uint64
 	StartingL1BlockHeight uint64
 
 	LivenessModuleAddress common.Address
@@ -36,14 +33,9 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		L1NodeURL:             ctx.String(L1NodeURLFlagName),
 		EventBlockRange:       ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
-		LoopIntervalMsec:      ctx.Uint64(LoopIntervalMsecFlagName),
 		SafeAddress:           common.HexToAddress(ctx.String(SafeAddressFlagName)),
 		LivenessModuleAddress: common.HexToAddress(ctx.String(LivenessModuleAddressFlagName)),
 		LivenessGuardAddress:  common.HexToAddress(ctx.String(LivenessGuardAddressFlagName)),
-	}
-
-	if cfg.LoopIntervalMsec == 0 {
-		return cfg, errors.New("no loop interval configured")
 	}
 
 	return cfg, nil
