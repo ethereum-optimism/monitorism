@@ -122,6 +122,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		router:   router,
 	}
 
+	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
 	return defender, nil
 }
 
@@ -199,9 +200,6 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 }
 
 func (d *Defender) Run(ctx context.Context) {
-	// logic
-
-	d.log.Info("Starting HTTP JSON API PSP Execution server...", "port", d.port)
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
 		log.Crit("Failed to start the API server", "error", err)
@@ -209,7 +207,7 @@ func (d *Defender) Run(ctx context.Context) {
 }
 
 func (d *Defender) Close(_ context.Context) error {
-	// d.rpc.Close()
+	d.l1Client.Close() //close the L1 client.
 	return nil
 }
 
