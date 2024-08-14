@@ -25,7 +25,6 @@ type CLIConfig struct {
 	L2NodeURL string
 
 	EventBlockRange       uint64
-	LoopIntervalMsec      uint64
 	StartingL1BlockHeight uint64
 
 	OptimismPortalAddress common.Address
