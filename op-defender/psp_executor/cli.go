@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	NodeURLFlagName         = "rpc-url"
+	NodeURLFlagName         = "rpc.url"
 	PrivateKeyFlagName      = "privatekey"
 	PortAPIFlagName         = "port.api"
 	ReceiverAddressFlagName = "receiver.address"
