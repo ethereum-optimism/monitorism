@@ -4,7 +4,7 @@ OP_STACK_GO_BUILDER?=us-docker.pkg.dev/oplabs-tools-artifacts/images/op-stack-go
 build: build-go
 .PHONY: build
 
-build-go: op-monitorism
+build-go: op-monitorism op-defender
 .PHONY: build-go
 
 golang-docker:
