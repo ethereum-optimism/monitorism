@@ -108,13 +108,13 @@ func LivenessExpirationMain(ctx *cli.Context, closeApp context.CancelCauseFunc) 
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := liveness_expiration.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse LivenessExpiration config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse LivenessExpiration config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := liveness_expiration.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create LivenessExpiration monitor: %w", err)
+		return nil, fmt.Errorf("failed to create LivenessExpiration monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -123,13 +123,13 @@ func GlobalEventMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := global_events.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse global_events config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse global_events config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := global_events.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create global_events monitor: %w", err)
+		return nil, fmt.Errorf("failed to create global_events monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -138,13 +138,13 @@ func MultisigMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Li
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := multisig.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse multisig config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse multisig config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := multisig.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create multisig monitor: %w", err)
+		return nil, fmt.Errorf("failed to create multisig monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -154,13 +154,13 @@ func FaultMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifec
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := fault.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse fault config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse fault config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := fault.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create fault monitor: %w", err)
+		return nil, fmt.Errorf("failed to create fault monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -170,13 +170,13 @@ func WithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := withdrawals.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse withdrawals config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse withdrawals config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create withdrawal monitor: %w", err)
+		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -186,13 +186,13 @@ func BalanceMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lif
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := balances.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse balances config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse balances config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := balances.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create balance monitor: %w", err)
+		return nil, fmt.Errorf("failed to create balance monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -202,13 +202,13 @@ func DrippieMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lif
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := drippie.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse drippie config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse drippie config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := drippie.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create drippie monitor: %w", err)
+		return nil, fmt.Errorf("failed to create drippie monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -218,13 +218,13 @@ func SecretsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lif
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := secrets.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse secrets config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse secrets config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := secrets.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create secrets monitor: %w", err)
+		return nil, fmt.Errorf("failed to create secrets monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
