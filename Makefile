@@ -16,7 +16,7 @@ golang-docker:
 			--progress plain \
 			--load \
 			-f docker-bake.hcl \
-			op-monitorism
+			op-monitorism op-defender
 .PHONY: golang-docker
 
 op-monitorism:
