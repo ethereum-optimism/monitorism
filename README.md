@@ -58,6 +58,9 @@ The balances monitor simply emits a metric reporting the balances for the config
 
 ### Fault Monitor
 
+<img width="1696" alt="148f61f4600327b94b55be39ca42c58c797d70d7017dbb7d56dbefa208cc7164" src="https://github.com/user-attachments/assets/68ecfaa0-ee6d-46be-b760-a9eb8b232d65">
+
+
 
 The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract.
 On change, reconstructing the output root from a trusted L2 source and looking for a match.
