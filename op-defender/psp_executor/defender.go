@@ -78,27 +78,6 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	// return HTTP code 511 for the first PR.
 	http.Error(w, "Network Authentication Required", 511)
 	return
-
-	// The next code after the `return` is commented for next PRs and don't require review for now.
-
-	// if data.Pause == false || data.Timestamp == 0 || data.Operator == "" || data.Calldata == "" {
-	// 	http.Error(w, "All fields are required and must be non-zero", http.StatusBadRequest)
-	// 	log.Warn("A field is set to empty or 0", "data", data)
-	// 	return
-	// }
-	// // Log the received data
-	// log.Info("HandlePost Received data", "data", data)
-	//
-	// // Call the Fetch and Execute -> This will be commented for the first PR.
-	// // FetchAndExecute()
-	//
-	// // Respond back with the received data or a success message
-	// response := map[string]interface{}{
-	// 	"status": "success",
-	// 	"data":   data,
-	// }
-	// w.Header().Set("Content-Type", "application/json")
-	// json.NewEncoder(w).Encode(response)
 }
 
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.

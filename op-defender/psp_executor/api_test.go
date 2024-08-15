@@ -16,30 +16,6 @@ func TestHandlePost(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 	}{
-		// The next tests case are commented for next PRs and don't require review for now.
-
-		// {
-		// 	name: "Valid request",
-		// 	body: RequestData{
-		// 		Pause:     true,
-		// 		Timestamp: 123456789,
-		// 		Operator:  "0x123",
-		// 		Calldata:  "0x456",
-		// 	},
-		// 	expectedStatus: http.StatusOK,
-		// 	expectedBody:   `{"status":"success","data":{"pause":true,"timestamp":123456789,"operator":"0x123","calldata":"0x456"}}`,
-		// },
-		// {
-		// 	name: "Invalid request with empty fields",
-		// 	body: RequestData{
-		// 		Pause:     false,
-		// 		Timestamp: 0,
-		// 		Operator:  "",
-		// 		Calldata:  "",
-		// 	},
-		// 	expectedStatus: http.StatusBadRequest,
-		// 	expectedBody:   "All fields are required and must be non-zero",
-		// },
 		{
 			name: "Network Authentication Required",
 			body: RequestData{
