@@ -63,5 +63,4 @@ crytic-export
 *.vsix
 
 bin
-op-monitorism/.air.toml
 op-defender/.air.toml
