@@ -4,7 +4,7 @@ OP_STACK_GO_BUILDER?=us-docker.pkg.dev/oplabs-tools-artifacts/images/op-stack-go
 build: build-go
 .PHONY: build
 
-build-go: op-monitorism
+build-go: op-monitorism op-defender
 .PHONY: build-go
 
 golang-docker:
@@ -16,15 +16,20 @@ golang-docker:
 			--progress plain \
 			--load \
 			-f docker-bake.hcl \
-			op-monitorism
+			op-monitorism op-defender
 .PHONY: golang-docker
 
 op-monitorism:
 	make -C ./op-monitorism 
 .PHONY: op-monitorism
 
+op-defender:
+	make -C ./op-defender 
+.PHONY: op-defender
+
 tidy:
 	make -C ./op-monitorism tidy
+	make -C ./op-defender tidy
 .PHONY: tidy
 
 clean:
