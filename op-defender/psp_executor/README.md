@@ -6,6 +6,10 @@ The service is design to listen on a port and execute a PSP onchain when a reque
 
 ⚠️ The service as to use a authentification method before calling this API ⚠️
 
+### Options and Configuration
+
+The current options are the following:
+
 ```
 OPTIONS:
    --rpc-url value             Node URL of a peer (default: "http://127.0.0.1:8545") [$PSPEXECUTOR_MON_NODE_URL]
@@ -21,4 +25,12 @@ OPTIONS:
    --metrics.port value        Metrics listening port (default: 7300) [$MONITORISM_METRICS_PORT]
    --loop.interval.msec value  Loop interval of the monitor in milliseconds (default: 60000) [$MONITORISM_LOOP_INTERVAL_MSEC]
    --help, -h                  show help
+```
+
+### Usage cURL HTTP API
+
+To use the HTTP API you can use the following `curl` command:
+
+```bash
+curl -X POST http://${HTTP_API_PSP}:${PORT}/api/psp_execution \-H "Content-Type: application/json" \-d '{"pause": true, "timestamp": 1719432011, "operator": "Tom"}'
 ```

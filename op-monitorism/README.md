@@ -1,23 +1,51 @@
-# Monitorism
+# Monitors
 
-A blockchain surveillance tool that supports monitoring for the OP Stack and EVM-compatible chains.
+`op-monitorism` is a collection of monitoring tools for the OP stack. Each monitor is designed to track a specific aspect of the Optimism stack and emit metrics that can be used to set up alerts.
 
-## Defender Components
+The following the commands are currently available:
 
-The list of all the defender currently built into `op-defender` is below.
+```bash
+NAME:
+   Monitorism - OP Stack Monitoring
 
-### HTTP API PSP Executor Service
+USAGE:
+   Monitorism [global options] command [command options]
 
-![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
+VERSION:
+   0.1.0-unstable
 
-The PSP Executor Service is made for executing PSP onchain faster to increase our readiness and speed in case of incident response.
+DESCRIPTION:
+   OP Stack Monitoring
 
-| `op-defender/psp_executor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-defender/psp_executor/README.md) |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+COMMANDS:
+   multisig             Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password
+   fault                Monitors output roots posted on L1 against L2
+   withdrawals          Monitors proven withdrawals on L1 against L2
+   balances             Monitors account balances
+   drippie              Monitors Drippie contract
+   secrets              Monitors secrets revealed in the CheckSecrets dripcheck
+   global_events        Monitors global events with YAML configuration
+   liveness_expiration  Monitor the liveness expiration on Gnosis Safe.
+   version              Show version
+   help, h              Shows a list of commands or help for one command
 
-## Monitors Components
+GLOBAL OPTIONS:
+   --help, -h     show help
+   --version, -v  print the version
+```
 
-The list of all the monitors currently built into `op-monitorism` is below.
+Each _monitor_ has some common configuration, configurable both via cli or env with defaults.
+
+```bash
+OPTIONS:
+   --log.level value           [$MONITORISM_LOG_LEVEL]           The lowest log level that will be output (default: INFO)
+   --log.format value          [$MONITORISM_LOG_FORMAT]          Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text)
+   --log.color                 [$MONITORISM_LOG_COLOR]           Color the log output if in terminal mode (default: false)
+   --metrics.enabled           [$MONITORISM_METRICS_ENABLED]     Enable the metrics server (default: false)
+   --metrics.addr value        [$MONITORISM_METRICS_ADDR]        Metrics listening address (default: "0.0.0.0")
+   --metrics.port value        [$MONITORISM_METRICS_PORT]        Metrics listening port (default: 7300)
+   --loop.interval.msec value  [$MONITORISM_LOOP_INTERVAL_MSEC]  Loop interval of the monitor in milliseconds (default: 60000)
+```
 
 ### Global Events Monitor
 
