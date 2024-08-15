@@ -81,14 +81,14 @@ The highest nonce of this item name format is reported.
 
 The drippie monitor tracks the execution and executability of drips within a Drippie contract.
 
-| `op-monitorism/drippie` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/multisig/README.md) |
+| `op-monitorism/drippie` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/drippie/README.md) |
 | ----------------------- | ---------------------------------------------------------------------------------------------------- |
 
 ### Secrets Monitor
 
 The secrets monitor takes a Drippie contract as a parameter and monitors for any drips within that contract that use the CheckSecrets dripcheck contract. CheckSecrets is a dripcheck that allows a drip to begin once a specific secret has been revealed (after a delay period) and cancels the drip if a second secret is revealed. It's important to monitor for these secrets being revealed as this could be a sign that the secret storage platform has been compromised and someone is attempting to exflitrate the ETH controlled by that drip.
 
-| `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/multisig/README.md) |
+| `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/secrets/README.md) |
 | ----------------------- | ---------------------------------------------------------------------------------------------------- |
 
 ## CLI and Docs
