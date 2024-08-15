@@ -23,8 +23,13 @@ op-monitorism:
 	make -C ./op-monitorism 
 .PHONY: op-monitorism
 
+op-defender:
+	make -C ./op-defender 
+.PHONY: op-defender
+
 tidy:
 	make -C ./op-monitorism tidy
+	make -C ./op-defender tidy
 .PHONY: tidy
 
 clean:
