@@ -37,15 +37,9 @@ The Liveness Expiration Monitor is made for monitoring the liveness expiration o
 | `op-monitorism/liveness_expiration` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/liveness_expiration/README.md) |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 
-### Fault Monitor
-
-The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract.
-On change, reconstructing the output root from a trusted L2 source and looking for a match.
-
-| `op-monitorism/fault` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/fault/README.md) |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-
 ### Withdrawals Monitor
+
+![6d5477f5585cb49ff2f8bd147c2e7037772de6a1dd128ce4331596b011ce6ea9](https://github.com/user-attachments/assets/ac5e0a61-b495-4254-b32a-86abf61f0dc1)
 
 The withdrawals monitor checks for new withdrawals that have been proven to the `OptimismPortal` contract.
 Each withdrawal is checked against the `L2ToL1MessagePasser` contract.
@@ -55,12 +49,25 @@ Each withdrawal is checked against the `L2ToL1MessagePasser` contract.
 
 ### Balances Monitor
 
+![5cd47a6e0f2fb7d921001db9eea24bb62bb892615011d03f275e02a147823827](https://github.com/user-attachments/assets/44884a76-e06d-4f58-a21f-94c2275e9d8b)
+
 The balances monitor simply emits a metric reporting the balances for the configured accounts.
 
 | `op-monitorism/balances` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/balances/README.md) |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 
+### Fault Monitor
+
+
+The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract.
+On change, reconstructing the output root from a trusted L2 source and looking for a match.
+
+| `op-monitorism/fault` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/fault/README.md) |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+
 ### Multisig Monitor
+
+![7dab260ee38122980274fee27b114c590405cff2e5a68e6090290ecb786b68f2](https://github.com/user-attachments/assets/0eeb161b-923a-40fd-b561-468df3d5091d)
 
 The multisig monitor reports the paused status of the `OptimismPortal` contract.
 If set, the latest nonce of the configued `Safe` address. And also if set, the latest presigned nonce stored in One Password.
