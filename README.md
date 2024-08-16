@@ -116,13 +116,13 @@ The PSP Executor Service is made for executing PSP onchain faster to increase ou
 | `op-defender/psp_executor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-defender/psp_executor/README.md) |
 | -------------------------- | ------------------------------------------------------------------------------------------------------ |
 
-## CLI and Docs
+## CLI & Docs
 
-## Development
+### Bootstrap
 
 After cloning, please run `./bootstrap.sh` to set up the development environment correctly.
 
-## Intro
+### Command line Options
 
 The cli has the ability to spin up a monitor for varying activities, each emmitting metrics used to setup alerts.
 
