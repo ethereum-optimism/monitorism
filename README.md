@@ -1,6 +1,8 @@
 # Monitorism
 
-A blockchain surveillance tool that supports monitoring for the OP Stack and EVM-compatible chains.
+_Monitorism_ is a tooling suite that supports monitoring and active remediation actions for the OP Stack chain.
+
+The suite is composed of two main components: `op-monitorism` and `op-defender`, that can be used together or separately and see below for more details.
 
 ## Monitors Components
 
