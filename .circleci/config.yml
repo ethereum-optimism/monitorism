@@ -217,7 +217,7 @@ workflows:
           type: approval
           filters:
             tags:
-              only: /^op-monitorism\/v.*/
+              only: (^op-monitorism\/v.*$|^op-defender\/v.*$)
             branches:
               ignore: /.*/
       - docker-build:
@@ -228,6 +228,21 @@ workflows:
             branches:
               ignore: /.*/
           docker_name: op-monitorism
+          docker_tags: <<pipeline.git.revision>>
+          requires: ['hold']
+          platforms: "linux/amd64"
+          publish: true
+          release: true
+          context:
+            - oplabs-gcr
+      - docker-build:
+          name: op-defender-docker-release
+          filters:
+            tags:
+              only: /^op-defender\/v.*/
+            branches:
+              ignore: /.*/
+          docker_name: op-defender
           docker_tags: <<pipeline.git.revision>>
           requires: ['hold']
           platforms: "linux/amd64"
