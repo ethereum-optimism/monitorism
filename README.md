@@ -1,3 +1,19 @@
+- [Monitorism](#monitorism)
+  - [Monitors Components](#monitors-components)
+    - [Global Events Monitor](#global-events-monitor)
+    - [Liveness Expiration Monitor](#liveness-expiration-monitor)
+    - [Withdrawals Monitor](#withdrawals-monitor)
+    - [Balances Monitor](#balances-monitor)
+    - [Fault Monitor](#fault-monitor)
+    - [Multisig Monitor](#multisig-monitor)
+    - [Drippie Monitor](#drippie-monitor)
+    - [Secrets Monitor](#secrets-monitor)
+  - [Defender Components](#defender-components)
+    - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
+  - [CLI and Docs](#cli-and-docs)
+  - [Development](#development)
+  - [Intro](#intro)
+
 # Monitorism
 
 _Monitorism_ is a tooling suite that supports monitoring and active remediation actions for the OP Stack chain.
