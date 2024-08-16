@@ -2,20 +2,10 @@
 
 A blockchain surveillance tool that supports monitoring for the OP Stack and EVM-compatible chains.
 
-## Defender Components
-
-The list of all the defender currently built into `op-defender` is below.
-
-### HTTP API PSP Executor Service
-
-![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
-
-The PSP Executor Service is made for executing PSP onchain faster to increase our readiness and speed in case of incident response.
-
-| `op-defender/psp_executor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-defender/psp_executor/README.md) |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-
 ## Monitors Components
+
+The `monitors` are passive security service allowing to provide automated monitoring for the OP Stack.
+There are components that are designed to make monitoring of the OP stack and alerting on specific events, that could be a sign of a security incident.
 
 The list of all the monitors currently built into `op-monitorism` is below.
 
@@ -60,8 +50,6 @@ The balances monitor simply emits a metric reporting the balances for the config
 
 <img width="1696" alt="148f61f4600327b94b55be39ca42c58c797d70d7017dbb7d56dbefa208cc7164" src="https://github.com/user-attachments/assets/68ecfaa0-ee6d-46be-b760-a9eb8b232d65">
 
-
-
 The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract.
 On change, reconstructing the output root from a trusted L2 source and looking for a match.
 
@@ -85,14 +73,30 @@ The highest nonce of this item name format is reported.
 The drippie monitor tracks the execution and executability of drips within a Drippie contract.
 
 | `op-monitorism/drippie` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/drippie/README.md) |
-| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
 
 ### Secrets Monitor
 
 The secrets monitor takes a Drippie contract as a parameter and monitors for any drips within that contract that use the CheckSecrets dripcheck contract. CheckSecrets is a dripcheck that allows a drip to begin once a specific secret has been revealed (after a delay period) and cancels the drip if a second secret is revealed. It's important to monitor for these secrets being revealed as this could be a sign that the secret storage platform has been compromised and someone is attempting to exflitrate the ETH controlled by that drip.
 
 | `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/secrets/README.md) |
-| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+
+## Defender Components
+
+The _defenders_ are active security service allowing to provide automated defense for the OP Stack.
+There are components that are designed to make immediate actions onchain/offchain to protect the assets.
+
+The list of all the defender currently built into `op-defender` is below.
+
+### HTTP API PSP Executor Service
+
+![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
+
+The PSP Executor Service is made for executing PSP onchain faster to increase our readiness and speed in case of incident response.
+
+| `op-defender/psp_executor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-defender/psp_executor/README.md) |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
 
 ## CLI and Docs
 
