@@ -10,9 +10,9 @@
     - [Secrets Monitor](#secrets-monitor)
   - [Defender Components](#defender-components)
     - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
-  - [CLI and Docs](#cli-and-docs)
-  - [Development](#development)
-  - [Intro](#intro)
+  - [CLI &amp; Docs](#cli--docs)
+    - [Bootstrap](#bootstrap)
+    - [Command line Options](#command-line-options)
 
 # Monitorism
 
