@@ -1,40 +1,51 @@
-- [Monitorism](#monitorism)
-  - [Monitors Components](#monitors-components)
-    - [Global Events Monitor](#global-events-monitor)
-    - [Liveness Expiration Monitor](#liveness-expiration-monitor)
-    - [Withdrawals Monitor](#withdrawals-monitor)
-    - [Balances Monitor](#balances-monitor)
-    - [Fault Monitor](#fault-monitor)
-    - [Multisig Monitor](#multisig-monitor)
-    - [Drippie Monitor](#drippie-monitor)
-    - [Secrets Monitor](#secrets-monitor)
-  - [Defender Components](#defender-components)
-    - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
-  - [CLI &amp; Docs](#cli--docs)
-    - [Bootstrap](#bootstrap)
-    - [Command line Options](#command-line-options)
+# Monitors
 
-# Monitorism
+`op-monitorism` is a collection of monitoring tools for the OP stack. Each monitor is designed to track a specific aspect of the Optimism stack and emit metrics that can be used to set up alerts.
 
-_Monitorism_ is a tooling suite that supports monitoring and active remediation actions for the OP Stack chain.
+The following the commands are currently available:
 
-The suite is composed of two main components: `op-monitorism` and `op-defender`, that can be used together or separately and see below for more details.
+```bash
+NAME:
+   Monitorism - OP Stack Monitoring
 
-## Monitors Components
+USAGE:
+   Monitorism [global options] command [command options]
 
-The `monitors` are passive security service allowing to provide automated monitoring for the OP Stack.
-There are components that are designed to make monitoring of the OP stack and alerting on specific events, that could be a sign of a security incident.
+VERSION:
+   0.1.0-unstable
 
-The list of all the monitors currently built into `op-monitorism` is below.
+DESCRIPTION:
+   OP Stack Monitoring
 
-### Global Events Monitor
+COMMANDS:
+   multisig             Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password
+   fault                Monitors output roots posted on L1 against L2
+   withdrawals          Monitors proven withdrawals on L1 against L2
+   balances             Monitors account balances
+   drippie              Monitors Drippie contract
+   secrets              Monitors secrets revealed in the CheckSecrets dripcheck
+   global_events        Monitors global events with YAML configuration
+   liveness_expiration  Monitor the liveness expiration on Gnosis Safe.
+   version              Show version
+   help, h              Shows a list of commands or help for one command
 
-![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
+GLOBAL OPTIONS:
+   --help, -h     show help
+   --version, -v  print the version
+```
 
-The Global Events Monitor is made for to taking YAML rules as configuration and monitoring the events that are emitted on the chain.
+Each _monitor_ has some common configuration, configurable both via cli or env with defaults.
 
-| `op-monitorism/global_events` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/global_events/README.md) |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+```bash
+OPTIONS:
+   --log.level value           [$MONITORISM_LOG_LEVEL]           The lowest log level that will be output (default: INFO)
+   --log.format value          [$MONITORISM_LOG_FORMAT]          Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text)
+   --log.color                 [$MONITORISM_LOG_COLOR]           Color the log output if in terminal mode (default: false)
+   --metrics.enabled           [$MONITORISM_METRICS_ENABLED]     Enable the metrics server (default: false)
+   --metrics.addr value        [$MONITORISM_METRICS_ADDR]        Metrics listening address (default: "0.0.0.0")
+   --metrics.port value        [$MONITORISM_METRICS_PORT]        Metrics listening port (default: 7300)
+   --loop.interval.msec value  [$MONITORISM_LOOP_INTERVAL_MSEC]  Loop interval of the monitor in milliseconds (default: 60000)
+```
 
 ### Liveness Expiration Monitor
 
@@ -68,6 +79,8 @@ The balances monitor simply emits a metric reporting the balances for the config
 
 <img width="1696" alt="148f61f4600327b94b55be39ca42c58c797d70d7017dbb7d56dbefa208cc7164" src="https://github.com/user-attachments/assets/68ecfaa0-ee6d-46be-b760-a9eb8b232d65">
 
+
+
 The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract.
 On change, reconstructing the output root from a trusted L2 source and looking for a match.
 
@@ -91,38 +104,22 @@ The highest nonce of this item name format is reported.
 The drippie monitor tracks the execution and executability of drips within a Drippie contract.
 
 | `op-monitorism/drippie` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/drippie/README.md) |
-| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
 
 ### Secrets Monitor
 
 The secrets monitor takes a Drippie contract as a parameter and monitors for any drips within that contract that use the CheckSecrets dripcheck contract. CheckSecrets is a dripcheck that allows a drip to begin once a specific secret has been revealed (after a delay period) and cancels the drip if a second secret is revealed. It's important to monitor for these secrets being revealed as this could be a sign that the secret storage platform has been compromised and someone is attempting to exflitrate the ETH controlled by that drip.
 
 | `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/secrets/README.md) |
-| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
 
-## Defender Components
+## CLI and Docs
 
-The _defenders_ are active security service allowing to provide automated defense for the OP Stack.
-There are components that are designed to make immediate actions onchain/offchain to protect the assets.
-
-The list of all the defender currently built into `op-defender` is below.
-
-### HTTP API PSP Executor Service
-
-![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
-
-The PSP Executor Service is made for executing PSP onchain faster to increase our readiness and speed in case of incident response.
-
-| `op-defender/psp_executor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-defender/psp_executor/README.md) |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-
-## CLI & Docs
-
-### Bootstrap
+## Development
 
 After cloning, please run `./bootstrap.sh` to set up the development environment correctly.
 
-### Command line Options
+## Intro
 
 The cli has the ability to spin up a monitor for varying activities, each emmitting metrics used to setup alerts.
 
