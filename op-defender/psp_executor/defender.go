@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"math/big"
 	"net/http"
+	"strings"
 )
 
 // **********************************************************************
@@ -68,23 +69,24 @@ type RequestData struct {
 }
 
 // handlePost handles POST requests and processes the JSON body
-func handlePost(w http.ResponseWriter, r *http.Request) {
+func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	var data RequestData
+	println("Received HTTP request", "method", r.Method, "url", r.URL)
+	//log the HTTP message and print the body inside the logs for debugging purposes.
+	d.log.Info("Received HTTP request", "method", r.Method, "url", r.URL)
 	// Decode the JSON body into the struct
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	FetchAndExecute()
+	d.FetchAndExecute()
 	return
 }
 
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
-	router := mux.NewRouter()
-	router.HandleFunc("/api/psp_execution", handlePost).Methods("POST")
-	l1client, err := GetTheL1Client()
+	l1client, err := CheckAndReturnRPC(cfg.NodeUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
@@ -97,49 +99,46 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		log:      log,
 		l1Client: l1client,
 		port:     cfg.portapi,
-		router:   router,
 	}
 
+	defender.router = mux.NewRouter()
+	defender.router.HandleFunc("/api/psp_execution", defender.handlePost).Methods("POST")
+
 	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
+	defender.log.Info("rpc.url", cfg.NodeUrl)
 	return defender, nil
 }
 
 // FetchAndExecute() will fetch the privatekey, and correct PSP from GCP and execute it on the correct chain.
-func FetchAndExecute() {
+func (d *Defender) FetchAndExecute() {
 	//1. Fetch the privatekey of the account in GCP secret Manager.
 	privatekey, err := FetchPrivateKeyInGcp()
 	if err != nil {
 		log.Crit("Failed to fetch the privatekey from GCP secret manager: %v", err.Error())
 	}
-	// 2. Fetch the CORRECT Nounce PSP in the GCP secret Manager and return the data to execute.
+	// 2. Fetch correct nonce PSP in the GCP secret Manager and return the data to execute.
 	superchainconfig_address, safe_address, data, err := FetchPSPInGCP()
 	if err != nil {
 		log.Crit("Failed to fetch the PSP from GCP secret manager: %v", err.Error())
 	}
 
-	// 3. Get the L1 client and ensure RPC is correct.
-	l1client, err := GetTheL1Client()
-	if err != nil {
-		log.Crit("Failed to get the L1client: %v", err.Error())
-	}
-
-	// 4. Execute the PSP on the chain.
+	// 3. Execute the PSP on the chain.
 	ctx := context.Background() //TODO: Check if we really do need to context if yes we will keep it otherwise we will remove this.
-	PspExecutionOnChain(ctx, l1client, superchainconfig_address, privatekey, safe_address, data)
+	PspExecutionOnChain(ctx, d.l1Client, superchainconfig_address, privatekey, safe_address, data)
 }
 
-// GetTheL1Client() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
-func GetTheL1Client() (*ethclient.Client, error) {
-	client, err := ethclient.Dial(LocalhostRPC) //Need to change this to the correct RPC (mainnet or sepolia) but for now hardcoded to localhost.
-	if LocalhostRPC != "http://localhost:8545" {
-		log.Warn("This is not the RPC localhost are you sure you want to continue (yes/no)")
-		var response string
-		fmt.Scanln(&response)
-		if response != "yes" {
-			log.Crit("Not yes, We Exiting the program.")
-		}
+// CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
+func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
+	if rpc_url == "" {
+		return nil, fmt.Errorf("rpc.url is not set.")
 	}
+	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") { // Check if the RPC is a production one. if yes return an error, as we should not execute the pause on the production chain in the first version.
+		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" is a production RPC.")
+	}
+
+	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
+
 		log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
 	}
 	return client, nil
