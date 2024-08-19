@@ -75,8 +75,7 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// return HTTP code 511 for the first PR.
-	http.Error(w, "Network Authentication Required", 511)
+	FetchAndExecute()
 	return
 }
 
@@ -160,21 +159,20 @@ func FetchPSPInGCP() (string, string, []byte, error) { //superchainconfig_addres
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address string, data []byte) {
-	log.Info("PSP Execution Pause")
 	pause_before_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
-	log.Info("Before the transaction the status of the `pause` is set to: ", pause_before_transaction)
+	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	txHash, err := sendTransaction(l1client, privatekey, safe_address, big.NewInt(1), data) // 1 wei
 	if err != nil {
 		log.Crit("Failed to send transaction:", "error", err)
 	}
 
-	log.Info("Transaction sent! Tx Hash: %s\n", txHash)
+	log.Info("Transaction sent!", "TxHash", txHash)
 
 	pause_after_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
-	log.Info("After the transaction the status of the `pause` is set to: ", pause_after_transaction)
+	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 }
 
