@@ -39,11 +39,6 @@ const (
 	LocalhostRPC     = "http://localhost:8545"
 )
 
-type Account struct {
-	Address  common.Address
-	Nickname string
-}
-
 type Defender struct {
 	log                     log.Logger
 	port                    string
@@ -71,7 +66,6 @@ type RequestData struct {
 // handlePost handles POST requests and processes the JSON body
 func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	var data RequestData
-	println("Received HTTP request", "method", r.Method, "url", r.URL)
 	//log the HTTP message and print the body inside the logs for debugging purposes.
 	d.log.Info("Received HTTP request", "method", r.Method, "url", r.URL)
 	// Decode the JSON body into the struct
@@ -103,9 +97,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", defender.handlePost).Methods("POST")
-
 	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
-	defender.log.Info("rpc.url", cfg.NodeUrl)
 	return defender, nil
 }
 
