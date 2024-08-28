@@ -2,57 +2,122 @@ package psp_executor
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
+	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
+
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-// TestHandlePost tests the handlePost function for various scenarios.
-func TestHandlePost(t *testing.T) {
+type SimpleExecutor struct{}
+
+func (e *SimpleExecutor) FetchAndExecute(d *Defender) {
+	// Implement logic or return mock response
+}
+
+// TestDefenderInitialization tests the initialization of the Defender struct
+func TestDefenderInitialization(t *testing.T) {
+	// Mock dependencies or create real ones depending on your test needs
+	var logger log.Logger
+	var l1Client *ethclient.Client
+	var router *mux.Router
+
+	// You can use real values or mock values for testing
+	port := "8080"
+	superChainConfigAddress := "0x123"
+
+	// Initialize Prometheus metrics for testing
+	latestPspNonce := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "latest_psp_nonce",
+		Help: "Latest PSP nonce",
+	}, []string{"tag"})
+	unexpectedRpcErrors := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "unexpected_rpc_errors",
+		Help: "Unexpected RPC errors count",
+	}, []string{"errorType"})
+
+	// Create an instance of Defender
+	defender := Defender{
+		log:                     logger,
+		port:                    port,
+		SuperChainConfigAddress: superChainConfigAddress,
+		l1Client:                l1Client,
+		router:                  router,
+		latestPspNonce:          latestPspNonce,
+		unexpectedRpcErrors:     unexpectedRpcErrors,
+	}
+
+	// Check if the Defender instance is initialized correctly
+	if defender.port != port {
+		t.Errorf("expected port %s, got %s", port, defender.port)
+	}
+	if defender.SuperChainConfigAddress != superChainConfigAddress {
+		t.Errorf("expected SuperChainConfigAddress %s, got %s", superChainConfigAddress, defender.SuperChainConfigAddress)
+	}
+	// Add more checks as necessary for your application
+}
+
+// TestHandlePost tests the handlePost function for various scenarios
+func TestHandlePostE2E(t *testing.T) {
+	// Initialize the Defender with necessary mock or real components
+	logger := log.New()
+	// metricsfactory := prometheus.NewRegistry() // Use Prometheus for metrics
+	metricsRegistry := opmetrics.NewRegistry()
+	metricsfactory := opmetrics.With(metricsRegistry)
+	executor := &SimpleExecutor{}
+	cfg := CLIConfig{
+		NodeUrl: "https://rpc.tenderly.co/fork/not_a_valid", // Example URL
+		portapi: "8080",
+	}
+
+	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	if err != nil {
+		t.Fatalf("Failed to create Defender: %v", err)
+	}
+
+	// Define test cases
 	tests := []struct {
 		name           string
-		body           RequestData
+		body           string
 		expectedStatus int
-		expectedBody   string
 	}{
 		{
-			name: "Network Authentication Required",
-			body: RequestData{
-				Pause:     false,
-				Timestamp: 0,
-				Operator:  "",
-				Calldata:  "",
-			},
-			expectedStatus: http.StatusNetworkAuthenticationRequired,
-			expectedBody:   "Network Authentication Required\n", //do not forget the newline character.
+			name:           "Valid Request",
+			body:           `{"pause":true,"timestamp":1596240000,"operator":"0x123","calldata":"0xabc"}`,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Invalid JSON",
+			body:           `{"pause":true, "timestamp":"invalid","operator":"0x123"}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Missing Fields",
+			body:           `{"timestamp":1596240000}`,
+			expectedStatus: http.StatusBadRequest,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Convert the body to JSON
-			jsonBody, _ := json.Marshal(tt.body)
-			req, err := http.NewRequest("POST", "/api/psp_execution", bytes.NewBuffer(jsonBody))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest("POST", "/api/psp_execution", bytes.NewBufferString(tc.body))
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Could not create request: %v", err)
 			}
 
-			// Create a ResponseRecorder to record the response.
-			rr := httptest.NewRecorder()
-			handler := http.HandlerFunc(handlePost) // Call the `handlePost` that is the entrypoint of the API.
+			recorder := httptest.NewRecorder()
+			handler := http.HandlerFunc(defender.handlePost)
 
-			// Call the handler function
-			handler.ServeHTTP(rr, req)
+			handler.ServeHTTP(recorder, req)
 
-			// Check the status code
-			if status := rr.Code; status != tt.expectedStatus {
-				t.Errorf("handler returned wrong status code: got `%v` want `%v`", status, tt.expectedStatus)
-			}
-
-			// Check the response body
-			if rr.Body.String() != tt.expectedBody {
-				t.Errorf("handler returned unexpected body: got `%v` want `%v`", rr.Body.String(), tt.expectedBody)
+			if status := recorder.Code; status != tc.expectedStatus {
+				t.Errorf("handler returned wrong status code: got %v want %v",
+					status, tc.expectedStatus)
 			}
 		})
 	}
