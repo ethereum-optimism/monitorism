@@ -39,12 +39,19 @@ const (
 	LocalhostRPC     = "http://localhost:8545"
 )
 
+type RealExecutor struct{}
+
+type Executor interface {
+	FetchAndExecute(d *Defender)
+}
+
 type Defender struct {
 	log                     log.Logger
 	port                    string
 	SuperChainConfigAddress string
 	l1Client                *ethclient.Client
 	router                  *mux.Router
+	executor                Executor
 	// metrics
 	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
@@ -73,12 +80,18 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	d.FetchAndExecute()
+	//check that all the fields are set
+	if data.Pause == false || data.Timestamp == 0 || data.Operator == "" || data.Calldata == "" {
+		http.Error(w, "Missing fields in the request", http.StatusBadRequest)
+		return
+	}
+
+	d.executor.FetchAndExecute(d)
 	return
 }
 
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
-func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Defender, error) {
+func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
 	l1client, err := CheckAndReturnRPC(cfg.NodeUrl)
 	if err != nil {
@@ -93,6 +106,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		log:      log,
 		l1Client: l1client,
 		port:     cfg.portapi,
+		executor: executor,
 	}
 
 	defender.router = mux.NewRouter()
@@ -101,23 +115,39 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	return defender, nil
 }
 
-// FetchAndExecute() will fetch the privatekey, and correct PSP from GCP and execute it on the correct chain.
-func (d *Defender) FetchAndExecute() {
-	//1. Fetch the privatekey of the account in GCP secret Manager.
-	privatekey, err := FetchPrivateKeyInGcp()
+func (e *RealExecutor) FetchAndExecute(d *Defender) {
+	ctx := context.Background() // Consider passing context through method parameters
+	privateKey, err := FetchPrivateKeyInGcp()
 	if err != nil {
-		log.Crit("Failed to fetch the privatekey from GCP secret manager: %v", err.Error())
-	}
-	// 2. Fetch correct nonce PSP in the GCP secret Manager and return the data to execute.
-	superchainconfig_address, safe_address, data, err := FetchPSPInGCP()
-	if err != nil {
-		log.Crit("Failed to fetch the PSP from GCP secret manager: %v", err.Error())
+		d.log.Crit("Failed to fetch the private key from GCP", "error", err)
+		return
 	}
 
-	// 3. Execute the PSP on the chain.
-	ctx := context.Background() //TODO: Check if we really do need to context if yes we will keep it otherwise we will remove this.
-	PspExecutionOnChain(ctx, d.l1Client, superchainconfig_address, privatekey, safe_address, data)
+	configAddress, safeAddress, data, err := FetchPSPInGCP()
+	if err != nil {
+		d.log.Crit("Failed to fetch PSP data from GCP", "error", err)
+		return
+	}
+	PspExecutionOnChain(ctx, d.l1Client, configAddress, privateKey, safeAddress, data)
 }
+
+// // FetchAndExecute() will fetch the privatekey, and correct PSP from GCP and execute it on the correct chain.
+// func (d *Defender) FetchAndExecute() {
+// 	//1. Fetch the privatekey of the account in GCP secret Manager.
+// 	privatekey, err := FetchPrivateKeyInGcp()
+// 	if err != nil {
+// 		log.Crit("Failed to fetch the privatekey from GCP secret manager: %v", err.Error())
+// 	}
+// 	// 2. Fetch correct nonce PSP in the GCP secret Manager and return the data to execute.
+// 	superchainconfig_address, safe_address, data, err := FetchPSPInGCP()
+// 	if err != nil {
+// 		log.Crit("Failed to fetch the PSP from GCP secret manager: %v", err.Error())
+// 	}
+//
+// 	// 3. Execute the PSP on the chain.
+// 	ctx := context.Background() //TODO: Check if we really do need to context if yes we will keep it otherwise we will remove this.
+// 	PspExecutionOnChain(ctx, d.l1Client, superchainconfig_address, privatekey, safe_address, data)
+// }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
 func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {

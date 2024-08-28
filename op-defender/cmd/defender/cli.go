@@ -10,6 +10,7 @@ import (
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 
+	executor "github.com/ethereum-optimism/monitorism/op-defender/psp_executor"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/urfave/cli/v2"
@@ -57,7 +58,8 @@ func PSPExecutorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
-	defender_thread, err := psp_executor.NewDefender(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	executor := &executor.RealExecutor{}
+	defender_thread, err := psp_executor.NewDefender(ctx.Context, log, opmetrics.With(metricsRegistry), cfg, executor)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create psp_executor HTTP API service: %w", err)
 	}
