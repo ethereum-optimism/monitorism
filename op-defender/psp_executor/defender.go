@@ -73,8 +73,8 @@ type RequestData struct {
 // handlePost handles POST requests and processes the JSON body
 func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	var data RequestData
-	//log the HTTP message and print the body inside the logs for debugging purposes.
-	d.log.Info("Received HTTP request", "method", r.Method, "url", r.URL)
+
+	d.log.Info("Received HTTP request", "method", r.Method, "url", r.URL) // Log the requests for traceability.
 	// Decode the JSON body into the struct
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -86,7 +86,8 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d.executor.FetchAndExecute(d)
+	// Execute the PSP on the chain.
+	d.executor.FetchAndExecute(d) //TODO: Make sure, a malformed HTTP request can't arrived here.
 	return
 }
 
@@ -115,7 +116,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 }
 
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
-	ctx := context.Background() // Consider passing context through method parameters
+	ctx := context.Background()
 	privateKey, err := FetchPrivateKeyInGcp()
 	if err != nil {
 		d.log.Crit("Failed to fetch the private key from GCP", "error", err)
@@ -129,24 +130,6 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	}
 	PspExecutionOnChain(ctx, d.l1Client, configAddress, privateKey, safeAddress, data)
 }
-
-// // FetchAndExecute() will fetch the privatekey, and correct PSP from GCP and execute it on the correct chain.
-// func (d *Defender) FetchAndExecute() {
-// 	//1. Fetch the privatekey of the account in GCP secret Manager.
-// 	privatekey, err := FetchPrivateKeyInGcp()
-// 	if err != nil {
-// 		log.Crit("Failed to fetch the privatekey from GCP secret manager: %v", err.Error())
-// 	}
-// 	// 2. Fetch correct nonce PSP in the GCP secret Manager and return the data to execute.
-// 	superchainconfig_address, safe_address, data, err := FetchPSPInGCP()
-// 	if err != nil {
-// 		log.Crit("Failed to fetch the PSP from GCP secret manager: %v", err.Error())
-// 	}
-//
-// 	// 3. Execute the PSP on the chain.
-// 	ctx := context.Background() //TODO: Check if we really do need to context if yes we will keep it otherwise we will remove this.
-// 	PspExecutionOnChain(ctx, d.l1Client, superchainconfig_address, privatekey, safe_address, data)
-// }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
 func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {

@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"context"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
-
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,49 +17,77 @@ func (e *SimpleExecutor) FetchAndExecute(d *Defender) {
 	// Do nothing for now, for mocking purposes
 }
 
-// TestDefenderInitialization tests the initialization of the Defender struct
-func TestDefenderInitialization(t *testing.T) {
+// TestHTTPServerHasOnlyPSPExecutionRoute tests if the HTTP server has only one route with "/api/psp_execution" path and "POST" method.
+func TestHTTPServerHasOnlyPSPExecutionRoute(t *testing.T) {
 	// Mock dependencies or create real ones depending on your test needs
-	var logger log.Logger
-	var l1Client *ethclient.Client
-	var router *mux.Router
+	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
+	executor := &SimpleExecutor{}
+	metricsfactory := opmetrics.With(opmetrics.NewRegistry())
+	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
+	cfg := CLIConfig{
+		NodeURL: mockNodeUrl,
+		PortAPI: "8080",
+	}
+	// Initialize the Defender with necessary mock or real components
+	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
 
-	// You can use real values or mock values for testing
-	port := "8080"
-	superChainConfigAddress := "0x123"
-
-	// Initialize Prometheus metrics for testing
-	latestPspNonce := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "latest_psp_nonce",
-		Help: "Latest PSP nonce",
-	}, []string{"tag"})
-	unexpectedRpcErrors := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "unexpected_rpc_errors",
-		Help: "Unexpected RPC errors count",
-	}, []string{"errorType"})
-
-	// Create an instance of Defender
-	defender := Defender{
-		log:                     logger,
-		port:                    port,
-		SuperChainConfigAddress: superChainConfigAddress,
-		l1Client:                l1Client,
-		router:                  router,
-		latestPspNonce:          latestPspNonce,
-		unexpectedRpcErrors:     unexpectedRpcErrors,
+	if err != nil {
+		t.Fatalf("Failed to create Defender: %v", err)
 	}
 
-	// Check if the Defender instance is initialized correctly
-	if defender.port != port {
-		t.Errorf("expected port %s, got %s", port, defender.port)
+	// We Check if the router has only one route
+	routeCount := 0
+	expectedPath := "/api/psp_execution"
+	expectedMethod := "POST"
+	var foundRoute *mux.Route
+
+	defender.router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		routeCount++
+		foundRoute = route
+		return nil
+	})
+
+	if routeCount != 1 {
+		t.Errorf("Expected 1 route, but found %d", routeCount)
 	}
-	if defender.SuperChainConfigAddress != superChainConfigAddress {
-		t.Errorf("expected SuperChainConfigAddress %s, got %s", superChainConfigAddress, defender.SuperChainConfigAddress)
+
+	if foundRoute != nil {
+		path, _ := foundRoute.GetPathTemplate()
+		methods, _ := foundRoute.GetMethods()
+
+		if path != expectedPath {
+			t.Errorf("Expected path %s, but found %s", expectedPath, path)
+		}
+
+		if len(methods) != 1 || methods[0] != expectedMethod {
+			t.Errorf("Expected method %s, but found %v", expectedMethod, methods)
+		}
+	} else {
+		t.Error("No route found")
 	}
-	// Add more checks as necessary for your application
 }
 
-// TestHandlePostMockFetch tests the handlePost function for various scenarios to check the result of the HTTP status code.
+// TestDefenderInitialization tests the initialization of the Defender struct with mock dependencies.
+func TestDefenderInitialization(t *testing.T) {
+	// Mock dependencies or create real ones depending on your test needs
+	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
+	executor := &SimpleExecutor{}
+	metricsfactory := opmetrics.With(opmetrics.NewRegistry())
+	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
+	cfg := CLIConfig{
+		NodeURL: mockNodeUrl,
+		PortAPI: "8080",
+	}
+	// Initialize the Defender with necessary mock or real components
+	_, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+
+	if err != nil {
+		t.Fatalf("Failed to create Defender: %v", err)
+	}
+
+}
+
+// TestHandlePostMockFetch tests the handlePost function with HTTP status code to make sure HTTP code returned are expected in every possible cases.
 func TestHandlePostMockFetch(t *testing.T) {
 	// Initialize the Defender with necessary mock or real components
 	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
@@ -85,39 +110,76 @@ func TestHandlePostMockFetch(t *testing.T) {
 		name           string
 		body           string
 		expectedStatus int
+		path           string
 	}{
 		{
-			name:           "Valid Request",
+			path:           "/api/psp_execution",
+			name:           "Valid Request", // Check if the request is valid as expected return the 200 status code.
 			body:           `{"pause":true,"timestamp":1596240000,"operator":"0x123","calldata":"0xabc"}`,
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "Invalid JSON",
+			path:           "/api/psp_execution",
+			name:           "Invalid JSON", // Check if the JSON is invalid return the 400 status code.
 			body:           `{"pause":true, "timestamp":"invalid","operator":"0x123"}`,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "Missing Fields",
+			path:           "/api/psp_execution",
+			name:           "Missing Fields", // Check if the required fields are missing return the 400 status code.
 			body:           `{"timestamp":1596240000}`,
 			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			path:           "/api/",
+			name:           "Incorrect Path Fields", // Check if the path is incorrect return the 404 status code.
+			body:           `{"pause":true,"timestamp":1596240000,"operator":"0x123","calldata":"0xabc"}`,
+			expectedStatus: http.StatusNotFound,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest("POST", "/api/psp_execution", bytes.NewBufferString(tc.body))
+			req, err := http.NewRequest("POST", tc.path, bytes.NewBufferString(tc.body))
 			if err != nil {
 				t.Fatalf("Could not create request: %v", err)
 			}
-
 			recorder := httptest.NewRecorder()
-			handler := http.HandlerFunc(defender.handlePost)
 
-			handler.ServeHTTP(recorder, req)
+			// Get the servermux of the defender.router to check the routes
+			muxrouter := defender.router
+			// Use the mux to serve the request
+			muxrouter.ServeHTTP(recorder, req)
 
 			if status := recorder.Code; status != tc.expectedStatus {
-				t.Errorf("handler returned wrong status code: got %v want %v",
-					status, tc.expectedStatus)
+				t.Errorf("handler \"%s\" returned wrong status code: got %v want %v",
+					tc.name, status, tc.expectedStatus)
+			}
+		})
+	}
+}
+
+// TestCheckAndReturnRPC tests that the CheckAndReturnRPC function returns the correct client or error for an incorrect URL provided.
+func TestCheckAndReturnRPC(t *testing.T) {
+	tests := []struct {
+		name    string
+		rpcURL  string
+		wantErr bool
+	}{
+		{"Empty URL", "", true},
+		{"Production URL", "https://mainnet.infura.io", true},
+		{"Valid Tenderly Fork URL", "https://rpc.tenderly.co/fork/some-id", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := CheckAndReturnRPC(tt.rpcURL)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CheckAndReturnRPC() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && client == nil {
+				t.Errorf("CheckAndReturnRPC() returned nil client for valid URL")
 			}
 		})
 	}
