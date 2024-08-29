@@ -39,12 +39,15 @@ const (
 	LocalhostRPC     = "http://localhost:8545"
 )
 
+// DefenderExecutor is a struct that implements the Executor interface.
 type DefenderExecutor struct{}
 
+// Executor is an interface that defines the FetchAndExecute method.
 type Executor interface {
 	FetchAndExecute(d *Defender)
 }
 
+// Defender is a struct that represents the Defender API server.
 type Defender struct {
 	log                     log.Logger
 	port                    string
@@ -57,12 +60,13 @@ type Defender struct {
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
-// Define a struct that represents the data structure of your response
+// Define a struct that represents the data structure of your response through the HTTP API.
 type Response struct {
 	Message string `json:"message"`
 	Status  int    `json:"status"`
 }
 
+// Define a struct that represents the data structure of your request through the HTTP API.
 type RequestData struct {
 	Pause     bool   `json:"pause"`
 	Timestamp int64  `json:"timestamp"`
@@ -115,6 +119,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	return defender, nil
 }
 
+// FetchAndExecute() will fetch the PSP and execute it this onchain.
+// For now the function is now fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
 	privateKey, err := FetchPrivateKeyInGcp()
@@ -150,14 +156,13 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 // FetchPrivateKey() will fetch the privatekey of the account that will execute the pause (from the GCP secret manager).
 func FetchPrivateKeyInGcp() (string, error) {
-	return "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", nil // Mock with a well-known private key from test test ... test junk derivation (9).
+	return "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", nil // Mock with a well-known private key from "test test ... test junk" derivation (9).
 }
 
 // FetchPSPInGCP() will fetch the correct PSPs into GCP and return the Data.
-func FetchPSPInGCP() (string, string, []byte, error) { //superchainconfig_address, safe_address, data, error
-	// need to fetch check first the nonce with the same method with `checkPauseStatus` and then return the data for this PSP.
-
-	return "0xC2Be75506d5724086DEB7245bd260Cc9753911Be", "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil //errors.New("Not implemented") mock with simple value to make a call on L1.
+func FetchPSPInGCP() (string, string, []byte, error) {
+	//In the future, we need to check first the nonce and then `checkPauseStatus` and then return the data for the latest PSPs.
+	return "0xC2Be75506d5724086DEB7245bd260Cc9753911Be", "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
@@ -179,6 +184,7 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 
 }
 
+// Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
@@ -186,6 +192,7 @@ func (d *Defender) Run(ctx context.Context) {
 	}
 }
 
+// Close() will close the Defender API server and the L1 client.
 func (d *Defender) Close(_ context.Context) error {
 	d.l1Client.Close() //close the L1 client.
 	return nil
