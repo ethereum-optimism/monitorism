@@ -17,7 +17,7 @@ import (
 type SimpleExecutor struct{}
 
 func (e *SimpleExecutor) FetchAndExecute(d *Defender) {
-	// Implement logic or return mock response
+	// Do nothing for now, for mocking purposes
 }
 
 // TestDefenderInitialization tests the initialization of the Defender struct
@@ -62,17 +62,17 @@ func TestDefenderInitialization(t *testing.T) {
 	// Add more checks as necessary for your application
 }
 
-// TestHandlePost tests the handlePost function for various scenarios
-func TestHandlePostE2E(t *testing.T) {
+// TestHandlePostMockFetch tests the handlePost function for various scenarios to check the result of the HTTP status code.
+func TestHandlePostMockFetch(t *testing.T) {
 	// Initialize the Defender with necessary mock or real components
-	logger := log.New()
-	// metricsfactory := prometheus.NewRegistry() // Use Prometheus for metrics
+	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
 	metricsRegistry := opmetrics.NewRegistry()
 	metricsfactory := opmetrics.With(metricsRegistry)
+	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
 	executor := &SimpleExecutor{}
 	cfg := CLIConfig{
-		NodeUrl: "https://rpc.tenderly.co/fork/not_a_valid", // Example URL
-		portapi: "8080",
+		NodeURL: mockNodeUrl,
+		PortAPI: "8080",
 	}
 
 	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)

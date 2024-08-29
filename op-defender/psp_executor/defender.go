@@ -39,7 +39,7 @@ const (
 	LocalhostRPC     = "http://localhost:8545"
 )
 
-type RealExecutor struct{}
+type DefenderExecutor struct{}
 
 type Executor interface {
 	FetchAndExecute(d *Defender)
@@ -93,19 +93,18 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
-	l1client, err := CheckAndReturnRPC(cfg.NodeUrl)
+	l1client, err := CheckAndReturnRPC(cfg.NodeURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
-
-	if cfg.portapi == "" {
+	if cfg.PortAPI == "" {
 		return nil, fmt.Errorf("port.api is not set.")
 	}
 
 	defender := &Defender{
 		log:      log,
 		l1Client: l1client,
-		port:     cfg.portapi,
+		port:     cfg.PortAPI,
 		executor: executor,
 	}
 
@@ -115,7 +114,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	return defender, nil
 }
 
-func (e *RealExecutor) FetchAndExecute(d *Defender) {
+func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background() // Consider passing context through method parameters
 	privateKey, err := FetchPrivateKeyInGcp()
 	if err != nil {
@@ -161,7 +160,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
 
-		log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
+		log.Crit("Failed to connect to the Ethereum client", "error", err)
 	}
 	return client, nil
 }

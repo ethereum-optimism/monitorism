@@ -58,7 +58,7 @@ func PSPExecutorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
-	executor := &executor.RealExecutor{}
+	executor := &executor.DefenderExecutor{}
 	defender_thread, err := psp_executor.NewDefender(ctx.Context, log, opmetrics.With(metricsRegistry), cfg, executor)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create psp_executor HTTP API service: %w", err)
