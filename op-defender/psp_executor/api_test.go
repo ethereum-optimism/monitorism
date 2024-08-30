@@ -162,8 +162,8 @@ func TestHandlePostMockFetch(t *testing.T) {
 // TestCheckAndReturnRPC tests that the CheckAndReturnRPC function returns the correct client or error for an incorrect URL provided.
 func TestCheckAndReturnRPC(t *testing.T) {
 	tests := []struct {
-		name        string
-		rpcURL      string
+		name      string
+		rpcURL    string
 		expectErr bool
 	}{
 		{"Empty URL", "", true},
@@ -174,11 +174,11 @@ func TestCheckAndReturnRPC(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client, err := CheckAndReturnRPC(tt.rpcURL)
-			if (err != nil) != tt.expectedErr {
-				t.Errorf("CheckAndReturnRPC() error = %v, expectedErr %v", err, tt.expectedErr)
+			if (err != nil) != tt.expectErr {
+				t.Errorf("CheckAndReturnRPC() error = %v, expectedErr %v", err, tt.expectErr)
 				return
 			}
-			if !tt.expectedErr && client == nil {
+			if !tt.expectErr && client == nil {
 				t.Errorf("CheckAndReturnRPC() returned nil client for valid URL")
 			}
 		})
