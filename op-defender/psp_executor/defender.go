@@ -119,7 +119,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 }
 
 // FetchAndExecute() will fetch the PSP and execute it this onchain.
-// For now, the function is now fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
+// For now, the function is not fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
 // In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
