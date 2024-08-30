@@ -28,7 +28,9 @@ OPTIONS:
 ```
 
 ## Usage
+
 ### HTTP API service
+
 To start the HTTP API service we can use the following oneliner command:
 ![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
 
@@ -46,3 +48,9 @@ To use the HTTP API you can use the following `curl` command:
 curl -X POST http://${HTTP_API_PSP}:${PORT}/api/psp_execution \-H "Content-Type: application/json" \-d '{"pause": true, "timestamp": 1719432011, "operator": "Tom"}'
 ```
 
+Explanation of the _mandatory_ fields:
+| Field | Description |
+| --------- | -------------------------------------------------------------------------------- |
+| pause | A boolean value indicating whether to pause (true) or unpause (false) the system |
+| timestamp | The Unix timestamp when the request is made |
+| operator | The name or identifier of the person initiating the PSP execution |
