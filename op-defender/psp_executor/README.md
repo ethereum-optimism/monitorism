@@ -33,14 +33,27 @@ OPTIONS:
 
 To start the HTTP API service we can use the following oneliner command:
 ![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
+Settings of the HTTP API service:
+
+| Port                          | API Path             | HTTP Method |
+| ----------------------------- | -------------------- | ----------- |
+| 8080 (Default can be changed) | `/api/psp_execution` | POST        |
 
 ```shell
 go run ../cmd/defender psp_executor --privatekey XXXXXX --receiver.address 0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF --rpc.url http://localhost:8545 --port.api 8080
 ```
 
-### cURL HTTP API
+### Metrics Server
 
-To use the HTTP API you can use the following `curl` command:
+| Option              | Description               | Default Value | Environment Variable          |
+| ------------------- | ------------------------- | ------------- | ----------------------------- |
+| `--metrics.enabled` | Enable the metrics server | `false`       | `$MONITORISM_METRICS_ENABLED` |
+| `--metrics.addr`    | Metrics listening address | `"0.0.0.0"`   | `$MONITORISM_METRICS_ADDR`    |
+| `--metrics.port`    | Metrics listening port    | `7300`        | `$MONITORISM_METRICS_PORT`    |
+
+### Usage of the HTTP API
+
+To use the HTTP API you can use the following `curl` command with the following fields:
 
 ![image](https://github.com/user-attachments/assets/3edc2ee5-6dfd-4872-9bc6-e3ead7444a96)
 
