@@ -17,15 +17,15 @@ const (
 )
 
 type CLIConfig struct {
-	NodeUrl         string
+	NodeURL         string
 	privatekeyflag  string
-	portapi         string
-	receiverAddress string
-	hexString       string
+	PortAPI         string
+	ReceiverAddress string
+	HexString       string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
-	cfg := CLIConfig{NodeUrl: ctx.String(NodeURLFlagName)}
+	cfg := CLIConfig{NodeURL: ctx.String(NodeURLFlagName)}
 	if len(PrivateKeyFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a PrivateKeyFlagName set to execute the pause on mainnet")
 	}
@@ -33,16 +33,15 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	if len(PortAPIFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a PortAPIFlagName set to execute the pause on mainnet")
 	}
-	cfg.receiverAddress = ctx.String(ReceiverAddressFlagName)
+	cfg.PortAPI = ctx.String(PortAPIFlagName)
 	if len(ReceiverAddressFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a ReceiverAddressFlagName set to receive the pause on mainnet.")
 	}
-
-	cfg.hexString = ctx.String(DataFlagName)
+	cfg.ReceiverAddress = ctx.String(ReceiverAddressFlagName)
 	if len(DataFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `data` set to execute the calldata on mainnet.")
 	}
-	cfg.portapi = ctx.String(PortAPIFlagName)
+	cfg.HexString = ctx.String(DataFlagName)
 	return cfg, nil
 }
 

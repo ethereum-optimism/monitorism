@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"math/big"
 	"net/http"
+	"strings"
 )
 
 // **********************************************************************
@@ -38,146 +39,152 @@ const (
 	LocalhostRPC     = "http://localhost:8545"
 )
 
-type Account struct {
-	Address  common.Address
-	Nickname string
+// DefenderExecutor is a struct that implements the Executor interface.
+type DefenderExecutor struct{}
+
+// Executor is an interface that defines the FetchAndExecute method.
+type Executor interface {
+	FetchAndExecute(d *Defender) // For doc see the `FetchAndExecute()` function.
 }
 
+// Defender is a struct that represents the Defender API server.
 type Defender struct {
 	log                     log.Logger
 	port                    string
 	SuperChainConfigAddress string
 	l1Client                *ethclient.Client
 	router                  *mux.Router
+	executor                Executor
 	// metrics
 	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
-// Define a struct that represents the data structure of your response
+// Define a struct that represents the data structure of your response through the HTTP API.
 type Response struct {
 	Message string `json:"message"`
 	Status  int    `json:"status"`
 }
 
+// Define a struct that represents the data structure of your request through the HTTP API.
 type RequestData struct {
 	Pause     bool   `json:"pause"`
 	Timestamp int64  `json:"timestamp"`
 	Operator  string `json:"operator"`
-	Calldata  string `json:"calldata"` //temporary field as the calldata will be fetched from the GCP in the future (so will be removed in the future PR).
 }
 
 // handlePost handles POST requests and processes the JSON body
-func handlePost(w http.ResponseWriter, r *http.Request) {
+func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	var data RequestData
+
+	d.log.Info("Received HTTP request", "method", r.Method, "url", r.URL) // Log the requests for traceability.
 	// Decode the JSON body into the struct
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// return HTTP code 511 for the first PR.
-	http.Error(w, "Network Authentication Required", 511)
+	//check that all the fields are set
+	if data.Pause == false || data.Timestamp == 0 || data.Operator == "" {
+		http.Error(w, "Missing fields in the request", http.StatusBadRequest)
+		return
+	}
+
+	// Execute the PSP on the chain.
+	d.executor.FetchAndExecute(d) //TODO: Make sure, a malformed HTTP request can't arrived here.
 	return
 }
 
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
-func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Defender, error) {
+func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
-	router := mux.NewRouter()
-	router.HandleFunc("/api/psp_execution", handlePost).Methods("POST")
-	l1client, err := GetTheL1Client()
+	l1client, err := CheckAndReturnRPC(cfg.NodeURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
-
-	if cfg.portapi == "" {
+	if cfg.PortAPI == "" {
 		return nil, fmt.Errorf("port.api is not set.")
 	}
 
 	defender := &Defender{
 		log:      log,
 		l1Client: l1client,
-		port:     cfg.portapi,
-		router:   router,
+		port:     cfg.PortAPI,
+		executor: executor,
 	}
 
+	defender.router = mux.NewRouter()
+	defender.router.HandleFunc("/api/psp_execution", defender.handlePost).Methods("POST")
 	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
 	return defender, nil
 }
 
-// FetchAndExecute() will fetch the privatekey, and correct PSP from GCP and execute it on the correct chain.
-func FetchAndExecute() {
-	//1. Fetch the privatekey of the account in GCP secret Manager.
-	privatekey, err := FetchPrivateKeyInGcp()
+// FetchAndExecute() will fetch the PSP and execute it this onchain.
+// For now, the function is not fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
+// In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
+func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
+	ctx := context.Background()
+	privateKey, err := FetchPrivateKeyInGcp()
 	if err != nil {
-		log.Crit("Failed to fetch the privatekey from GCP secret manager: %v", err.Error())
-	}
-	// 2. Fetch the CORRECT Nounce PSP in the GCP secret Manager and return the data to execute.
-	superchainconfig_address, safe_address, data, err := FetchPSPInGCP()
-	if err != nil {
-		log.Crit("Failed to fetch the PSP from GCP secret manager: %v", err.Error())
+		d.log.Crit("Failed to fetch the private key from GCP", "error", err)
+		return
 	}
 
-	// 3. Get the L1 client and ensure RPC is correct.
-	l1client, err := GetTheL1Client()
+	configAddress, safeAddress, data, err := FetchPSPInGCP()
 	if err != nil {
-		log.Crit("Failed to get the L1client: %v", err.Error())
+		d.log.Crit("Failed to fetch PSP data from GCP", "error", err)
+		return
 	}
-
-	// 4. Execute the PSP on the chain.
-	ctx := context.Background() //TODO: Check if we really do need to context if yes we will keep it otherwise we will remove this.
-	PspExecutionOnChain(ctx, l1client, superchainconfig_address, privatekey, safe_address, data)
+	PspExecutionOnChain(ctx, d.l1Client, configAddress, privateKey, safeAddress, data)
 }
 
-// GetTheL1Client() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
-func GetTheL1Client() (*ethclient.Client, error) {
-	client, err := ethclient.Dial(LocalhostRPC) //Need to change this to the correct RPC (mainnet or sepolia) but for now hardcoded to localhost.
-	if LocalhostRPC != "http://localhost:8545" {
-		log.Warn("This is not the RPC localhost are you sure you want to continue (yes/no)")
-		var response string
-		fmt.Scanln(&response)
-		if response != "yes" {
-			log.Crit("Not yes, We Exiting the program.")
-		}
+// CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
+func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
+	if rpc_url == "" {
+		return nil, fmt.Errorf("rpc.url is not set.")
 	}
+	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") { // Check if the RPC is a production one. if yes return an error, as we should not execute the pause on the production chain in the first version.
+		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" is a production RPC.")
+	}
+
+	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-		log.Crit("Failed to connect to the Ethereum client: %v", err.Error())
+
+		log.Crit("Failed to connect to the Ethereum client", "error", err)
 	}
 	return client, nil
 }
 
 // FetchPrivateKey() will fetch the privatekey of the account that will execute the pause (from the GCP secret manager).
 func FetchPrivateKeyInGcp() (string, error) {
-	return "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", nil // Mock with a well-known private key from test test ... test junk derivation (9).
+	return "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", nil // Mock with a well-known private key from "test test ... test junk" derivation (9).
 }
 
 // FetchPSPInGCP() will fetch the correct PSPs into GCP and return the Data.
-func FetchPSPInGCP() (string, string, []byte, error) { //superchainconfig_address, safe_address, data, error
-	// need to fetch check first the nonce with the same method with `checkPauseStatus` and then return the data for this PSP.
-
-	return "0xC2Be75506d5724086DEB7245bd260Cc9753911Be", "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil //errors.New("Not implemented") mock with simple value to make a call on L1.
+func FetchPSPInGCP() (string, string, []byte, error) {
+	//In the future, we need to check first the nonce and then `checkPauseStatus` and then return the data for the latest PSPs.
+	return "0xC2Be75506d5724086DEB7245bd260Cc9753911Be", "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address string, data []byte) {
-	log.Info("PSP Execution Pause")
 	pause_before_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
-	log.Info("Before the transaction the status of the `pause` is set to: ", pause_before_transaction)
+	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	txHash, err := sendTransaction(l1client, privatekey, safe_address, big.NewInt(1), data) // 1 wei
 	if err != nil {
 		log.Crit("Failed to send transaction:", "error", err)
 	}
 
-	log.Info("Transaction sent! Tx Hash: %s\n", txHash)
+	log.Info("Transaction sent!", "TxHash", txHash)
 
 	pause_after_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
-	log.Info("After the transaction the status of the `pause` is set to: ", pause_after_transaction)
+	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 }
 
+// Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
@@ -185,6 +192,7 @@ func (d *Defender) Run(ctx context.Context) {
 	}
 }
 
+// Close() will close the Defender API server and the L1 client.
 func (d *Defender) Close(_ context.Context) error {
 	d.l1Client.Close() //close the L1 client.
 	return nil

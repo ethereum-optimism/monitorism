@@ -64,3 +64,4 @@ crytic-export
 
 bin
 op-defender/.air.toml
+op-defender/run.sh
