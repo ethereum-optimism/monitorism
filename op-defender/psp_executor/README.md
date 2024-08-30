@@ -6,7 +6,50 @@ The service is designed to listen on a port and execute a PSP onchain when a req
 
 ⚠️ The service has to use an authentication method before calling this API ⚠️
 
-### Options and Configuration
+## 1. Usage
+
+### 1.Run HTTP API service
+
+To start the HTTP API service we can use the following oneliner command:
+![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
+Settings of the HTTP API service:
+
+| Port                          | API Path             | HTTP Method |
+| ----------------------------- | -------------------- | ----------- |
+| 8080 (Default can be changed) | `/api/psp_execution` | POST        |
+
+```shell
+go run ../cmd/defender psp_executor --privatekey XXXXXX --receiver.address 0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF --rpc.url http://localhost:8545 --port.api 8080
+```
+
+### 2. Request the HTTP API
+
+To use the HTTP API you can use the following `curl` command with the following fields:
+
+![image](https://github.com/user-attachments/assets/3edc2ee5-6dfd-4872-9bc6-e3ead7444a96)
+
+```bash
+curl -X POST http://${HTTP_API_PSP}:${PORT}/api/psp_execution \-H "Content-Type: application/json" \-d '{"pause": true, "timestamp": 1719432011, "operator": "Tom"}'
+```
+
+Explanation of the _mandatory_ fields:
+| Field | Description |
+| --------- | -------------------------------------------------------------------------------- |
+| pause | A boolean value indicating whether to pause (true) or unpause (false) the SuperchainConfig.|
+| timestamp | The Unix timestamp when the request is made. |
+| operator | The name or identifier of the person initiating the PSP execution. |
+
+### 3. Metrics Server
+
+To monitor the _PSPexecutor service_ the metrics server can be enabled. The metrics server will expose the metrics on the specified address and port.
+The metrics are using **Prometheus** and can be set with the following options:
+| Option | Description | Default Value | Environment Variable |
+| ------------------- | ------------------------- | ------------- | ----------------------------- |
+| `--metrics.enabled` | Enable the metrics server | `false` | `$MONITORISM_METRICS_ENABLED` |
+| `--metrics.addr` | Metrics listening address | `"0.0.0.0"` | `$MONITORISM_METRICS_ADDR` |
+| `--metrics.port` | Metrics listening port | `7300` | `$MONITORISM_METRICS_PORT` |
+
+### 4. Options and Configuration
 
 The current options are the following:
 
@@ -26,44 +69,3 @@ OPTIONS:
    --loop.interval.msec value  Loop interval of the monitor in milliseconds (default: 60000) [$MONITORISM_LOOP_INTERVAL_MSEC]
    --help, -h                  show help
 ```
-
-## Usage
-
-### HTTP API service
-
-To start the HTTP API service we can use the following oneliner command:
-![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
-Settings of the HTTP API service:
-
-| Port                          | API Path             | HTTP Method |
-| ----------------------------- | -------------------- | ----------- |
-| 8080 (Default can be changed) | `/api/psp_execution` | POST        |
-
-```shell
-go run ../cmd/defender psp_executor --privatekey XXXXXX --receiver.address 0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF --rpc.url http://localhost:8545 --port.api 8080
-```
-
-### Metrics Server
-
-| Option              | Description               | Default Value | Environment Variable          |
-| ------------------- | ------------------------- | ------------- | ----------------------------- |
-| `--metrics.enabled` | Enable the metrics server | `false`       | `$MONITORISM_METRICS_ENABLED` |
-| `--metrics.addr`    | Metrics listening address | `"0.0.0.0"`   | `$MONITORISM_METRICS_ADDR`    |
-| `--metrics.port`    | Metrics listening port    | `7300`        | `$MONITORISM_METRICS_PORT`    |
-
-### Usage of the HTTP API
-
-To use the HTTP API you can use the following `curl` command with the following fields:
-
-![image](https://github.com/user-attachments/assets/3edc2ee5-6dfd-4872-9bc6-e3ead7444a96)
-
-```bash
-curl -X POST http://${HTTP_API_PSP}:${PORT}/api/psp_execution \-H "Content-Type: application/json" \-d '{"pause": true, "timestamp": 1719432011, "operator": "Tom"}'
-```
-
-Explanation of the _mandatory_ fields:
-| Field | Description |
-| --------- | -------------------------------------------------------------------------------- |
-| pause | A boolean value indicating whether to pause (true) or unpause (false) the SuperchainConfig.|
-| timestamp | The Unix timestamp when the request is made. |
-| operator | The name or identifier of the person initiating the PSP execution. |
