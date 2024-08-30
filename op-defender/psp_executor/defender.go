@@ -44,7 +44,7 @@ type DefenderExecutor struct{}
 
 // Executor is an interface that defines the FetchAndExecute method.
 type Executor interface {
-	FetchAndExecute(d *Defender)
+	FetchAndExecute(d *Defender) // For doc see the `FetchAndExecute()` function.
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -71,7 +71,6 @@ type RequestData struct {
 	Pause     bool   `json:"pause"`
 	Timestamp int64  `json:"timestamp"`
 	Operator  string `json:"operator"`
-	Calldata  string `json:"calldata"` //temporary field as the calldata will be fetched from the GCP in the future (so will be removed in the future PR).
 }
 
 // handlePost handles POST requests and processes the JSON body
@@ -85,7 +84,7 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//check that all the fields are set
-	if data.Pause == false || data.Timestamp == 0 || data.Operator == "" || data.Calldata == "" {
+	if data.Pause == false || data.Timestamp == 0 || data.Operator == "" {
 		http.Error(w, "Missing fields in the request", http.StatusBadRequest)
 		return
 	}
@@ -120,7 +119,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 }
 
 // FetchAndExecute() will fetch the PSP and execute it this onchain.
-// For now the function is now fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
+// For now, the function is now fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
+// In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
 	privateKey, err := FetchPrivateKeyInGcp()
