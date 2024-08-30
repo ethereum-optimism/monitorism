@@ -164,7 +164,7 @@ func TestCheckAndReturnRPC(t *testing.T) {
 	tests := []struct {
 		name        string
 		rpcURL      string
-		expectedErr bool
+		expectErr bool
 	}{
 		{"Empty URL", "", true},
 		{"Production URL", "https://mainnet.infura.io", true},
