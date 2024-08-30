@@ -115,13 +115,13 @@ func TestHandlePostMockFetch(t *testing.T) {
 		{
 			path:           "/api/psp_execution",
 			name:           "Valid Request", // Check if the request is valid as expected return the 200 status code.
-			body:           `{"pause":true,"timestamp":1596240000,"operator":"0x123","calldata":"0xabc"}`,
+			body:           `{"pause":true,"timestamp":1596240000,"operator":"0x123"}`,
 			expectedStatus: http.StatusOK,
 		},
 		{
 			path:           "/api/psp_execution",
 			name:           "Invalid JSON", // Check if the JSON is invalid return the 400 status code.
-			body:           `{"pause":true, "timestamp":"invalid","operator":"0x123"}`,
+			body:           `{"pause":true, "timestamp":"invalid","operator":}`,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -133,7 +133,7 @@ func TestHandlePostMockFetch(t *testing.T) {
 		{
 			path:           "/api/",
 			name:           "Incorrect Path Fields", // Check if the path is incorrect return the 404 status code.
-			body:           `{"pause":true,"timestamp":1596240000,"operator":"0x123","calldata":"0xabc"}`,
+			body:           `{"pause":true,"timestamp":1596240000,"operator":"0x123"}`,
 			expectedStatus: http.StatusNotFound,
 		},
 	}
