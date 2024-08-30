@@ -2,9 +2,9 @@
 
 The PSP Executor service is a service designed to execute PSP onchain faster to increase our readiness and speed in case of incident response.
 
-The service is design to listen on a port and execute a PSP onchain when a request is received.
+The service is designed to listen on a port and execute a PSP onchain when a request is received.
 
-⚠️ The service as to use a authentification method before calling this API ⚠️
+⚠️ The service has to use an authentication method before calling this API ⚠️
 
 ### Options and Configuration
 
@@ -12,7 +12,7 @@ The current options are the following:
 
 ```
 OPTIONS:
-   --rpc-url value             Node URL of a peer (default: "http://127.0.0.1:8545") [$PSPEXECUTOR_MON_NODE_URL]
+   --rpc.url value             Node URL of a peer (default: "http://127.0.0.1:8545") [$PSPEXECUTOR_MON_NODE_URL]
    --privatekey value          Private key of the account that will issue the pause () [$PSPEXECUTOR_MON_PRIVATE_KEY]
    --receiver.address value    The receiver address of the pause request. [$PSPEXECUTOR_MON_RECEIVER_ADDRESS]
    --port.api value            Port of the API server you want to listen on (e.g. 8080). (default: "8080") [$PSPEXECUTOR_MON_PORT_API]
@@ -51,6 +51,6 @@ curl -X POST http://${HTTP_API_PSP}:${PORT}/api/psp_execution \-H "Content-Type:
 Explanation of the _mandatory_ fields:
 | Field | Description |
 | --------- | -------------------------------------------------------------------------------- |
-| pause | A boolean value indicating whether to pause (true) or unpause (false) the system |
-| timestamp | The Unix timestamp when the request is made |
-| operator | The name or identifier of the person initiating the PSP execution |
+| pause | A boolean value indicating whether to pause (true) or unpause (false) the SuperchainConfig.|
+| timestamp | The Unix timestamp when the request is made. |
+| operator | The name or identifier of the person initiating the PSP execution. |
