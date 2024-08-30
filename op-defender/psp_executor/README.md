@@ -8,7 +8,7 @@ The service is designed to listen on a port and execute a PSP onchain when a req
 
 ## 1. Usage
 
-### 1.Run HTTP API service
+### 1 .Run HTTP API service
 
 To start the HTTP API service we can use the following oneliner command:
 ![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
