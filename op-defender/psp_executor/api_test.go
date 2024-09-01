@@ -126,6 +126,11 @@ func TestHandlePostMockFetch(t *testing.T) {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 
+	// Create a large request body (> 1MB)
+	largeBody := make([]byte, 1048577) // 1MB + 1 byte
+	for i := range largeBody {
+		largeBody[i] = 'a'
+	}
 	// Define test cases
 	tests := []struct {
 		name           string
@@ -156,6 +161,12 @@ func TestHandlePostMockFetch(t *testing.T) {
 			name:           "Too Many Fields", // Check if there are extra fields present and return the 400 status code.
 			body:           `{"Pause":true,"Timestamp":1596240000,"Operator":"0x123", "extra":"unnecessary_value"}`,
 			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			path:           "/api/psp_execution",
+			name:           "Payload Size Greater Than Limit", // Check if the path is incorrect return the 404 status code.
+			body:           `{"Pause":true,"Timestamp":1596240000,"Operator":"` + string(largeBody) + `"}`,
+			expectedStatus: http.StatusRequestEntityTooLarge,
 		},
 		{
 			path:           "/api/",

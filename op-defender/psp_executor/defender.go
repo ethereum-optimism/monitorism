@@ -78,9 +78,14 @@ type RequestData struct {
 // handlePost handles POST requests and processes the JSON body
 func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	// Decode the JSON body into a map
+	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
 	var requestMap map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&requestMap); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		if err.Error() == "http: request body too large" {
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		return
 	}
 
@@ -122,8 +127,8 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Execute the PSP on the chain.
-	d.executor.FetchAndExecute(d) //TODO: Make sure, a malformed HTTP request can't arrived here.
+	// Execute the PSP on the chain by calling the FetchAndExecute method of the executor.
+	d.executor.FetchAndExecute(d)
 	return
 }
 
@@ -152,7 +157,10 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	}
 
 	defender.router = mux.NewRouter()
-	defender.router.HandleFunc("/api/psp_execution", defender.handlePost).Methods("POST")
+	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1048576) // Limit payload to 1MB
+		defender.handlePost(w, r)
+	}).Methods("POST")
 	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
 	return defender, nil
 }
@@ -187,7 +195,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	return client, nil
 }
 
-// CheckAndReturnPrivateKey() will return the private key if this is a valid one otherwise return an error.
+// CheckAndReturnPrivateKey() will return the privatekey only if the privatekey is a valid one otherwise return an error.
 func CheckAndReturnPrivateKey(privateKeyStr string) (string, error) {
 	// Remove "0x" prefix if present
 	privateKeyStr = strings.TrimPrefix(privateKeyStr, "0x")
