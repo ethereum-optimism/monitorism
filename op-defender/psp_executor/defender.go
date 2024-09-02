@@ -233,6 +233,8 @@ func FetchPSPInGCP() (string, string, []byte, error) {
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address string, data []byte) {
+	blocknumber, err := l1client.BlockNumber(ctx)
+	log.Info("", "block number", blocknumber)
 	pause_before_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
