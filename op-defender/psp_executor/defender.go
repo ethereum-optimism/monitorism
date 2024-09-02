@@ -329,16 +329,16 @@ func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChai
 	// Get the contract instance
 	log.Info("SuperChainConfigAddress", "SuperChainConfigAddress", SuperChainConfigAddress)
 	log.Info("l1client", "l1client", l1client)
-	superchain, err := bindings.NewSuperchainConfig(common.HexToAddress(SuperChainConfigAddress), l1client)
+	superchainconfig, err := bindings.NewSuperchainConfig(common.HexToAddress(SuperChainConfigAddress), l1client)
 
-	log.Info("superchain infos", "superchain address", superchain)
+	log.Info("superchainconfig", "superchainconfig address", superchainconfig)
 	if err != nil {
-		log.Crit("Failed to create SuperChainConfig instance: %v", err)
+		log.Crit("failed to create superchainconfig instance", "error", err)
 	}
 
-	paused, err := superchain.Paused(&bind.CallOpts{Context: ctx})
+	paused, err := superchainconfig.Paused(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		log.Error("failed to query OptimismPortal paused status", "err", err)
+		log.Error("failed to query superchainconfig paused status", "error", err)
 		return false
 	}
 
