@@ -327,13 +327,16 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 // checkPauseStatus(): Is a function made for checking the pause status of the SuperChainConfigAddress
 func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChainConfigAddress string) bool {
 	// Get the contract instance
-	contractAddress := common.HexToAddress(SuperChainConfigAddress)
-	optimismPortal, err := bindings.NewSuperchainConfig(contractAddress, l1client)
+	log.Info("SuperChainConfigAddress", "SuperChainConfigAddress", SuperChainConfigAddress)
+	log.Info("l1client", "l1client", l1client)
+	superchain, err := bindings.NewSuperchainConfig(common.HexToAddress(SuperChainConfigAddress), l1client)
+
+	log.Info("superchain infos", "superchain address", superchain)
 	if err != nil {
 		log.Crit("Failed to create SuperChainConfig instance: %v", err)
 	}
 
-	paused, err := optimismPortal.Paused(&bind.CallOpts{Context: ctx})
+	paused, err := superchain.Paused(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		log.Error("failed to query OptimismPortal paused status", "err", err)
 		return false
