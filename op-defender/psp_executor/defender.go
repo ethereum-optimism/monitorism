@@ -173,7 +173,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		r.Body = http.MaxBytesReader(w, r.Body, 1048576) // Limit payload to 1MB
 		defender.handlePost(w, r)
 	}).Methods("POST")
-	defender.router.HandleFunc("/healthcheck", defender.handleHealthCheck).Methods("GET")
+	defender.router.HandleFunc("/api/healthcheck", defender.handleHealthCheck).Methods("GET")
 	return defender, nil
 }
 
