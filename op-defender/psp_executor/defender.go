@@ -3,6 +3,7 @@ package psp_executor
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
@@ -55,6 +56,7 @@ type Defender struct {
 	l1Client                *ethclient.Client
 	router                  *mux.Router
 	executor                Executor
+	privatekey              string
 	// metrics
 	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
@@ -75,22 +77,58 @@ type RequestData struct {
 
 // handlePost handles POST requests and processes the JSON body
 func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
-	var data RequestData
-
-	d.log.Info("Received HTTP request", "method", r.Method, "url", r.URL) // Log the requests for traceability.
-	// Decode the JSON body into the struct
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	//check that all the fields are set
-	if data.Pause == false || data.Timestamp == 0 || data.Operator == "" {
-		http.Error(w, "Missing fields in the request", http.StatusBadRequest)
+	// Decode the JSON body into a map
+	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
+	var requestMap map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&requestMap); err != nil {
+		if err.Error() == "http: request body too large" {
+			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		return
 	}
 
-	// Execute the PSP on the chain.
-	d.executor.FetchAndExecute(d) //TODO: Make sure, a malformed HTTP request can't arrived here.
+	// Check for exactly 3 fields
+	if len(requestMap) != 3 {
+		http.Error(w, "Request must contain exactly 3 fields: Pause, Timestamp, and Operator", http.StatusBadRequest)
+		return
+	}
+
+	// Check for the presence of required fields and their types
+	pause, ok := requestMap["Pause"].(bool)
+	if !ok {
+		http.Error(w, "Pause field must be a boolean", http.StatusBadRequest)
+		return
+	}
+
+	timestamp, ok := requestMap["Timestamp"].(float64)
+	if !ok {
+		http.Error(w, "Timestamp field must be a number", http.StatusBadRequest)
+		return
+	}
+
+	operator, ok := requestMap["Operator"].(string)
+	if !ok {
+		http.Error(w, "Operator field must be a string", http.StatusBadRequest)
+		return
+	}
+
+	// Create the RequestData struct with the validated fields
+	data := RequestData{
+		Pause:     pause,
+		Timestamp: int64(timestamp),
+		Operator:  operator,
+	}
+
+	// Check that all the fields are set with valid values
+	if !data.Pause || data.Timestamp == 0 || data.Operator == "" {
+		http.Error(w, "Missing or invalid fields in the request", http.StatusBadRequest)
+		return
+	}
+
+	// Execute the PSP on the chain by calling the FetchAndExecute method of the executor.
+	d.executor.FetchAndExecute(d)
 	return
 }
 
@@ -101,19 +139,28 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
+	privatekey, err := CheckAndReturnPrivateKey(cfg.privatekeyflag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to return the privatekey: %w", err)
+	}
+
 	if cfg.PortAPI == "" {
 		return nil, fmt.Errorf("port.api is not set.")
 	}
 
 	defender := &Defender{
-		log:      log,
-		l1Client: l1client,
-		port:     cfg.PortAPI,
-		executor: executor,
+		log:        log,
+		l1Client:   l1client,
+		port:       cfg.PortAPI,
+		executor:   executor,
+		privatekey: privatekey,
 	}
 
 	defender.router = mux.NewRouter()
-	defender.router.HandleFunc("/api/psp_execution", defender.handlePost).Methods("POST")
+	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1048576) // Limit payload to 1MB
+		defender.handlePost(w, r)
+	}).Methods("POST")
 	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
 	return defender, nil
 }
@@ -123,18 +170,12 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 // In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
-	privateKey, err := FetchPrivateKeyInGcp()
-	if err != nil {
-		d.log.Crit("Failed to fetch the private key from GCP", "error", err)
-		return
-	}
-
 	configAddress, safeAddress, data, err := FetchPSPInGCP()
 	if err != nil {
 		d.log.Crit("Failed to fetch PSP data from GCP", "error", err)
 		return
 	}
-	PspExecutionOnChain(ctx, d.l1Client, configAddress, privateKey, safeAddress, data)
+	PspExecutionOnChain(ctx, d.l1Client, configAddress, d.privatekey, safeAddress, data)
 }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -154,9 +195,34 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	return client, nil
 }
 
-// FetchPrivateKey() will fetch the privatekey of the account that will execute the pause (from the GCP secret manager).
-func FetchPrivateKeyInGcp() (string, error) {
-	return "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", nil // Mock with a well-known private key from "test test ... test junk" derivation (9).
+// CheckAndReturnPrivateKey() will return the privatekey only if the privatekey is a valid one otherwise return an error.
+func CheckAndReturnPrivateKey(privateKeyStr string) (string, error) {
+	// Remove "0x" prefix if present
+	privateKeyStr = strings.TrimPrefix(privateKeyStr, "0x")
+
+	// Check if the private key is a valid hex string
+	if !isValidHexString(privateKeyStr) {
+		return "", fmt.Errorf("invalid private key: not a valid hex string")
+	}
+
+	// Check if the private key has the correct length (32 bytes = 64 hex characters)
+	if len(privateKeyStr) != 64 {
+		return "", fmt.Errorf("invalid private key: incorrect length")
+	}
+
+	// Attempt to parse the private key
+	_, err := crypto.HexToECDSA(privateKeyStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid private key: %v", err)
+	}
+
+	return privateKeyStr, nil
+}
+
+// isValidHexString checks if a string is a valid hexadecimal string
+func isValidHexString(s string) bool {
+	_, err := hex.DecodeString(s)
+	return err == nil
 }
 
 // FetchPSPInGCP() will fetch the correct PSPs into GCP and return the Data.
