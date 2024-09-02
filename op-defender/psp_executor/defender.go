@@ -135,6 +135,13 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
+	println("============================ Configuration Info ================================")
+	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
+	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
+	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
+	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
+	println("============================================================================")
+
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
@@ -155,13 +162,11 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		executor:   executor,
 		privatekey: privatekey,
 	}
-
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 1048576) // Limit payload to 1MB
 		defender.handlePost(w, r)
 	}).Methods("POST")
-	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
 	return defender, nil
 }
 
@@ -180,6 +185,7 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
 func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
+
 	if rpc_url == "" {
 		return nil, fmt.Errorf("rpc.url is not set.")
 	}
@@ -189,7 +195,6 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-
 		log.Crit("Failed to connect to the Ethereum client", "error", err)
 	}
 	return client, nil
