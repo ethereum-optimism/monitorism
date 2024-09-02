@@ -75,6 +75,11 @@ type RequestData struct {
 	Operator  string `json:"operator"`
 }
 
+// handleHealthCheck is a GET method that returns the health status of the Defender
+func (d *Defender) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("OK"))
+}
+
 // handlePost handles POST requests and processes the JSON body
 func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	// Decode the JSON body into a map
@@ -142,7 +147,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
 	println("============================================================================")
 
-	l1client, err := CheckAndReturnRPC(cfg.NodeURL)
+	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
@@ -167,6 +173,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		r.Body = http.MaxBytesReader(w, r.Body, 1048576) // Limit payload to 1MB
 		defender.handlePost(w, r)
 	}).Methods("POST")
+	defender.router.HandleFunc("/healthcheck", defender.handleHealthCheck).Methods("GET")
 	return defender, nil
 }
 
