@@ -6,6 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net/http"
+	"strings"
+
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -16,9 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
-	"math/big"
-	"net/http"
-	"strings"
 )
 
 // **********************************************************************
@@ -245,7 +246,11 @@ func FetchPSPInGCP() (string, string, []byte, error) {
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address string, data []byte) {
-	pause_before_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	pause_before_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	if err != nil {
+		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
+		return
+	}
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
@@ -257,7 +262,12 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 
 	log.Info("Transaction sent!", "TxHash", txHash)
 
-	pause_after_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	pause_after_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	if err != nil {
+		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
+		return
+	}
+
 	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 }
@@ -337,19 +347,17 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 }
 
 // checkPauseStatus(): Is a function made for checking the pause status of the SuperChainConfigAddress
-func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChainConfigAddress string) bool {
+func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChainConfigAddress string) (bool, error) {
 	// Get the contract instance
 	superchainconfig, err := bindings.NewSuperchainConfig(common.HexToAddress(SuperChainConfigAddress), l1client)
-
 	if err != nil {
-		log.Crit("failed to create superchainconfig instance", "error", err)
+		return false, err
 	}
 
 	paused, err := superchainconfig.Paused(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		log.Error("failed to query superchainconfig paused status", "error", err)
-		return false
+		return false, err
 	}
 
-	return paused
+	return paused, nil
 }
