@@ -51,13 +51,13 @@ type Executor interface {
 
 // Defender is a struct that represents the Defender API server.
 type Defender struct {
-	log                     log.Logger
-	port                    string
-	SuperChainConfigAddress string
-	l1Client                *ethclient.Client
-	router                  *mux.Router
-	executor                Executor
-	privatekey              string
+	log              log.Logger
+	port             string
+	superchainconfig string
+	l1Client         *ethclient.Client
+	router           *mux.Router
+	executor         Executor
+	privatekey       string
 	// metrics
 	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
@@ -141,12 +141,13 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
-	println("============================ Configuration Info ================================")
+	log.Info("============================ Configuration Info ================================")
 	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
 	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
 	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
 	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
-	println("============================================================================")
+	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
+	log.Info("===============================================================================")
 
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
 
@@ -161,13 +162,17 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	if cfg.PortAPI == "" {
 		return nil, fmt.Errorf("port.api is not set.")
 	}
+	if cfg.SuperChainConfigAddress == "" {
+		return nil, fmt.Errorf("superchainconfig.address is not set.")
+	}
 
 	defender := &Defender{
-		log:        log,
-		l1Client:   l1client,
-		port:       cfg.PortAPI,
-		executor:   executor,
-		privatekey: privatekey,
+		log:              log,
+		l1Client:         l1client,
+		port:             cfg.PortAPI,
+		executor:         executor,
+		privatekey:       privatekey,
+		superchainconfig: cfg.SuperChainConfigAddress,
 	}
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
@@ -183,12 +188,12 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 // In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
-	configAddress, safeAddress, data, err := FetchPSPInGCP()
+	safeAddress, data, err := FetchPSPInGCP()
 	if err != nil {
 		d.log.Crit("Failed to fetch PSP data from GCP", "error", err)
 		return
 	}
-	PspExecutionOnChain(ctx, d.l1Client, configAddress, d.privatekey, safeAddress, data)
+	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, safeAddress, data)
 }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -239,9 +244,9 @@ func isValidHexString(s string) bool {
 }
 
 // FetchPSPInGCP() will fetch the correct PSPs into GCP and return the Data.
-func FetchPSPInGCP() (string, string, []byte, error) {
+func FetchPSPInGCP() (string, []byte, error) {
 	//In the future, we need to check first the nonce and then `checkPauseStatus` and then return the data for the latest PSPs.
-	return "0xC2Be75506d5724086DEB7245bd260Cc9753911Be", "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil
+	return "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
