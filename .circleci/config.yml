@@ -273,7 +273,7 @@ workflows:
             - equal: [webhook, << pipeline.trigger_source >>]
     jobs:
       - golang-test:
-          name: op-monitorism-golang-test
+          name: op-defender-golang-test
           project_name: op-defender
       - docker-build:
           name: op-monitorism-docker-build
