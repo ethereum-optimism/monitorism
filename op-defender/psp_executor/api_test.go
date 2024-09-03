@@ -43,9 +43,10 @@ func TestHTTPServerHasCorrectRoute(t *testing.T) {
 	metricsfactory := opmetrics.With(opmetrics.NewRegistry())
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
 	cfg := CLIConfig{
-		NodeURL:        mockNodeUrl,
-		PortAPI:        "8080",
-		privatekeyflag: GeneratePrivatekey(32),
+		NodeURL:                 mockNodeUrl,
+		PortAPI:                 "8080",
+		privatekeyflag:          GeneratePrivatekey(32),
+		SuperChainConfigAddress: "0x1234567890abcdef1234567890abcdef12345678",
 	}
 	// Initialize the Defender with necessary mock or real components
 	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -93,9 +94,10 @@ func TestDefenderInitialization(t *testing.T) {
 	metricsfactory := opmetrics.With(opmetrics.NewRegistry())
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
 	cfg := CLIConfig{
-		NodeURL:        mockNodeUrl,
-		PortAPI:        "8080",
-		privatekeyflag: GeneratePrivatekey(32),
+		NodeURL:                 mockNodeUrl,
+		PortAPI:                 "8080",
+		privatekeyflag:          GeneratePrivatekey(32),
+		SuperChainConfigAddress: "0x1234567890abcdef1234567890abcdef12345678",
 	}
 	// Initialize the Defender with necessary mock or real components
 	_, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -115,9 +117,10 @@ func TestHandlePostMockFetch(t *testing.T) {
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
 	executor := &SimpleExecutor{}
 	cfg := CLIConfig{
-		NodeURL:        mockNodeUrl,
-		PortAPI:        "8080",
-		privatekeyflag: GeneratePrivatekey(32),
+		NodeURL:                 mockNodeUrl,
+		PortAPI:                 "8080",
+		privatekeyflag:          GeneratePrivatekey(32),
+		SuperChainConfigAddress: "0x1234567890abcdef1234567890abcdef12345678",
 	}
 
 	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
