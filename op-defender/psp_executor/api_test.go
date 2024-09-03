@@ -35,8 +35,8 @@ func GeneratePrivatekey(size int) string {
 	return "0x" + privateKeyHex
 }
 
-// TestHTTPServerHasOnlyPSPExecutionRoute tests if the HTTP server has only one route with "/api/psp_execution" path and "POST" method.
-func TestHTTPServerHasOnlyPSPExecutionRoute(t *testing.T) {
+// TestHTTPServerHasCorrectRoute() tests if the HTTP server has the correct route with "/api/psp_execution" path and "POST" method and the "/api/healthcheck" path and "GET" method.
+func TestHTTPServerHasCorrectRoute(t *testing.T) {
 	// Mock dependencies or create real ones depending on your test needs
 	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
 	executor := &SimpleExecutor{}
@@ -54,35 +54,34 @@ func TestHTTPServerHasOnlyPSPExecutionRoute(t *testing.T) {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 
-	// We Check if the router has only one route
+	// We Check if the router has two routes
 	routeCount := 0
-	expectedPath := "/api/psp_execution"
-	expectedMethod := "POST"
-	var foundRoute *mux.Route
+	expectedRoutes := map[string]string{
+		"/api/psp_execution": "POST",
+		"/api/healthcheck":   "GET",
+	}
+	foundRoutes := make(map[string]string)
 
 	defender.router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
-		routeCount++
-		foundRoute = route
+		path, _ := route.GetPathTemplate()
+		methods, _ := route.GetMethods()
+		if len(methods) > 0 {
+			foundRoutes[path] = methods[0]
+			routeCount++
+		}
 		return nil
 	})
 
-	if routeCount != 1 {
-		t.Errorf("Expected 1 route, but got %d", routeCount)
+	if routeCount != 2 {
+		t.Errorf("Expected 2 routes, but got %d", routeCount)
 	}
 
-	if foundRoute != nil {
-		path, _ := foundRoute.GetPathTemplate()
-		methods, _ := foundRoute.GetMethods()
-
-		if path != expectedPath {
-			t.Errorf("Expected path %s, but got %s", expectedPath, path)
+	for path, method := range expectedRoutes {
+		if foundMethod, ok := foundRoutes[path]; !ok {
+			t.Errorf("Expected route %s not found", path)
+		} else if foundMethod != method {
+			t.Errorf("Expected method %s for path %s, but got %s", method, path, foundMethod)
 		}
-
-		if len(methods) != 1 || methods[0] != expectedMethod {
-			t.Errorf("Expected method %s, but got %v", expectedMethod, methods)
-		}
-	} else {
-		t.Error("No route found")
 	}
 }
 

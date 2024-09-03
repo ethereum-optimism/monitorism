@@ -6,6 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net/http"
+	"strings"
+
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -16,9 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
-	"math/big"
-	"net/http"
-	"strings"
 )
 
 // **********************************************************************
@@ -73,6 +74,11 @@ type RequestData struct {
 	Pause     bool   `json:"pause"`
 	Timestamp int64  `json:"timestamp"`
 	Operator  string `json:"operator"`
+}
+
+// handleHealthCheck is a GET method that returns the health status of the Defender
+func (d *Defender) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("OK"))
 }
 
 // handlePost handles POST requests and processes the JSON body
@@ -135,7 +141,15 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
-	l1client, err := CheckAndReturnRPC(cfg.NodeURL)
+	println("============================ Configuration Info ================================")
+	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
+	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
+	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
+	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
+	println("============================================================================")
+
+	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
@@ -155,13 +169,12 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		executor:   executor,
 		privatekey: privatekey,
 	}
-
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 1048576) // Limit payload to 1MB
 		defender.handlePost(w, r)
 	}).Methods("POST")
-	defender.log.Info("Starting HTTP JSON API PSP Execution server...", "port", defender.port)
+	defender.router.HandleFunc("/api/healthcheck", defender.handleHealthCheck).Methods("GET")
 	return defender, nil
 }
 
@@ -180,6 +193,7 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
 func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
+
 	if rpc_url == "" {
 		return nil, fmt.Errorf("rpc.url is not set.")
 	}
@@ -189,7 +203,6 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-
 		log.Crit("Failed to connect to the Ethereum client", "error", err)
 	}
 	return client, nil
@@ -233,11 +246,15 @@ func FetchPSPInGCP() (string, string, []byte, error) {
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address string, data []byte) {
-	pause_before_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	pause_before_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	if err != nil {
+		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
+		return
+	}
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
-	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
+	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction, "superchainconfig_address", superchainconfig_address, "safe_address", safe_address)
 	txHash, err := sendTransaction(l1client, privatekey, safe_address, big.NewInt(1), data) // 1 wei
 	if err != nil {
 		log.Crit("Failed to send transaction:", "error", err)
@@ -245,7 +262,12 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 
 	log.Info("Transaction sent!", "TxHash", txHash)
 
-	pause_after_transaction := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	pause_after_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	if err != nil {
+		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
+		return
+	}
+
 	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 }
@@ -325,19 +347,17 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 }
 
 // checkPauseStatus(): Is a function made for checking the pause status of the SuperChainConfigAddress
-func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChainConfigAddress string) bool {
+func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChainConfigAddress string) (bool, error) {
 	// Get the contract instance
-	contractAddress := common.HexToAddress(SuperChainConfigAddress)
-	optimismPortal, err := bindings.NewSuperchainConfig(contractAddress, l1client)
+	superchainconfig, err := bindings.NewSuperchainConfig(common.HexToAddress(SuperChainConfigAddress), l1client)
 	if err != nil {
-		log.Crit("Failed to create SuperChainConfig instance: %v", err)
+		return false, err
 	}
 
-	paused, err := optimismPortal.Paused(&bind.CallOpts{Context: ctx})
+	paused, err := superchainconfig.Paused(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		log.Error("failed to query OptimismPortal paused status", "err", err)
-		return false
+		return false, err
 	}
 
-	return paused
+	return paused, nil
 }
