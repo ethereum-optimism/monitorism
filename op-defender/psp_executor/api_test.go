@@ -35,8 +35,8 @@ func GeneratePrivatekey(size int) string {
 	return "0x" + privateKeyHex
 }
 
-// TestHTTPServerHasOnlyPSPExecutionRoute tests if the HTTP server has only one route with "/api/psp_execution" path and "POST" method.
-func TestHTTPServerHasOnlyPSPExecutionRoute(t *testing.T) {
+// TestHTTPServerHasCorrectRoute() tests if the HTTP server has the correct route with "/api/psp_execution" path and "POST" method and the "/api/healthcheck" path and "GET" method.
+func TestHTTPServerHasCorrectRoute(t *testing.T) {
 	// Mock dependencies or create real ones depending on your test needs
 	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
 	executor := &SimpleExecutor{}
@@ -84,6 +84,7 @@ func TestHTTPServerHasOnlyPSPExecutionRoute(t *testing.T) {
 		}
 	}
 }
+
 // TestDefenderInitialization tests the initialization of the Defender struct with mock dependencies.
 func TestDefenderInitialization(t *testing.T) {
 	// Mock dependencies or create real ones depending on your test needs
