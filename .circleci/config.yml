@@ -59,6 +59,21 @@ commands:
             echo "export GOOGLE_APPLICATION_CREDENTIALS='<< parameters.gcp_cred_config_file_path >>'" | tee -a "$BASH_ENV"
 
 jobs:
+  golang-test:
+    parameters:
+      project_name:
+        type: string
+        default: ""
+    shell: /bin/bash -eo pipefail
+    executor:
+      name: go/default # is based on cimg/go
+      tag: "1.21"
+    steps:
+      - checkout
+      - run:
+          name: run op-defender module tests
+          command: cd <<parameters.project_name>> && go test ./... -v
+
   docker-build:
     environment:
       DOCKER_BUILDKIT: 1
@@ -97,7 +112,7 @@ jobs:
     machine:
       image: <<pipeline.parameters.base_image>>
       resource_class: "<<parameters.resource_class>>"
-      docker_layer_caching: true  # we rely on this for faster builds, and actively warm it up for builds with common stages
+      docker_layer_caching: true # we rely on this for faster builds, and actively warm it up for builds with common stages
     steps:
       - checkout
       - attach_workspace:
@@ -118,7 +133,7 @@ jobs:
       - run:
           name: Build
           command: |
-           
+
             export REGISTRY="<<parameters.registry>>"
             export REPOSITORY="<<parameters.repo>>"
             export IMAGE_TAGS="$(echo -ne "<<parameters.docker_tags>>" | sed "s/[^a-zA-Z0-9\n,]/-/g")"
@@ -184,11 +199,11 @@ jobs:
           condition:
             or:
               - and:
-                - "<<parameters.publish>>"
-                - "<<parameters.release>>"
-              - and: 
-                - "<<parameters.publish>>"
-                - equal: [main, << pipeline.git.branch >>]
+                  - "<<parameters.publish>>"
+                  - "<<parameters.release>>"
+              - and:
+                  - "<<parameters.publish>>"
+                  - equal: [main, << pipeline.git.branch >>]
           steps:
             - gcp-oidc-authenticate:
                 service_account_email: GCP_SERVICE_ATTESTOR_ACCOUNT_EMAIL
@@ -209,7 +224,7 @@ jobs:
                       --image-path="$IMAGE_PATH"\
                       --signer-logging-level="INFO"\
                       --attestor-key-id="//cloudkms.googleapis.com/v1/projects/$ATTESTOR_PROJECT_NAME/locations/global/keyRings/$ATTESTOR_NAME-key-ring/cryptoKeys/$ATTESTOR_NAME-key/cryptoKeyVersions/1"
-  
+
 workflows:
   release:
     jobs:
@@ -229,7 +244,7 @@ workflows:
               ignore: /.*/
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>
-          requires: ['hold']
+          requires: ["hold"]
           platforms: "linux/amd64"
           publish: true
           release: true
@@ -244,7 +259,7 @@ workflows:
               ignore: /.*/
           docker_name: op-defender
           docker_tags: <<pipeline.git.revision>>
-          requires: ['hold']
+          requires: ["hold"]
           platforms: "linux/amd64"
           publish: true
           release: true
@@ -255,8 +270,11 @@ workflows:
       and:
         - or:
             # Trigger on new commits
-          - equal: [ webhook, << pipeline.trigger_source >> ]
+            - equal: [webhook, << pipeline.trigger_source >>]
     jobs:
+      - golang-test:
+          name: op-defender-golang-test
+          project_name: op-defender
       - docker-build:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
@@ -273,4 +291,3 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
-
