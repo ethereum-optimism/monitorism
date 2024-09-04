@@ -61,12 +61,12 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	if len(PathFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `PathFlagName` to know where the PSPs are stored.")
 	}
-	cfg.path = ctx.String(PathFlagName)
+	cfg.Path = ctx.String(PathFlagName)
 
 	if len(SafeAddressFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `SafeAddress` to know the current status of the safe.")
 	}
-	cfg.safeAddress = common.HexToAddress(ctx.String(SafeAddressFlagName))
+	cfg.SafeAddress = common.HexToAddress(ctx.String(SafeAddressFlagName))
 	return cfg, nil
 }
 
