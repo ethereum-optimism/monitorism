@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 
+	psp_executor_bindings "github.com/ethereum-optimism/monitorism/op-defender/psp_executor/bindings"
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -58,9 +60,29 @@ type Defender struct {
 	router           *mux.Router
 	executor         Executor
 	privatekey       string
+	path             string
+	nonce            uint64
+	safeAddress      *psp_executor_bindings.GnosisSafe
 	// metrics
 	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
+}
+
+// Define a struct that represents the data structure of your PSP.
+type PSP struct {
+	ChainID    string `json:"chain_id"`
+	RPCURL     string `json:"rpc_url"`
+	CreatedAt  string `json:"created_at"`
+	SafeAddr   string `json:"safe_addr"`
+	SafeNonce  string `json:"safe_nonce"`
+	TargetAddr string `json:"target_addr"`
+	ScriptName string `json:"script_name"`
+	Data       string `json:"data"`
+	Signatures []struct {
+		Signer    string `json:"signer"`
+		Signature string `json:"signature"`
+	} `json:"signatures"`
+	Calldata string `json:"calldata"`
 }
 
 // Define a struct that represents the data structure of your response through the HTTP API.
@@ -147,6 +169,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
 	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
+	log.Info("cfg.safeAddress", "cfg.safeAddress", cfg.safeAddress)
 	log.Info("===============================================================================")
 
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
@@ -166,6 +189,11 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		return nil, fmt.Errorf("superchainconfig.address is not set.")
 	}
 
+	safe, err := psp_executor_bindings.NewGnosisSafe(cfg.safeAddress, l1client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
+	}
+
 	defender := &Defender{
 		log:              log,
 		l1Client:         l1client,
@@ -173,6 +201,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		executor:         executor,
 		privatekey:       privatekey,
 		superchainconfig: cfg.SuperChainConfigAddress,
+		safeAddress:      safe,
 	}
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
@@ -182,18 +211,32 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	defender.router.HandleFunc("/api/healthcheck", defender.handleHealthCheck).Methods("GET")
 	return defender, nil
 }
+func (d Defender) getNonceSafe(ctx context.Context) (uint64, error) {
+	nonce, err := d.safeAddress.Nonce(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return 0, err
+	}
+	return nonce.Uint64(), nil
+}
 
 // FetchAndExecute() will fetch the PSP and execute it this onchain.
 // For now, the function is not fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
 // In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
-	safeAddress, data, err := FetchPSPInGCP()
+	nonce, err := d.getNonceSafe(ctx)
+	if err != nil {
+		log.Error("Failed to get nonce", "error", err)
+		return
+	}
+	safeAddress, data, err := GetPSPsFromAFile(nonce, d.path)
 	if err != nil {
 		d.log.Crit("Failed to fetch PSP data from GCP", "error", err)
 		return
 	}
-	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, safeAddress, data)
+	println(data)
+	data1 := []byte{0x41, 0x42, 0x43}
+	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, safeAddress, data1)
 }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -243,10 +286,29 @@ func isValidHexString(s string) bool {
 	return err == nil
 }
 
-// FetchPSPInGCP() will fetch the correct PSPs into GCP and return the Data.
-func FetchPSPInGCP() (string, []byte, error) {
-	//In the future, we need to check first the nonce and then `checkPauseStatus` and then return the data for the latest PSPs.
-	return "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil
+// // GetPSPsFromAFile() will fetch the latest PSPs from a secret file.
+// func GetPSPsFromAFile(path string) (string, []byte, error) {
+// 	//In the future, we need to check first the nonce and then `checkPauseStatus` and then return the data for the latest PSPs.
+// 	return "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil
+// }
+
+func GetPSPsFromAFile(nonce uint64, path string) (string, string, error) {
+	// Read the content of the file
+	var pspData []PSP
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	if err := json.Unmarshal(content, &pspData); err != nil {
+		return "", "", fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	println("PSPData", pspData)
+	// TODO: Check the nonce against the current nonce on-chain
+	// TODO: Check the pause status using checkPauseStatus function
+
+	return pspData[0].SafeAddr, pspData[0].Data, nil
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
@@ -276,6 +338,18 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 }
+
+// // UpdateNonce() will update with the latest nonce of the safeAddress.
+// func (d *Defender) UpdateNonce() {
+//
+// 	nonce, err := d.l1Client.
+//
+//   if err != nil {
+// 		log.Error("Failed to get nonce", "error", err)
+// 		return
+// 	}
+// 	d.nonce = nonce
+// }
 
 // Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {

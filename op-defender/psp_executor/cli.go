@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/urfave/cli/v2"
 )
@@ -15,6 +16,7 @@ const (
 	ReceiverAddressFlagName         = "receiver.address"
 	DataFlagName                    = "data"
 	SuperChainConfigAddressFlagName = "superchainconfig.address"
+	SafeAddressFlagName             = "safe.address"
 )
 
 type CLIConfig struct {
@@ -24,6 +26,7 @@ type CLIConfig struct {
 	ReceiverAddress         string
 	HexString               string
 	SuperChainConfigAddress string
+	safeAddress             common.Address
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -48,6 +51,10 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		return cfg, fmt.Errorf("must have a `SuperChainConfigAddress` to know the current status of the superchainconfig.")
 	}
 	cfg.SuperChainConfigAddress = ctx.String(SuperChainConfigAddressFlagName)
+	if len(SafeAddressFlagName) == 0 {
+		return cfg, fmt.Errorf("must have a `SafeAddress` to know the current status of the safe.")
+	}
+	cfg.safeAddress = common.HexToAddress(ctx.String(SafeAddressFlagName))
 	return cfg, nil
 }
 
@@ -91,6 +98,12 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Name:     SuperChainConfigAddressFlagName,
 			Usage:    "SuperChainConfig address to know the current status of the superchainconfig.",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "SUPERCHAINCONFIG_ADDRESS"),
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     SafeAddressFlagName,
+			Usage:    "Safe address that will execute the PSPs.",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "SAFE_ADDRESS"),
 			Required: true,
 		},
 	}
