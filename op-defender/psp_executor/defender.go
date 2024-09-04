@@ -169,7 +169,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
 	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
-	log.Info("cfg.safeAddress", "cfg.safeAddress", cfg.safeAddress)
+	log.Info("cfg.safeAddress", "cfg.safeAddress", cfg.SafeAddress)
+	log.Info("cfg.path", "cfg.path", cfg.Path)
 	log.Info("===============================================================================")
 
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
@@ -189,7 +190,10 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		return nil, fmt.Errorf("superchainconfig.address is not set.")
 	}
 
-	safe, err := psp_executor_bindings.NewGnosisSafe(cfg.safeAddress, l1client)
+	if cfg.Path == "" {
+		return nil, fmt.Errorf("path is not set.")
+	}
+	safe, err := psp_executor_bindings.NewGnosisSafe(cfg.SafeAddress, l1client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
@@ -202,6 +206,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		privatekey:       privatekey,
 		superchainconfig: cfg.SuperChainConfigAddress,
 		safeAddress:      safe,
+		path:             cfg.Path,
 	}
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
@@ -226,12 +231,12 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
 	nonce, err := d.getNonceSafe(ctx)
 	if err != nil {
-		log.Error("Failed to get nonce", "error", err)
+		d.log.Error("failed to get nonce", "error", err)
 		return
 	}
-	safeAddress, data, err := GetPSPsFromAFile(nonce, d.path)
+	safeAddress, data, err := GetNoncePSPsFromFile(nonce, d.path)
 	if err != nil {
-		d.log.Crit("Failed to fetch PSP data from GCP", "error", err)
+		d.log.Error("failed to get the PSPs from a file", "error", err)
 		return
 	}
 	println(data)
@@ -286,13 +291,8 @@ func isValidHexString(s string) bool {
 	return err == nil
 }
 
-// // GetPSPsFromAFile() will fetch the latest PSPs from a secret file.
-// func GetPSPsFromAFile(path string) (string, []byte, error) {
-// 	//In the future, we need to check first the nonce and then `checkPauseStatus` and then return the data for the latest PSPs.
-// 	return "0x4141414142424242414141414242424241414141", []byte{0x41, 0x42, 0x43}, nil
-// }
-
-func GetPSPsFromAFile(nonce uint64, path string) (string, string, error) {
+// GetNoncePSPsFromFile() will fetch the latest PSPs from a secret file and return the PSP that has the correct nonce.
+func GetNoncePSPsFromFile(nonce uint64, path string) (string, string, error) {
 	// Read the content of the file
 	var pspData []PSP
 	content, err := os.ReadFile(path)

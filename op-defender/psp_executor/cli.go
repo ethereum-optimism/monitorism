@@ -17,6 +17,7 @@ const (
 	DataFlagName                    = "data"
 	SuperChainConfigAddressFlagName = "superchainconfig.address"
 	SafeAddressFlagName             = "safe.address"
+	PathFlagName                    = "path"
 )
 
 type CLIConfig struct {
@@ -24,9 +25,10 @@ type CLIConfig struct {
 	privatekeyflag          string
 	PortAPI                 string
 	ReceiverAddress         string
-	HexString               string
+	HexString               string //@todo: remove this is not necessary
 	SuperChainConfigAddress string
-	safeAddress             common.Address
+	SafeAddress             common.Address
+	Path                    string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -35,22 +37,32 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		return cfg, fmt.Errorf("must have a PrivateKeyFlagName set to execute the pause.")
 	}
 	cfg.privatekeyflag = ctx.String(PrivateKeyFlagName)
+
 	if len(PortAPIFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a PortAPIFlagName set to execute the pause.")
 	}
 	cfg.PortAPI = ctx.String(PortAPIFlagName)
+
 	if len(ReceiverAddressFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a ReceiverAddressFlagName set to receive the pause.")
 	}
 	cfg.ReceiverAddress = ctx.String(ReceiverAddressFlagName)
+
 	if len(DataFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `data` set to execute the calldata.")
 	}
 	cfg.HexString = ctx.String(DataFlagName)
+
 	if len(SuperChainConfigAddressFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `SuperChainConfigAddress` to know the current status of the superchainconfig.")
 	}
 	cfg.SuperChainConfigAddress = ctx.String(SuperChainConfigAddressFlagName)
+
+	if len(PathFlagName) == 0 {
+		return cfg, fmt.Errorf("must have a `PathFlagName` to know where the PSPs are stored.")
+	}
+	cfg.path = ctx.String(PathFlagName)
+
 	if len(SafeAddressFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `SafeAddress` to know the current status of the safe.")
 	}
@@ -104,6 +116,12 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Name:     SafeAddressFlagName,
 			Usage:    "Safe address that will execute the PSPs.",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "SAFE_ADDRESS"),
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     PathFlagName,
+			Usage:    "Path to the PSPs filename.",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PATH_TO_PSPS"),
 			Required: true,
 		},
 	}
