@@ -56,7 +56,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	if len(SuperChainConfigAddressFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `SuperChainConfigAddress` to know the current status of the superchainconfig.")
 	}
-	cfg.SuperChainConfigAddress = ctx.String(SuperChainConfigAddressFlagName)
+	cfg.SuperChainConfigAddress = common.HexToAddress(ctx.String(SuperChainConfigAddressFlagName))
 
 	if len(PathFlagName) == 0 {
 		return cfg, fmt.Errorf("must have a `PathFlagName` to know where the PSPs are stored.")
