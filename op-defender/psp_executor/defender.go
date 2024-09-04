@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	psp_executor_bindings "github.com/ethereum-optimism/monitorism/op-defender/psp_executor/bindings"
@@ -70,19 +71,23 @@ type Defender struct {
 
 // Define a struct that represents the data structure of your PSP.
 type PSP struct {
-	ChainID    string `json:"chain_id"`
-	RPCURL     string `json:"rpc_url"`
-	CreatedAt  string `json:"created_at"`
-	SafeAddr   string `json:"safe_addr"`
-	SafeNonce  string `json:"safe_nonce"`
-	TargetAddr string `json:"target_addr"`
-	ScriptName string `json:"script_name"`
-	Data       string `json:"data"`
-	Signatures []struct {
-		Signer    string `json:"signer"`
-		Signature string `json:"signature"`
+	ChainID      uint64
+	ChainIdStr   string         `json:"chain_id"`
+	RPCURL       string         `json:"rpc_url"`
+	CreatedAt    string         `json:"created_at"`
+	SafeAddr     common.Address `json:"safe_addr"`
+	SafeNonce    uint64
+	SafeNonceStr string `json:"safe_nonce"`
+	TargetAddr   string `json:"target_addr"`
+	ScriptName   string `json:"script_name"`
+	Data         []byte
+	DataStr      string `json:"data"`
+	Signatures   []struct {
+		Signer    common.Address `json:"signer"`
+		Signature []byte         `json:"signature"`
 	} `json:"signatures"`
-	Calldata string `json:"calldata"`
+	Calldata    []byte
+	CalldataStr string `json:"calldata"`
 }
 
 // Define a struct that represents the data structure of your response through the HTTP API.
@@ -229,23 +234,23 @@ func (d Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 // In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
-	nonce, err := d.getNonceSafe(ctx)
+	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the safeAddress.
 	if err != nil {
 		d.log.Error("failed to get nonce", "error", err)
 		return
 	}
-	safeAddress, data, err := GetNoncePSPsFromFile(nonce, d.path)
+	safeAddress, data, err := GetPSPbyNonceFromFile(nonce, d.path) // return the PSP that has the correct nonce.
 	if err != nil {
 		d.log.Error("failed to get the PSPs from a file", "error", err)
 		return
 	}
-	// if safeAddress != d.safeAddress {
+	//@TODO:  add check that the address of safeaddress is the same as the one in the configuration
+	// if safeAddress != d.safeAddress.GnosisSafeCaller.Address() {
 	// 	d.log.Error("The safe address in the file is not the same as the one in the configuration")
 	//
 	// }
-	println(data)
-	data1 := []byte{0x41, 0x42, 0x43}
-	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, safeAddress, data1)
+
+	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, safeAddress, data)
 }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -295,25 +300,61 @@ func isValidHexString(s string) bool {
 	return err == nil
 }
 
-// GetNoncePSPsFromFile() will fetch the latest PSPs from a secret file and return the PSP that has the correct nonce.
-func GetNoncePSPsFromFile(nonce uint64, path string) (common.Address, string, error) {
+// GetPSPbyNonceFromFile() will fetch the latest PSPs from a secret file and return the PSP that has the correct nonce.
+func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, error) {
 	// Read the content of the file
 	var pspData []PSP
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return common.Address{}, "", fmt.Errorf("failed to read file: %w", err)
+		return common.Address{}, []byte{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	if err := json.Unmarshal(content, &pspData); err != nil {
-		return common.Address{}, "", fmt.Errorf("failed to parse JSON: %w", err)
+		return common.Address{}, []byte{}, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+	// Iterate over the PSPs and populate the field with the correct field accordingly.
+	for i, psp := range pspData {
+		chainID, err := strconv.ParseUint(psp.ChainIdStr, 10, 64)
+		if err != nil {
+			return common.Address{}, []byte{}, fmt.Errorf("failed to parse chainID: %w", err)
+		}
+		pspData[i].ChainID = chainID
+
+		safeNonce, err := strconv.ParseUint(psp.SafeNonceStr, 10, 64)
+		if err != nil {
+			return common.Address{}, []byte{}, fmt.Errorf("failed to parse safeNonce: %w", err)
+		}
+		pspData[i].SafeNonce = safeNonce
+
+		callData, err := hex.DecodeString(psp.CalldataStr[2:])
+		if err != nil {
+			return common.Address{}, []byte{}, fmt.Errorf("failed to parse calldata %w", err)
+		}
+		pspData[i].Calldata = callData
+
+		Data, err := hex.DecodeString(psp.DataStr[2:])
+		if err != nil {
+			return common.Address{}, []byte{}, fmt.Errorf("failed to parse data %w", err)
+		}
+		pspData[i].Data = Data
 	}
 
-	println("PSPData", pspData)
-	// TODO: Check the nonce against the current nonce on-chain
-	// TODO: Check the pause status using checkPauseStatus function
+	current_psp, err := getLatestPSP(pspData, nonce)
+	if err != nil {
+		return common.Address{}, []byte{}, fmt.Errorf("failed to get the latest PSP: %w", err)
+	}
+	return current_psp.SafeAddr, current_psp.Data, nil
+}
 
-	finalADDRTOBECHANGEd := common.HexToAddress(pspData[0].SafeAddr)
-	return finalADDRTOBECHANGEd, pspData[0].Data, nil
+// getLatestPSP() will return the PSP that has the correct nonce.
+func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
+	for _, psp := range pspData {
+		if psp.SafeNonce == nonce {
+
+			return psp, nil
+		}
+	}
+	return PSP{}, fmt.Errorf("no PSP found with nonce %d", nonce)
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
