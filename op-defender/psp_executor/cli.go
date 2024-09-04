@@ -26,7 +26,7 @@ type CLIConfig struct {
 	PortAPI                 string
 	ReceiverAddress         string
 	HexString               string //@todo: remove this is not necessary
-	SuperChainConfigAddress string
+	SuperChainConfigAddress common.Address
 	SafeAddress             common.Address
 	Path                    string
 }

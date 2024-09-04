@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	psp_executor_bindings "github.com/ethereum-optimism/monitorism/op-defender/psp_executor/bindings"
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -54,18 +53,19 @@ type Executor interface {
 
 // Defender is a struct that represents the Defender API server.
 type Defender struct {
-	log              log.Logger
-	port             string
-	superchainconfig string
-	l1Client         *ethclient.Client
-	router           *mux.Router
-	executor         Executor
-	privatekey       string
-	path             string
-	nonce            uint64
+	log                     log.Logger
+	port                    string
+	l1Client                *ethclient.Client
+	router                  *mux.Router
+	executor                Executor
+	privatekey              string
+	path                    string
+	nonce                   uint64
+	superChainConfigAddress common.Address
+	superChainConfig        *bindings.SuperchainConfig
 	// Foundation Operation Safe
 	safeAddress   common.Address
-	operationSafe *psp_executor_bindings.GnosisSafe
+	operationSafe *bindings.Safe
 	// Metrics
 	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
@@ -205,32 +205,37 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	if cfg.PortAPI == "" {
 		return nil, fmt.Errorf("port.api is not set.")
 	}
-	if cfg.SuperChainConfigAddress == "" {
+	if cfg.SuperChainConfigAddress == (common.Address{}) {
 		return nil, fmt.Errorf("superchainconfig.address is not set.")
+	}
+	superchainconfig, err := bindings.NewSuperchainConfig(cfg.SuperChainConfigAddress, l1client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind to the SuperChainConfig: %w", err)
 	}
 
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("path is not set.")
 	}
+
 	if cfg.SafeAddress == (common.Address{}) {
 		return nil, fmt.Errorf("safe.address is not set.")
 	}
-
-	safe, err := psp_executor_bindings.NewGnosisSafe(cfg.SafeAddress, l1client)
+	safe, err := bindings.NewSafe(cfg.SafeAddress, l1client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
 
 	defender := &Defender{
-		log:              log,
-		l1Client:         l1client,
-		port:             cfg.PortAPI,
-		executor:         executor,
-		privatekey:       privatekey,
-		superchainconfig: cfg.SuperChainConfigAddress,
-		safeAddress:      cfg.SafeAddress,
-		operationSafe:    safe,
-		path:             cfg.Path,
+		log:                     log,
+		l1Client:                l1client,
+		port:                    cfg.PortAPI,
+		executor:                executor,
+		privatekey:              privatekey,
+		superChainConfigAddress: cfg.SuperChainConfigAddress,
+		superChainConfig:        superchainconfig,
+		safeAddress:             cfg.SafeAddress,
+		operationSafe:           safe,
+		path:                    cfg.Path,
 	}
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
@@ -265,8 +270,8 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
 		d.log.Error("The safe address in the file is not the same as the one in the configuration!")
 		return err
 	}
-	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `pspExecutionOnChain()` function.
-	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, operationSafe, data)
+	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `ExecutePSPOnchain()` function.
+	d.ExecutePSPOnchain(ctx, d.l1Client, d.privatekey, operationSafe, data)
 	return nil
 }
 
@@ -374,17 +379,18 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 	return PSP{}, fmt.Errorf("no PSP found with nonce %d", nonce)
 }
 
-// PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
-func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address common.Address, data []byte) error {
-	pause_before_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
+// ExecutePSPOnchain() is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
+// This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
+func (d *Defender) ExecutePSPOnchain(ctx context.Context, l1client *ethclient.Client, privatekey string, safe_address common.Address, data []byte) error {
+	pause_before_transaction, err := d.checkPauseStatus(ctx, l1client)
 	if err != nil {
-		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
+		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
 	}
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
-	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction, "superchainconfig_address", superchainconfig_address, "safe_address", safe_address)
+	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction, "superchainconfig_address", d.superChainConfigAddress, "safe_address", d.safeAddress)
 	txHash, err := sendTransaction(l1client, privatekey, safe_address, big.NewInt(1), data) // 1 wei
 	if err != nil {
 		log.Crit("Failed to send transaction:", "error", err)
@@ -392,9 +398,9 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 
 	log.Info("Transaction sent!", "TxHash", txHash)
 
-	pause_after_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
+	pause_after_transaction, err := d.checkPauseStatus(ctx, l1client)
 	if err != nil {
-		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
+		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
 	}
 
@@ -402,18 +408,6 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 	return nil
 
 }
-
-// // UpdateNonce() will update with the latest nonce of the operationSafe.
-// func (d *Defender) UpdateNonce() {
-//
-// 	nonce, err := d.l1Client.
-//
-//   if err != nil {
-// 		log.Error("Failed to get nonce", "error", err)
-// 		return
-// 	}
-// 	d.nonce = nonce
-// }
 
 // Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {
@@ -488,14 +482,9 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress c
 }
 
 // checkPauseStatus(): Is a function made for checking the pause status of the SuperChainConfigAddress
-func checkPauseStatus(ctx context.Context, l1client *ethclient.Client, SuperChainConfigAddress string) (bool, error) {
+func (d *Defender) checkPauseStatus(ctx context.Context, l1client *ethclient.Client) (bool, error) {
 	// Get the contract instance
-	superchainconfig, err := bindings.NewSuperchainConfig(common.HexToAddress(SuperChainConfigAddress), l1client)
-	if err != nil {
-		return false, err
-	}
-
-	paused, err := superchainconfig.Paused(&bind.CallOpts{Context: ctx})
+	paused, err := d.superChainConfig.Paused(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return false, err
 	}
