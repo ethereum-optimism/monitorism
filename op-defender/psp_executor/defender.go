@@ -239,6 +239,10 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 		d.log.Error("failed to get the PSPs from a file", "error", err)
 		return
 	}
+	// if safeAddress != d.safeAddress {
+	// 	d.log.Error("The safe address in the file is not the same as the one in the configuration")
+	//
+	// }
 	println(data)
 	data1 := []byte{0x41, 0x42, 0x43}
 	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, safeAddress, data1)
@@ -292,27 +296,28 @@ func isValidHexString(s string) bool {
 }
 
 // GetNoncePSPsFromFile() will fetch the latest PSPs from a secret file and return the PSP that has the correct nonce.
-func GetNoncePSPsFromFile(nonce uint64, path string) (string, string, error) {
+func GetNoncePSPsFromFile(nonce uint64, path string) (common.Address, string, error) {
 	// Read the content of the file
 	var pspData []PSP
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read file: %w", err)
+		return common.Address{}, "", fmt.Errorf("failed to read file: %w", err)
 	}
 
 	if err := json.Unmarshal(content, &pspData); err != nil {
-		return "", "", fmt.Errorf("failed to parse JSON: %w", err)
+		return common.Address{}, "", fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
 	println("PSPData", pspData)
 	// TODO: Check the nonce against the current nonce on-chain
 	// TODO: Check the pause status using checkPauseStatus function
 
-	return pspData[0].SafeAddr, pspData[0].Data, nil
+	finalADDRTOBECHANGEd := common.HexToAddress(pspData[0].SafeAddr)
+	return finalADDRTOBECHANGEd, pspData[0].Data, nil
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
-func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address string, data []byte) {
+func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address common.Address, data []byte) {
 	pause_before_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
 	if err != nil {
 		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
@@ -366,7 +371,7 @@ func (d *Defender) Close(_ context.Context) error {
 }
 
 // sendTransaction(): Is a function made for sending a transaction on chain with the parameters : client, privatekey, toAddress, amount, data.
-func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressStr string, amount *big.Int, data []byte) (string, error) {
+func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
 	// Convert the private key string to a private key type
 	// TODO: Need to check if there is the `0x` if yes remove it from the string.
 	privateKey, err := crypto.HexToECDSA(privateKeyStr)
@@ -385,11 +390,9 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddressSt
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
 	// Ensure the toAddress is valid
-	toAddress := common.HexToAddress(toAddressStr)
-	if !common.IsHexAddress(toAddressStr) {
-		return "", fmt.Errorf("Invalid to address: %s", toAddressStr)
+	if (toAddress == common.Address{}) {
+		return "", fmt.Errorf("Invalid to address")
 	}
-
 	// Get the nonce for the next transaction
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
