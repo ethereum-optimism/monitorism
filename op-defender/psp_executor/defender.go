@@ -49,7 +49,7 @@ type DefenderExecutor struct{}
 
 // Executor is an interface that defines the FetchAndExecute method.
 type Executor interface {
-	FetchAndExecute(d *Defender) // For doc see the `FetchAndExecute()` function.
+	FetchAndExecute(d *Defender) error // For doc see the `FetchAndExecute()` function.
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -163,7 +163,19 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute the PSP on the chain by calling the FetchAndExecute method of the executor.
-	d.executor.FetchAndExecute(d)
+	err := d.executor.FetchAndExecute(d)
+	if err != nil {
+		http.Error(w, "Failed to execute the PSP", http.StatusInternalServerError)
+		return
+	}
+	//
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := Response{
+		Message: "PSP executed successfully",
+		Status:  http.StatusOK,
+	}
+	json.NewEncoder(w).Encode(response)
 	return
 }
 
@@ -236,27 +248,26 @@ func (d Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 	return nonce.Uint64(), nil
 }
 
-// FetchAndExecute() will fetch the PSP and execute it this onchain.
-// For now, the function is not fully implemented and will make a dummy transaction on chain (see `pspExecutionOnChain()`).
-// In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
-func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
+// FetchAndExecute() will fetch the PSP from a file and execute it this onchain.
+func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
 	ctx := context.Background()
 	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
 	if err != nil {
 		d.log.Error("failed to get nonce", "error", err)
-		return
+		return err
 	}
 	operationSafe, data, err := GetPSPbyNonceFromFile(nonce, d.path) // return the PSP that has the correct nonce.
 	if err != nil {
 		d.log.Error("failed to get the PSPs from a file", "error", err)
-		return
+		return err
 	}
 	if operationSafe != d.safeAddress {
 		d.log.Error("The safe address in the file is not the same as the one in the configuration!")
-		return
+		return err
 	}
-
+	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `pspExecutionOnChain()` function.
 	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, operationSafe, data)
+	return nil
 }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -364,11 +375,11 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 }
 
 // PSPexecution(): PSPExecutionOnChain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
-func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address common.Address, data []byte) {
+func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superchainconfig_address string, privatekey string, safe_address common.Address, data []byte) error {
 	pause_before_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
 	if err != nil {
 		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
-		return
+		return err
 	}
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
@@ -384,10 +395,11 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 	pause_after_transaction, err := checkPauseStatus(ctx, l1client, superchainconfig_address)
 	if err != nil {
 		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", superchainconfig_address)
-		return
+		return err
 	}
 
 	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
+	return nil
 
 }
 
