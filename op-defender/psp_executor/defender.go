@@ -63,8 +63,10 @@ type Defender struct {
 	privatekey       string
 	path             string
 	nonce            uint64
-	safeAddress      *psp_executor_bindings.GnosisSafe
-	// metrics
+	// Foundation Operation Safe
+	safeAddress   common.Address
+	operationSafe *psp_executor_bindings.GnosisSafe
+	// Metrics
 	latestPspNonce      *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
@@ -174,7 +176,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
 	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
-	log.Info("cfg.safeAddress", "cfg.safeAddress", cfg.SafeAddress)
+	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
 	log.Info("cfg.path", "cfg.path", cfg.Path)
 	log.Info("===============================================================================")
 
@@ -198,6 +200,10 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("path is not set.")
 	}
+	if cfg.SafeAddress == (common.Address{}) {
+		return nil, fmt.Errorf("safe.address is not set.")
+	}
+
 	safe, err := psp_executor_bindings.NewGnosisSafe(cfg.SafeAddress, l1client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
@@ -210,7 +216,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		executor:         executor,
 		privatekey:       privatekey,
 		superchainconfig: cfg.SuperChainConfigAddress,
-		safeAddress:      safe,
+		safeAddress:      cfg.SafeAddress,
+		operationSafe:    safe,
 		path:             cfg.Path,
 	}
 	defender.router = mux.NewRouter()
@@ -222,7 +229,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	return defender, nil
 }
 func (d Defender) getNonceSafe(ctx context.Context) (uint64, error) {
-	nonce, err := d.safeAddress.Nonce(&bind.CallOpts{Context: ctx})
+	nonce, err := d.operationSafe.Nonce(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return 0, err
 	}
@@ -234,23 +241,22 @@ func (d Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 // In the future, the function will fetch the PSPs from a secret file and execute it onchain through a EVM transaction.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) {
 	ctx := context.Background()
-	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the safeAddress.
+	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
 	if err != nil {
 		d.log.Error("failed to get nonce", "error", err)
 		return
 	}
-	safeAddress, data, err := GetPSPbyNonceFromFile(nonce, d.path) // return the PSP that has the correct nonce.
+	operationSafe, data, err := GetPSPbyNonceFromFile(nonce, d.path) // return the PSP that has the correct nonce.
 	if err != nil {
 		d.log.Error("failed to get the PSPs from a file", "error", err)
 		return
 	}
-	//@TODO:  add check that the address of safeaddress is the same as the one in the configuration
-	// if safeAddress != d.safeAddress.GnosisSafeCaller.Address() {
-	// 	d.log.Error("The safe address in the file is not the same as the one in the configuration")
-	//
-	// }
+	if operationSafe != d.safeAddress {
+		d.log.Error("The safe address in the file is not the same as the one in the configuration!")
+		return
+	}
 
-	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, safeAddress, data)
+	PspExecutionOnChain(ctx, d.l1Client, d.superchainconfig, d.privatekey, operationSafe, data)
 }
 
 // CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -385,7 +391,7 @@ func PspExecutionOnChain(ctx context.Context, l1client *ethclient.Client, superc
 
 }
 
-// // UpdateNonce() will update with the latest nonce of the safeAddress.
+// // UpdateNonce() will update with the latest nonce of the operationSafe.
 // func (d *Defender) UpdateNonce() {
 //
 // 	nonce, err := d.l1Client.
