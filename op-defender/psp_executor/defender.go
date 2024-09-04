@@ -37,10 +37,12 @@ import (
 // **********************************************************************
 
 const (
-	MetricsNamespace = "psp_executor"
-	SepoliaRPC       = "https://proxyd-l1-consensus.primary.sepolia.prod.oplabs.cloud"
-	MainnetRPC       = "https://proxyd-l1-consensus.primary.mainnet.prod.oplabs.cloud"
-	LocalhostRPC     = "http://localhost:8545"
+	MetricsNamespace   = "psp_executor"
+	SepoliaRPC         = "https://proxyd-l1-consensus.primary.sepolia.prod.oplabs.cloud"
+	MainnetRPC         = "https://proxyd-l1-consensus.primary.mainnet.prod.oplabs.cloud"
+	LocalhostRPC       = "http://localhost:8545"
+	MaxRequestBodySize = 1 * 1024 * 1024 // 1MB in bytes
+	DefaultGasLimit    = 21000
 )
 
 // DefenderExecutor is a struct that implements the Executor interface.
@@ -113,10 +115,10 @@ func (d *Defender) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 // handlePost handles POST requests and processes the JSON body
 func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	// Decode the JSON body into a map
-	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
+	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize)
 	var requestMap map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&requestMap); err != nil {
-		if err.Error() == "http: request body too large" {
+		if _, ok := err.(*http.MaxBytesError); ok {
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 		} else {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -239,7 +241,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	}
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, 1048576) // Limit payload to 1MB
+		r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize) // Limit payload to 1MB
 		defender.handlePost(w, r)
 	}).Methods("POST")
 	defender.router.HandleFunc("/api/healthcheck", defender.handleHealthCheck).Methods("GET")
@@ -267,7 +269,7 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
 		return err
 	}
 	if operationSafe != d.safeAddress {
-		d.log.Error("The safe address in the file is not the same as the one in the configuration!")
+		d.log.Error("the safe address in the file is not the same as the one in the configuration!")
 		return err
 	}
 	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `ExecutePSPOnchain()` function.
@@ -287,7 +289,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-		log.Crit("Failed to connect to the Ethereum client", "error", err)
+		log.Crit("failed to connect to the Ethereum client", "error", err)
 	}
 	return client, nil
 }
@@ -429,14 +431,14 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress c
 	// TODO: Need to check if there is the `0x` if yes remove it from the string.
 	privateKey, err := crypto.HexToECDSA(privateKeyStr)
 	if err != nil {
-		return "", fmt.Errorf("Invalid private key: %v", err)
+		return "", fmt.Errorf("invalid private key: %v", err)
 	}
 
 	// Derive the public key from the private key
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return "", fmt.Errorf("Error casting public key to ECDSA")
+		return "", fmt.Errorf("error casting public key to ECDSA")
 	}
 
 	// Derive the sender address from the public key
@@ -444,7 +446,7 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress c
 
 	// Ensure the toAddress is valid
 	if (toAddress == common.Address{}) {
-		return "", fmt.Errorf("Invalid to address")
+		return "", fmt.Errorf("invalid to address")
 	}
 	// Get the nonce for the next transaction
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
@@ -453,11 +455,11 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress c
 	}
 
 	// Set up the transaction parameters
-	value := amount                  // Amount of Ether to send
-	gasLimit := uint64(1000 * 21008) // In units TODO: Need to use `estimateGas()` to get the correct value.
+	value := amount                            // Amount of Ether to send
+	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("Failed to suggest gas price: %v", err)
+		return "", fmt.Errorf("failed to suggest gas price: %v", err)
 	}
 
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
@@ -465,17 +467,17 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress c
 	// Sign the transaction with the private key
 	chainID, err := client.NetworkID(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("Failed to get network ID: %v", err)
+		return "", fmt.Errorf("failed to get network ID: %v", err)
 	}
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		return "", fmt.Errorf("Failed to sign transaction: %v", err)
+		return "", fmt.Errorf("failed to sign transaction: %v", err)
 	}
 
 	// Send the transaction
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return "", fmt.Errorf("Failed to send transaction: %v", err)
+		return "", fmt.Errorf("failed to send transaction: %v", err)
 	}
 
 	return signedTx.Hash().Hex(), nil
