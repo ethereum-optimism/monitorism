@@ -11,14 +11,16 @@ The service is designed to listen on a port and execute a PSP onchain when a req
 ### 1. Run HTTP API service
 
 To start the HTTP API service we can use the following oneliner command:
-![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
+<img width="3357" alt="image" src="https://github.com/user-attachments/assets/8029c347-7dbb-4926-8e69-c4737b2d9f17">
+
 Settings of the HTTP API service:
 
 | Port                          | API Path             | HTTP Method |
 | ----------------------------- | -------------------- | ----------- |
 | 8080 (Default can be changed) | `/api/psp_execution` | POST        |
+| 8080 (Default can be changed) | `/api/healtcheck` | GET       |
 
-To run the service, you can use the following command:
+To run the psp_executor service, you can use the following command:
 
 ```shell
 go run ../cmd/defender psp_executor --privatekey 2a[..]c6 --safe.address 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E --path /tmp/psps.json --chainid 11155111 --superchainconfig.address 0xC2Be75506d5724086DEB7245bd260Cc9753911Be --rpc.url http://localhost:8545 --port.api 8080
