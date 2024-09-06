@@ -39,9 +39,9 @@ Explanation of the options:
 
 ### 2. Request the HTTP API
 
-To use the HTTP API you can use the following `curl` command with the following fields:
+![cde1a10c6f3eada39b2c27775faefd093623471db95bde4afcf06b9d43f3211b](https://github.com/user-attachments/assets/a75df38c-df06-4195-831b-08edb036a343)
 
-![image](https://github.com/user-attachments/assets/3edc2ee5-6dfd-4872-9bc6-e3ead7444a96)
+To use the HTTP API you can use the following `curl` command with the following fields:
 
 ```bash
 curl -X POST http://localhost:8080/api/psp_execution \-H "Content-Type: application/json" \-d '{"Pause":true,"Timestamp":1596240000,"Operator":"tom"}'
