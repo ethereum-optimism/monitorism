@@ -464,7 +464,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 
 	// Ensure the recipient address is valid.
 	if (toAddress == common.Address{}) {
-		return "", fmt.Errorf("invalid to address")
+		return "", fmt.Errorf("invalid recipient address (toAddress)")
 	}
 	// Get the nonce for the current transaction.
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
