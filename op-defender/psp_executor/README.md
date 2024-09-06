@@ -17,8 +17,8 @@ Settings of the HTTP API service:
 
 | Port                          | API Path             | HTTP Method |
 | ----------------------------- | -------------------- | ----------- |
-| 8080 (Default can be changed) | `/api/psp_execution` | POST        |
-| 8080 (Default can be changed) | `/api/healtcheck` | GET       |
+| 8080 (Default) | `/api/psp_execution` | POST        |
+| 8080 (Default) | `/api/healtcheck` | GET       |
 
 To run the psp_executor service, you can use the following command:
 
