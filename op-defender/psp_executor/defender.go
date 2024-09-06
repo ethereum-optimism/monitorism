@@ -412,7 +412,8 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 	if pause_before_transaction {
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
-	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction, "superchainconfig_address", d.superChainConfigAddress, "safe_address", d.safeAddress)
+	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
+	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
