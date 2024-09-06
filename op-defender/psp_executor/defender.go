@@ -172,7 +172,7 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	// Execute the PSP on the chain by calling the FetchAndExecute method of the executor.
 	err := d.executor.FetchAndExecute(d)
 	if err != nil {
-		http.Error(w, "Failed to execute the PSP", http.StatusInternalServerError)
+		http.Error(w, "failed to execute the PSP", http.StatusInternalServerError)
 		return
 	}
 	//
@@ -406,7 +406,7 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) error {
 	pause_before_transaction, err := d.checkPauseStatus(ctx, d.l1Client)
 	if err != nil {
-		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
+		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
 	}
 	if pause_before_transaction {
@@ -416,13 +416,13 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
-		log.Crit("Failed to send transaction:", "error", err)
+		log.Crit("failed to send transaction:", "error", err)
 	}
 	log.Info("Transaction sent!", "TxHash", txHash)
 
 	pause_after_transaction, err := d.checkPauseStatus(ctx, d.l1Client)
 	if err != nil {
-		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
+		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
 	}
 	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
@@ -435,7 +435,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 func (d *Defender) Run(ctx context.Context) {
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
-		log.Crit("Failed to start the API server", "error", err)
+		log.Crit("failed to start the API server", "error", err)
 	}
 }
 
