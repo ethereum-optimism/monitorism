@@ -69,9 +69,9 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Required: true,
 		},
 
-		&cli.StringFlag{
+		&cli.Uint64Flag{
 			Name:     PortAPIFlagName,
-			Value:    "8080",
+			Value:    8080,
 			Usage:    "Port of the API server you want to listen on (e.g. 8080).",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PORT_API"),
 			Required: false,
