@@ -1,8 +1,6 @@
 package psp_executor
 
 import (
-	"fmt"
-
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/ethereum/go-ethereum/common"
 
@@ -18,55 +16,34 @@ const (
 	SuperChainConfigAddressFlagName = "superchainconfig.address"
 	SafeAddressFlagName             = "safe.address"
 	PathFlagName                    = "path"
+	ChainIDFlagName                 = "chainid"
 )
 
 type CLIConfig struct {
 	NodeURL                 string
-	privatekeyflag          string
 	PortAPI                 string
-	ReceiverAddress         string
+	Path                    string
+	privatekeyflag          string
 	HexString               string //@todo: remove this is not necessary
+	ReceiverAddress         string
 	SuperChainConfigAddress common.Address
 	SafeAddress             common.Address
-	Path                    string
+	chainID                 uint64
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
-	cfg := CLIConfig{NodeURL: ctx.String(NodeURLFlagName)}
-	if len(PrivateKeyFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a PrivateKeyFlagName set to execute the pause.")
+	cfg := CLIConfig{
+		NodeURL:                 ctx.String(NodeURLFlagName),
+		PortAPI:                 ctx.String(PortAPIFlagName),
+		Path:                    ctx.String(PathFlagName),
+		privatekeyflag:          ctx.String(PrivateKeyFlagName),
+		HexString:               ctx.String(DataFlagName),
+		ReceiverAddress:         ctx.String(ReceiverAddressFlagName),
+		SuperChainConfigAddress: common.HexToAddress(ctx.String(SuperChainConfigAddressFlagName)),
+		SafeAddress:             common.HexToAddress(ctx.String(SafeAddressFlagName)),
+		chainID:                 ctx.Uint64(ChainIDFlagName),
 	}
-	cfg.privatekeyflag = ctx.String(PrivateKeyFlagName)
 
-	if len(PortAPIFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a PortAPIFlagName set to execute the pause.")
-	}
-	cfg.PortAPI = ctx.String(PortAPIFlagName)
-
-	if len(ReceiverAddressFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a ReceiverAddressFlagName set to receive the pause.")
-	}
-	cfg.ReceiverAddress = ctx.String(ReceiverAddressFlagName)
-
-	if len(DataFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a `data` set to execute the calldata.")
-	}
-	cfg.HexString = ctx.String(DataFlagName)
-
-	if len(SuperChainConfigAddressFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a `SuperChainConfigAddress` to know the current status of the superchainconfig.")
-	}
-	cfg.SuperChainConfigAddress = common.HexToAddress(ctx.String(SuperChainConfigAddressFlagName))
-
-	if len(PathFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a `PathFlagName` to know where the PSPs are stored.")
-	}
-	cfg.Path = ctx.String(PathFlagName)
-
-	if len(SafeAddressFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a `SafeAddress` to know the current status of the safe.")
-	}
-	cfg.SafeAddress = common.HexToAddress(ctx.String(SafeAddressFlagName))
 	return cfg, nil
 }
 
@@ -122,6 +99,12 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Name:     PathFlagName,
 			Usage:    "Path to the PSPs filename.",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PATH_TO_PSPS"),
+			Required: true,
+		},
+		&cli.Uint64Flag{
+			Name:     ChainIDFlagName,
+			Usage:    "ChainID of the chain.",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "CHAIN_ID"),
 			Required: true,
 		},
 	}

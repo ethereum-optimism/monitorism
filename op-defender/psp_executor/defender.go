@@ -55,14 +55,18 @@ type Executor interface {
 
 // Defender is a struct that represents the Defender API server.
 type Defender struct {
-	log                     log.Logger
-	port                    string
-	l1Client                *ethclient.Client
-	router                  *mux.Router
-	executor                Executor
-	privatekey              *ecdsa.PrivateKey
-	path                    string
-	nonce                   uint64
+	// Infra data
+	log      log.Logger
+	port     string
+	router   *mux.Router
+	executor Executor
+	// Onchain data
+	l1Client   *ethclient.Client
+	privatekey *ecdsa.PrivateKey
+	path       string
+	nonce      uint64
+	chainID    uint64
+	// superChainConfig
 	superChainConfigAddress common.Address
 	superChainConfig        *bindings.SuperchainConfig
 	// Foundation Operation Safe
@@ -192,6 +196,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
 	log.Info("cfg.path", "cfg.path", cfg.Path)
+	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
 	log.Info("===============================================================================")
 
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
