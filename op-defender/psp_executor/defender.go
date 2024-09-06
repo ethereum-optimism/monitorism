@@ -65,7 +65,7 @@ type Defender struct {
 	privatekey *ecdsa.PrivateKey
 	path       string
 	nonce      uint64
-	chainID    uint64
+	chainID    *big.Int
 	// superChainConfig
 	superChainConfigAddress common.Address
 	superChainConfig        *bindings.SuperchainConfig
@@ -91,8 +91,9 @@ type PSP struct {
 	Data         []byte
 	DataStr      string `json:"data"`
 	Signatures   []struct {
-		Signer    common.Address `json:"signer"`
-		Signature []byte         `json:"signature"`
+		Signer common.Address `json:"signer"`
+		// `Signature` has to not have the `0x` prefix.
+		Signature []byte `json:"signature"`
 	} `json:"signatures"`
 	Calldata    []byte
 	CalldataStr string `json:"calldata"`
@@ -184,6 +185,19 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 	return
 }
+func ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error) {
+	if chainID == 0 {
+		return &big.Int{}, fmt.Errorf("chainID is not set.")
+	}
+	chainID_RPC, err := l1client.ChainID(context.Background())
+	if err != nil {
+		return &big.Int{}, fmt.Errorf("failed to get network ID: %v", err)
+	}
+	if chainID_RPC.Uint64() != chainID {
+		return &big.Int{}, fmt.Errorf("chainID mismatch: got %d, expected %d", chainID_RPC.Uint64(), chainID)
+	}
+	return chainID_RPC, nil
+}
 
 // NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
@@ -191,27 +205,30 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("============================ Configuration Info ================================")
 	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
 	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
-	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
+	log.Info("cfg.path", "cfg.path", cfg.Path)
 	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
+	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
-	log.Info("cfg.path", "cfg.path", cfg.Path)
 	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
 	log.Info("===============================================================================")
 
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
+	}
+	if cfg.PortAPI == "" {
+		return nil, fmt.Errorf("port.api is not set.")
+	}
+
+	if cfg.Path == "" {
+		return nil, fmt.Errorf("path is not set.")
 	}
 	privatekey, err := CheckAndReturnPrivateKey(cfg.privatekeyflag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to return the privatekey: %w", err)
 	}
 
-	if cfg.PortAPI == "" {
-		return nil, fmt.Errorf("port.api is not set.")
-	}
 	if cfg.SuperChainConfigAddress == (common.Address{}) {
 		return nil, fmt.Errorf("superchainconfig.address is not set.")
 	}
@@ -219,11 +236,6 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the SuperChainConfig: %w", err)
 	}
-
-	if cfg.Path == "" {
-		return nil, fmt.Errorf("path is not set.")
-	}
-
 	if cfg.SafeAddress == (common.Address{}) {
 		return nil, fmt.Errorf("safe.address is not set.")
 	}
@@ -232,6 +244,10 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
 
+	chainID, err := ReturnCorrectChainID(l1client, cfg.chainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to return the correct chainID: %w", err)
+	}
 	defender := &Defender{
 		log:                     log,
 		l1Client:                l1client,
@@ -243,6 +259,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		safeAddress:             cfg.SafeAddress,
 		operationSafe:           safe,
 		path:                    cfg.Path,
+		chainID:                 chainID,
 	}
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
@@ -398,7 +415,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, l1client *ethclient.Cl
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
 	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction, "superchainconfig_address", d.superChainConfigAddress, "safe_address", d.safeAddress)
-	txHash, err := sendTransaction(l1client, privatekey, safe_address, big.NewInt(1), data) // 1 wei
+	txHash, err := sendTransaction(l1client, d.chainID, privatekey, safe_address, big.NewInt(1), data) // 1 wei
 	if err != nil {
 		log.Crit("Failed to send transaction:", "error", err)
 	}
@@ -431,7 +448,7 @@ func (d *Defender) Close(_ context.Context) error {
 }
 
 // sendTransaction(): Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
-func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
+func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
 	if privateKey == nil {
 		return "", fmt.Errorf("private key is nil")
 	}
@@ -466,10 +483,6 @@ func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, toA
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
 
 	// Sign the transaction with the private key
-	chainID, err := client.NetworkID(context.Background()) //@TODO: Need to check if the chainID is correct again env variabl.
-	if err != nil {
-		return "", fmt.Errorf("failed to get network ID: %v", err)
-	}
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign transaction: %v", err)
