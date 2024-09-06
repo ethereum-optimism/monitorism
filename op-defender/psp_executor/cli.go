@@ -11,7 +11,6 @@ const (
 	NodeURLFlagName                 = "rpc.url"
 	PrivateKeyFlagName              = "privatekey"
 	PortAPIFlagName                 = "port.api"
-	ReceiverAddressFlagName         = "receiver.address"
 	DataFlagName                    = "data"
 	SuperChainConfigAddressFlagName = "superchainconfig.address"
 	SafeAddressFlagName             = "safe.address"
@@ -24,8 +23,6 @@ type CLIConfig struct {
 	PortAPI                 string
 	Path                    string
 	privatekeyflag          string
-	HexString               string //@todo: remove this is not necessary
-	ReceiverAddress         string
 	SuperChainConfigAddress common.Address
 	SafeAddress             common.Address
 	chainID                 uint64
@@ -37,8 +34,6 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		PortAPI:                 ctx.String(PortAPIFlagName),
 		Path:                    ctx.String(PathFlagName),
 		privatekeyflag:          ctx.String(PrivateKeyFlagName),
-		HexString:               ctx.String(DataFlagName),
-		ReceiverAddress:         ctx.String(ReceiverAddressFlagName),
 		SuperChainConfigAddress: common.HexToAddress(ctx.String(SuperChainConfigAddressFlagName)),
 		SafeAddress:             common.HexToAddress(ctx.String(SafeAddressFlagName)),
 		chainID:                 ctx.Uint64(ChainIDFlagName),
@@ -61,14 +56,6 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PRIVATE_KEY"),
 			Required: true,
 		},
-
-		&cli.StringFlag{
-			Name:     ReceiverAddressFlagName,
-			Usage:    "The receiver address of the pause request.",
-			EnvVars:  opservice.PrefixEnvVar(envPrefix, "RECEIVER_ADDRESS"),
-			Required: true,
-		},
-
 		&cli.Uint64Flag{
 			Name:     PortAPIFlagName,
 			Value:    8080,

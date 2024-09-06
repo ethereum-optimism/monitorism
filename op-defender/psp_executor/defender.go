@@ -50,7 +50,7 @@ type DefenderExecutor struct{}
 
 // Executor is an interface that defines the FetchAndExecute method.
 type Executor interface {
-	FetchAndExecute(d *Defender) error // For doc see the `FetchAndExecute()` function.
+	FetchAndExecute(d *Defender) error // For documentation, see directly the `FetchAndExecute()` function below.
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -92,7 +92,7 @@ type PSP struct {
 	DataStr      string `json:"data"`
 	Signatures   []struct {
 		Signer common.Address `json:"signer"`
-		// `Signature` has to not have the `0x` prefix.
+		// `Signature` has to have the `0x` prefix
 		Signature []byte `json:"signature"`
 	} `json:"signatures"`
 	Calldata    []byte
@@ -206,8 +206,6 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
 	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
 	log.Info("cfg.path", "cfg.path", cfg.Path)
-	log.Info("cfg.hexstring", "cfg.hexstring", cfg.HexString)
-	log.Info("cfg.receiveraddress", "cfg.receiveraddress", cfg.ReceiverAddress)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
 	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
@@ -295,7 +293,7 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
 		return err
 	}
 	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `ExecutePSPOnchain()` function.
-	d.ExecutePSPOnchain(ctx, d.l1Client, d.privatekey, operationSafe, data)
+	d.ExecutePSPOnchain(ctx, operationSafe, data)
 	return nil
 }
 
@@ -389,7 +387,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 	if err != nil {
 		return common.Address{}, []byte{}, fmt.Errorf("failed to get the latest PSP: %w", err)
 	}
-	return current_psp.SafeAddr, current_psp.Data, nil
+	return current_psp.SafeAddr, current_psp.Calldata, nil
 }
 
 // getLatestPSP() will return the PSP that has the correct nonce.
@@ -405,8 +403,8 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 
 // ExecutePSPOnchain() is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
-func (d *Defender) ExecutePSPOnchain(ctx context.Context, l1client *ethclient.Client, privatekey *ecdsa.PrivateKey, safe_address common.Address, data []byte) error {
-	pause_before_transaction, err := d.checkPauseStatus(ctx, l1client)
+func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) error {
+	pause_before_transaction, err := d.checkPauseStatus(ctx, d.l1Client)
 	if err != nil {
 		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
@@ -415,20 +413,20 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, l1client *ethclient.Cl
 		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
 	}
 	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction, "superchainconfig_address", d.superChainConfigAddress, "safe_address", d.safeAddress)
-	txHash, err := sendTransaction(l1client, d.chainID, privatekey, safe_address, big.NewInt(1), data) // 1 wei
+
+	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
 		log.Crit("Failed to send transaction:", "error", err)
 	}
-
 	log.Info("Transaction sent!", "TxHash", txHash)
 
-	pause_after_transaction, err := d.checkPauseStatus(ctx, l1client)
+	pause_after_transaction, err := d.checkPauseStatus(ctx, d.l1Client)
 	if err != nil {
 		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
 	}
-
 	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
+
 	return nil
 
 }
