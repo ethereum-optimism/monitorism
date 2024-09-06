@@ -33,7 +33,7 @@ Each _defenders_ has some common configuration, that are configurable both via C
 
 <img width="3357" alt="image" src="https://github.com/user-attachments/assets/4a63119d-b5e1-4b86-b80e-38d21366ef0b">
 
-The PSP Executor Service is made for executing PSP onchain faster to increase our readiness and speed in case of incident response.
+The PSP Executor Service is made for executing PSP onchain faster, to increase our readiness and speed in our response. 
 
 | `op-defender/psp_executor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-defender/psp_executor/README.md) |
 | -------------------------- | ------------------------------------------------------------------------------------------------------ |
