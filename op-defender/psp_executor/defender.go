@@ -60,7 +60,7 @@ type Defender struct {
 	l1Client                *ethclient.Client
 	router                  *mux.Router
 	executor                Executor
-	privatekey              string
+	privatekey              *ecdsa.PrivateKey
 	path                    string
 	nonce                   uint64
 	superChainConfigAddress common.Address
@@ -295,27 +295,27 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 }
 
 // CheckAndReturnPrivateKey() will return the privatekey only if the privatekey is a valid one otherwise return an error.
-func CheckAndReturnPrivateKey(privateKeyStr string) (string, error) {
+func CheckAndReturnPrivateKey(privateKeyStr string) (*ecdsa.PrivateKey, error) {
 	// Remove "0x" prefix if present
 	privateKeyStr = strings.TrimPrefix(privateKeyStr, "0x")
 
 	// Check if the private key is a valid hex string
 	if !isValidHexString(privateKeyStr) {
-		return "", fmt.Errorf("invalid private key: not a valid hex string")
+		return nil, fmt.Errorf("invalid private key: not a valid hex string")
 	}
 
 	// Check if the private key has the correct length (32 bytes = 64 hex characters)
 	if len(privateKeyStr) != 64 {
-		return "", fmt.Errorf("invalid private key: incorrect length")
+		return nil, fmt.Errorf("invalid private key: incorrect length")
 	}
 
 	// Attempt to parse the private key
-	_, err := crypto.HexToECDSA(privateKeyStr)
+	privateKey, err := crypto.HexToECDSA(privateKeyStr)
 	if err != nil {
-		return "", fmt.Errorf("invalid private key: %v", err)
+		return nil, fmt.Errorf("invalid private key: %v", err)
 	}
 
-	return privateKeyStr, nil
+	return privateKey, nil
 }
 
 // isValidHexString checks if a string is a valid hexadecimal string
@@ -383,7 +383,7 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 
 // ExecutePSPOnchain() is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
-func (d *Defender) ExecutePSPOnchain(ctx context.Context, l1client *ethclient.Client, privatekey string, safe_address common.Address, data []byte) error {
+func (d *Defender) ExecutePSPOnchain(ctx context.Context, l1client *ethclient.Client, privatekey *ecdsa.PrivateKey, safe_address common.Address, data []byte) error {
 	pause_before_transaction, err := d.checkPauseStatus(ctx, l1client)
 	if err != nil {
 		log.Error("Failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
@@ -425,16 +425,12 @@ func (d *Defender) Close(_ context.Context) error {
 	return nil
 }
 
-// sendTransaction(): Is a function made for sending a transaction on chain with the parameters : client, privatekey, toAddress, amount, data.
-func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
-	// Convert the private key string to a private key type
-	// TODO: Need to check if there is the `0x` if yes remove it from the string.
-	privateKey, err := crypto.HexToECDSA(privateKeyStr)
-	if err != nil {
-		return "", fmt.Errorf("invalid private key: %v", err)
+// sendTransaction(): Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
+func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
+	if privateKey == nil {
+		return "", fmt.Errorf("private key is nil")
 	}
-
-	// Derive the public key from the private key
+	// Derive the public key from the private key.
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
@@ -444,18 +440,18 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress c
 	// Derive the sender address from the public key
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
-	// Ensure the toAddress is valid
+	// Ensure the recipient address is valid.
 	if (toAddress == common.Address{}) {
 		return "", fmt.Errorf("invalid to address")
 	}
-	// Get the nonce for the next transaction
+	// Get the nonce for the current transaction.
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
 		return "", fmt.Errorf("failed to get nonce: %v", err)
 	}
 
 	// Set up the transaction parameters
-	value := amount                            // Amount of Ether to send
+	value := amount                            // Amount of ether to send in wei
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
@@ -465,7 +461,7 @@ func sendTransaction(client *ethclient.Client, privateKeyStr string, toAddress c
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
 
 	// Sign the transaction with the private key
-	chainID, err := client.NetworkID(context.Background())
+	chainID, err := client.NetworkID(context.Background()) //@TODO: Need to check if the chainID is correct again env variabl.
 	if err != nil {
 		return "", fmt.Errorf("failed to get network ID: %v", err)
 	}
