@@ -50,7 +50,7 @@ OPTIONS:
 
 ### PSP Executor Service
 
-![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
+<img width="3357" alt="image" src="https://github.com/user-attachments/assets/4a63119d-b5e1-4b86-b80e-38d21366ef0b">
 
 The PSP Executor Service is made for executing PSP onchain faster to increase our readiness and speed in case of incident response.
 
