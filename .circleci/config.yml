@@ -275,6 +275,10 @@ workflows:
       - golang-test:
           name: op-defender-golang-test
           project_name: op-defender
+      - golang-test:
+          name: op-monitorism-golang-test
+          project_name: op-monitorism
+
       - docker-build:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
