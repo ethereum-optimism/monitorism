@@ -71,7 +71,7 @@ jobs:
     steps:
       - checkout
       - run:
-          name: run op-defender module tests
+          name: run <<parameters.project_name>> module tests
           command: cd <<parameters.project_name>> && go test ./... -v
 
   docker-build:
