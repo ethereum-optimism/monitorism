@@ -1,8 +1,10 @@
 package global_events
 
 import (
+	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	"github.com/ethereum/go-ethereum/common"
 	"gopkg.in/yaml.v3"
+	"io"
 	"testing"
 )
 
@@ -41,7 +43,8 @@ func TestDisplayMonitorAddresses(t *testing.T) {
 	if err != nil {
 		t.Errorf("error: %v", err)
 	}
-	config.DisplayMonitorAddresses()
+	log := oplog.NewLogger(io.Discard, oplog.DefaultCLIConfig())
+	config.DisplayMonitorAddresses(log)
 }
 
 func TestYamlToConfiguration(t *testing.T) {
