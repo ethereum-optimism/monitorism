@@ -51,6 +51,7 @@ type DefenderExecutor struct{}
 // Executor is an interface that defines the FetchAndExecute method.
 type Executor interface {
 	FetchAndExecute(d *Defender) error // For documentation, see directly the `FetchAndExecute()` function below.
+	ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error)
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -185,7 +186,10 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 	return
 }
-func ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error) {
+func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error) {
+	if l1client == nil {
+		return &big.Int{}, fmt.Errorf("l1client is not set.")
+	}
 	if chainID == 0 {
 		return &big.Int{}, fmt.Errorf("chainID is not set.")
 	}
@@ -211,7 +215,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
 	log.Info("===============================================================================")
 
-	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@todo: Need to check if the latest blocknumber returned is 0.
+	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@TODO: Need to check if the latest blocknumber returned is 0.
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch l1 RPC: %w", err)
 	}
@@ -242,10 +246,6 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		return nil, fmt.Errorf("failed to bind to the GnosisSafe: %w", err)
 	}
 
-	chainID, err := ReturnCorrectChainID(l1client, cfg.chainID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to return the correct chainID: %w", err)
-	}
 	defender := &Defender{
 		log:                     log,
 		l1Client:                l1client,
@@ -257,8 +257,12 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		safeAddress:             cfg.SafeAddress,
 		operationSafe:           safe,
 		path:                    cfg.Path,
-		chainID:                 chainID,
 	}
+	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.chainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to return the correct chainID: %w", err)
+	}
+	defender.chainID = chainID
 	defender.router = mux.NewRouter()
 	defender.router.HandleFunc("/api/psp_execution", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize) // Limit payload to 1MB
@@ -267,7 +271,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	defender.router.HandleFunc("/api/healthcheck", defender.handleHealthCheck).Methods("GET")
 	return defender, nil
 }
-func (d Defender) getNonceSafe(ctx context.Context) (uint64, error) {
+func (d *Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 	nonce, err := d.operationSafe.Nonce(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return 0, err
@@ -370,12 +374,18 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 		}
 		pspData[i].SafeNonce = safeNonce
 
+		if len(psp.CalldataStr) < 2 {
+			return common.Address{}, []byte{}, fmt.Errorf("calldata is empty")
+		}
 		callData, err := hex.DecodeString(psp.CalldataStr[2:])
 		if err != nil {
 			return common.Address{}, []byte{}, fmt.Errorf("failed to parse calldata %w", err)
 		}
 		pspData[i].Calldata = callData
 
+		if len(psp.DataStr) < 2 {
+			return common.Address{}, []byte{}, fmt.Errorf("Data is empty")
+		}
 		Data, err := hex.DecodeString(psp.DataStr[2:])
 		if err != nil {
 			return common.Address{}, []byte{}, fmt.Errorf("failed to parse data %w", err)
