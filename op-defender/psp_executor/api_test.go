@@ -260,7 +260,8 @@ func TestCheckAndReturnPrivateKey(t *testing.T) {
 		{"Valid private key Generated", validPrivateKeyGeneratedStr, validPrivateKeyGenerated, false},
 		{"Empty string", "", nil, true},
 		{"Invalid hex string", "0xInvalidHex", nil, true},
-		{"Incorrect length", "0x1234", nil, true},
+		{"Incorrect length (2 bytes)", "0x1234", nil, true},
+		{"Incorrect length (38 bytes)", "0x1234123412341234123412341234123412341234123412341234123412341234123412341234", nil, true},
 		{"Invalid private key", "0x0000000000000000000000000000000000000000000000000000000000000000", nil, true},
 	}
 
