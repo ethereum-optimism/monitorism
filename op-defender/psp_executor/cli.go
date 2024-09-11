@@ -11,7 +11,6 @@ const (
 	NodeURLFlagName                 = "rpc.url"
 	PrivateKeyFlagName              = "privatekey"
 	PortAPIFlagName                 = "port.api"
-	DataFlagName                    = "data"
 	SuperChainConfigAddressFlagName = "superchainconfig.address"
 	SafeAddressFlagName             = "safe.address"
 	PathFlagName                    = "path"
@@ -61,13 +60,6 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Value:    8080,
 			Usage:    "Port of the API server you want to listen on (e.g. 8080)",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PORT_API"),
-			Required: false,
-		},
-		&cli.StringFlag{
-			Name:     DataFlagName,
-			Value:    "",
-			Usage:    "calldata to execute the pause on mainnet with the signatures",
-			EnvVars:  opservice.PrefixEnvVar(envPrefix, "CALLDATA"),
 			Required: false,
 		},
 		&cli.StringFlag{
