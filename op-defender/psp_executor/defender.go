@@ -300,7 +300,11 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
 		return err
 	}
 	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `ExecutePSPOnchain()` function.
-	d.ExecutePSPOnchain(ctx, operationSafe, data)
+	err = d.ExecutePSPOnchain(ctx, operationSafe, data)
+	if err != nil {
+		d.log.Error("failed to execute the PSP onchain", "error", err)
+		return err
+	}
 	return nil
 }
 
