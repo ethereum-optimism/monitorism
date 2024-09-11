@@ -73,33 +73,6 @@ jobs:
       - run:
           name: run <<parameters.project_name>> module tests
           command: cd <<parameters.project_name>> && go test ./... -v
-  go-lint:
-    docker:
-      - image: <<pipeline.parameters.ci_builder_image>>
-    steps:
-      - checkout
-      - restore_cache:
-          name: Restore Go modules cache
-          key: gomod-{{ checksum "go.sum" }}
-      - restore_cache:
-          key: golang-build-cache
-      - restore_cache:
-          key: golang-lint-cache
-      - run:
-          name: run Go linter
-          command: |
-            # Identify how many cores it defaults to
-            golangci-lint --help | grep concurrency
-            make lint-go
-          working_directory: .
-      - save_cache:
-          key: golang-build-cache
-          paths:
-            - "/root/.cache/go-build"
-      - save_cache:
-          key: golang-lint-cache
-          paths:
-            - "/root/.cache/golangci-lint"
 
   docker-build:
     environment:
