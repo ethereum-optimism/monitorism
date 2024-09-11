@@ -417,7 +417,7 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 // ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
 func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) error {
-	pause_before_transaction, err := d.checkPauseStatus(ctx, d.l1Client)
+	pause_before_transaction, err := d.checkPauseStatus(ctx)
 	if err != nil {
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
@@ -434,7 +434,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 	}
 	log.Info("Transaction sent!", "TxHash", txHash)
 
-	pause_after_transaction, err := d.checkPauseStatus(ctx, d.l1Client)
+	pause_after_transaction, err := d.checkPauseStatus(ctx)
 	if err != nil {
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return err
@@ -510,7 +510,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 }
 
 // checkPauseStatus: Is a function made for checking the pause status of the SuperChainConfigAddress
-func (d *Defender) checkPauseStatus(ctx context.Context, l1client *ethclient.Client) (bool, error) {
+func (d *Defender) checkPauseStatus(ctx context.Context) (bool, error) {
 	// Get the contract instance
 	paused, err := d.superChainConfig.Paused(&bind.CallOpts{Context: ctx})
 	if err != nil {
