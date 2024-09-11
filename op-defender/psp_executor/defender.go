@@ -185,6 +185,8 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 	return
 }
+
+// ReturnCorrectChainID is a function that will return the correct chainID based on the chainID provided in the config against the RPC url.
 func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error) {
 	if l1client == nil {
 		return &big.Int{}, fmt.Errorf("l1client is not set.")
@@ -202,7 +204,7 @@ func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chai
 	return chainID_RPC, nil
 }
 
-// NewAPI creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
+// NewDefender creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
 	log.Info("============================ Configuration Info ================================")
@@ -270,6 +272,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	defender.router.HandleFunc("/api/healthcheck", defender.handleHealthCheck).Methods("GET")
 	return defender, nil
 }
+
+// getNonceSafe is a function that will return the nonce of the operationSafe.
 func (d *Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 	nonce, err := d.operationSafe.Nonce(&bind.CallOpts{Context: ctx})
 	if err != nil {
@@ -278,7 +282,7 @@ func (d *Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 	return nonce.Uint64(), nil
 }
 
-// FetchAndExecute() will fetch the PSP from a file and execute it this onchain.
+// FetchAndExecute will fetch the PSP from a file and execute it this onchain.
 func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
 	ctx := context.Background()
 	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
@@ -300,7 +304,7 @@ func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
 	return nil
 }
 
-// CheckAndReturnRPC() will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
+// CheckAndReturnRPC will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
 func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	if rpc_url == "" {
@@ -317,7 +321,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	return client, nil
 }
 
-// CheckAndReturnPrivateKey() will return the privatekey only if the privatekey is a valid one otherwise return an error.
+// CheckAndReturnPrivateKey will return the privatekey only if the privatekey is a valid one otherwise return an error.
 func CheckAndReturnPrivateKey(privateKeyStr string) (*ecdsa.PrivateKey, error) {
 	// Remove "0x" prefix if present
 	privateKeyStr = strings.TrimPrefix(privateKeyStr, "0x")
@@ -347,7 +351,7 @@ func isValidHexString(s string) bool {
 	return err == nil
 }
 
-// GetPSPbyNonceFromFile() will fetch the latest PSPs from a secret file and return the PSP that has the correct nonce.
+// GetPSPbyNonceFromFile will fetch the latest PSPs from a secret file and return the PSP that has the correct nonce.
 func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, error) {
 	// Read the content of the file
 	var pspData []PSP
@@ -399,7 +403,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 	return current_psp.SafeAddr, current_psp.Calldata, nil
 }
 
-// getLatestPSP() will return the PSP that has the correct nonce.
+// getLatestPSP will return the PSP that has the correct nonce.
 func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 	for _, psp := range pspData {
 		if psp.SafeNonce == nonce {
@@ -410,7 +414,7 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 	return PSP{}, fmt.Errorf("no PSP found with nonce %d", nonce)
 }
 
-// ExecutePSPOnchain() is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
+// ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
 func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) error {
 	pause_before_transaction, err := d.checkPauseStatus(ctx, d.l1Client)
@@ -449,13 +453,13 @@ func (d *Defender) Run(ctx context.Context) {
 	}
 }
 
-// Close() will close the Defender API server and the L1 client.
+// Close will close the Defender API server and the L1 client.
 func (d *Defender) Close(_ context.Context) error {
 	d.l1Client.Close() //close the L1 client.
 	return nil
 }
 
-// sendTransaction(): Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
+// sendTransaction: Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
 func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
 	if privateKey == nil {
 		return "", fmt.Errorf("private key is nil")
@@ -505,7 +509,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	return signedTx.Hash().Hex(), nil
 }
 
-// checkPauseStatus(): Is a function made for checking the pause status of the SuperChainConfigAddress
+// checkPauseStatus: Is a function made for checking the pause status of the SuperChainConfigAddress
 func (d *Defender) checkPauseStatus(ctx context.Context, l1client *ethclient.Client) (bool, error) {
 	// Get the contract instance
 	paused, err := d.superChainConfig.Paused(&bind.CallOpts{Context: ctx})
