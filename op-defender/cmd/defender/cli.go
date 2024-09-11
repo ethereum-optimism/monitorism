@@ -33,7 +33,7 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Name:        "psp_executor",
 				Usage:       "Service to execute PSPs through API.",
 				Description: "Service to execute PSPs through API.",
-				Flags:       append(psp_executor.CLIFlags("PSPEXECUTOR_MON"), defaultFlags...),
+				Flags:       append(psp_executor.CLIFlags("PSPEXECUTOR"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(PSPExecutorMain),
 			},
 			{

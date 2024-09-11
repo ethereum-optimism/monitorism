@@ -1,9 +1,8 @@
 package psp_executor
 
 import (
-	"fmt"
-
 	opservice "github.com/ethereum-optimism/optimism/op-service"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/urfave/cli/v2"
 )
@@ -12,42 +11,33 @@ const (
 	NodeURLFlagName                 = "rpc.url"
 	PrivateKeyFlagName              = "privatekey"
 	PortAPIFlagName                 = "port.api"
-	ReceiverAddressFlagName         = "receiver.address"
-	DataFlagName                    = "data"
 	SuperChainConfigAddressFlagName = "superchainconfig.address"
+	SafeAddressFlagName             = "safe.address"
+	PathFlagName                    = "path"
+	ChainIDFlagName                 = "chainid"
 )
 
 type CLIConfig struct {
 	NodeURL                 string
-	privatekeyflag          string
 	PortAPI                 string
-	ReceiverAddress         string
-	HexString               string
-	SuperChainConfigAddress string
+	Path                    string
+	privatekeyflag          string
+	SuperChainConfigAddress common.Address
+	SafeAddress             common.Address
+	chainID                 uint64
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
-	cfg := CLIConfig{NodeURL: ctx.String(NodeURLFlagName)}
-	if len(PrivateKeyFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a PrivateKeyFlagName set to execute the pause.")
+	cfg := CLIConfig{
+		NodeURL:                 ctx.String(NodeURLFlagName),
+		PortAPI:                 ctx.String(PortAPIFlagName),
+		Path:                    ctx.String(PathFlagName),
+		privatekeyflag:          ctx.String(PrivateKeyFlagName),
+		SuperChainConfigAddress: common.HexToAddress(ctx.String(SuperChainConfigAddressFlagName)),
+		SafeAddress:             common.HexToAddress(ctx.String(SafeAddressFlagName)),
+		chainID:                 ctx.Uint64(ChainIDFlagName),
 	}
-	cfg.privatekeyflag = ctx.String(PrivateKeyFlagName)
-	if len(PortAPIFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a PortAPIFlagName set to execute the pause.")
-	}
-	cfg.PortAPI = ctx.String(PortAPIFlagName)
-	if len(ReceiverAddressFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a ReceiverAddressFlagName set to receive the pause.")
-	}
-	cfg.ReceiverAddress = ctx.String(ReceiverAddressFlagName)
-	if len(DataFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a `data` set to execute the calldata.")
-	}
-	cfg.HexString = ctx.String(DataFlagName)
-	if len(SuperChainConfigAddressFlagName) == 0 {
-		return cfg, fmt.Errorf("must have a `SuperChainConfigAddress` to know the current status of the superchainconfig.")
-	}
-	cfg.SuperChainConfigAddress = ctx.String(SuperChainConfigAddressFlagName)
+
 	return cfg, nil
 }
 
@@ -61,36 +51,39 @@ func CLIFlags(envPrefix string) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:     PrivateKeyFlagName,
-			Usage:    "Private key of the account that will issue the pause ()",
+			Usage:    "Privatekey of the account that will issue the pause transaction",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PRIVATE_KEY"),
 			Required: true,
 		},
-
-		&cli.StringFlag{
-			Name:     ReceiverAddressFlagName,
-			Usage:    "The receiver address of the pause request.",
-			EnvVars:  opservice.PrefixEnvVar(envPrefix, "RECEIVER_ADDRESS"),
-			Required: true,
-		},
-
-		&cli.StringFlag{
+		&cli.Uint64Flag{
 			Name:     PortAPIFlagName,
-			Value:    "8080",
-			Usage:    "Port of the API server you want to listen on (e.g. 8080).",
+			Value:    8080,
+			Usage:    "Port of the API server you want to listen on (e.g. 8080)",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PORT_API"),
 			Required: false,
 		},
 		&cli.StringFlag{
-			Name:     DataFlagName,
-			Value:    "",
-			Usage:    "calldata to execute the pause on mainnet with the signatures.",
-			EnvVars:  opservice.PrefixEnvVar(envPrefix, "CALLDATA"),
-			Required: false,
+			Name:     SuperChainConfigAddressFlagName,
+			Usage:    "SuperChainConfig address to know the current status of the superchainconfig",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "SUPERCHAINCONFIG_ADDRESS"),
+			Required: true,
 		},
 		&cli.StringFlag{
-			Name:     SuperChainConfigAddressFlagName,
-			Usage:    "SuperChainConfig address to know the current status of the superchainconfig.",
-			EnvVars:  opservice.PrefixEnvVar(envPrefix, "SUPERCHAINCONFIG_ADDRESS"),
+			Name:     SafeAddressFlagName,
+			Usage:    "Safe address that will execute the PSPs",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "SAFE_ADDRESS"),
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     PathFlagName,
+			Usage:    "Absolute path to the JSON file containing the PSPs",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PATH_TO_PSPS"),
+			Required: true,
+		},
+		&cli.Uint64Flag{
+			Name:     ChainIDFlagName,
+			Usage:    "ChainID of the current chain that op-defender is running on",
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "CHAIN_ID"),
 			Required: true,
 		},
 	}
