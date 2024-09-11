@@ -30,17 +30,16 @@ import (
 // * Sepolia:                                                           *
 // * deputyGuardianSepolia: 0x4220C5deD9dC2C8a8366e684B098094790C72d3c *
 // * SuperChainConfigSepolia: 0xC2Be75506d5724086DEB7245bd260Cc9753911Be *
-// * FoS on Sepolia: 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E        *
+// * FoSSepolia: 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E        *
 // **********************************************************************
 // * Mainnet:                                                           *
-// * deputyGuardianMainnet: 0x5dC91D01290af474CE21DE14c17335a6dEe4d2a8  *
+// * deputyGuardianMainnet: 0x5dC91D01290af474CE21DE14c17335a6dEe4d2a8
+// * SuperChainConfigMainnet: 0x95703e0982140D16f8ebA6d158FccEde42f04a4C
+// * FoSMainnet: 0x9BA6e03D8B90dE867373Db8cF1A58d2F7F006b3A
 // **********************************************************************
 
 const (
 	MetricsNamespace   = "psp_executor"
-	SepoliaRPC         = "https://proxyd-l1-consensus.primary.sepolia.prod.oplabs.cloud"
-	MainnetRPC         = "https://proxyd-l1-consensus.primary.mainnet.prod.oplabs.cloud"
-	LocalhostRPC       = "http://localhost:8545"
 	MaxRequestBodySize = 1 * 1024 * 1024 // 1MB in bytes
 	DefaultGasLimit    = 21000
 )
