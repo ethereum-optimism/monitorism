@@ -226,7 +226,8 @@ func TestCheckAndReturnRPC(t *testing.T) {
 		expectError bool
 	}{
 		{"Empty URL", "", true},
-		{"Production URL", "https://mainnet.infura.io", true},
+		{"Production URL Mainnet", "https://mainnet.infura.io", true},
+		{"Production URL Sepolia", "https://sepolia.infura.io", false},
 		{"Valid Tenderly Fork URL", "https://rpc.tenderly.co/fork/some-id", false},
 	}
 
