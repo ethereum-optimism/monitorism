@@ -314,8 +314,8 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	if rpc_url == "" {
 		return nil, fmt.Errorf("rpc.url is not set.")
 	}
-	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") { // Check if the RPC is a production one. if yes return an error, as we should not execute the pause on the production chain in the first version.
-		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" is a production RPC.")
+	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") && !strings.Contains(rpc_url, "sepolia") { // Check if the RPC is a mainnet production. if yes return an error, as we should not execute the pause on the fork or sepolia chain in the first version.
+		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" or \"sepolia\" so this is a production RPC on mainnet")
 	}
 
 	client, err := ethclient.Dial(rpc_url)
