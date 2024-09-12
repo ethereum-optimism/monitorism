@@ -149,7 +149,6 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Timestamp field must be a number", http.StatusBadRequest)
 		return
 	}
-
 	operator, ok := requestMap["Operator"].(string)
 	if !ok {
 		http.Error(w, "Operator field must be a string", http.StatusBadRequest)
@@ -204,9 +203,29 @@ func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chai
 	return chainID_RPC, nil
 }
 
+// AddressFromPrivateKey is a function that will return the address of the privatekey.
+func AddressFromPrivateKey(privateKey *ecdsa.PrivateKey) (common.Address, error) {
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return common.Address{}, fmt.Errorf("error casting public key to ECDSA")
+	}
+	return crypto.PubkeyToAddress(*publicKeyECDSA), nil
+
+}
+
 // NewDefender creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
+	privatekey, err := CheckAndReturnPrivateKey(cfg.privatekeyflag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to return the privatekey: %w", err)
+	}
+	address, err := AddressFromPrivateKey(privatekey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to return the address associated to the private key: %w", err)
+	}
+
 	log.Info("============================ Configuration Info ================================")
 	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
 	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
@@ -214,6 +233,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
 	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
+	log.Info("defender address (from privatekey)", "address", address)
+
 	log.Info("===============================================================================")
 
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@TODO: Need to check if the latest blocknumber returned is 0.
@@ -226,10 +247,6 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("path is not set.")
-	}
-	privatekey, err := CheckAndReturnPrivateKey(cfg.privatekeyflag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to return the privatekey: %w", err)
 	}
 
 	if cfg.SuperChainConfigAddress == (common.Address{}) {
