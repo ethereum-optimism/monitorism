@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -456,7 +457,9 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 		return common.Hash{}, err
 	}
 	if pause_before_transaction {
-		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
+
+		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
+
 	}
 	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
