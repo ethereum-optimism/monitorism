@@ -22,9 +22,9 @@ import (
 
 type SimpleExecutor struct{}
 
-func (e *SimpleExecutor) FetchAndExecute(d *Defender) error {
+func (e *SimpleExecutor) FetchAndExecute(d *Defender) (common.Hash, error) {
 	// Do nothing for now, for mocking purposes
-	return nil
+	return common.Hash{}, nil
 }
 
 func (e *SimpleExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error) { // Do nothing for now, for mocking purposes
