@@ -182,7 +182,7 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 
 	if (txHash != common.Hash{}) && (err != nil) { // If the transaction hash is not empty and the error is not nil we return the transaction hash.
 		response := Response{
-			Message: "🚧 Transaction Executed 🚧, but the contract is not *pause*. An error occured: " + err.Error() + ". The TxHash: " + txHash.Hex(),
+			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occured: " + err.Error() + ". The TxHash: " + txHash.Hex(),
 			Status:  http.StatusInternalServerError,
 		}
 		json.NewEncoder(w).Encode(response)
