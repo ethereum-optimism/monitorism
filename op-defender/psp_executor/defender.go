@@ -92,9 +92,8 @@ type PSP struct {
 	Data         []byte
 	DataStr      string `json:"data"`
 	Signatures   []struct {
-		Signer common.Address `json:"signer"`
-		// `Signature` has to have the `0x` prefix
-		Signature []byte `json:"signature"`
+		Signer    common.Address `json:"signer"`
+		Signature string         `json:"signature"`
 	} `json:"signatures"`
 	Calldata    []byte
 	CalldataStr string `json:"calldata"`
