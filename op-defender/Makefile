@@ -37,13 +37,6 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BUILD_DIR)/$(BINARY)
 
-lint-go: ## Lints Go code with specific linters
-	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./...
-.PHONY: lint-go
-
-lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
-	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./... --fix
-.PHONY: lint-go-fix
 # Run program
 .PHONY: tidy
 tidy:
