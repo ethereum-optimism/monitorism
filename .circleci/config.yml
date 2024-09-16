@@ -301,11 +301,11 @@ workflows:
             - equal: [webhook, << pipeline.trigger_source >>]
     jobs:
       - go-lint:
-        name: op-defender-go-lint
-        project_name: op-defender
+          name: op-defender-go-lint
+          project_name: op-defender
       - go-lint:
-        name: op-monitorism-go-lint
-        project_name: op-monitorism
+          name: op-monitorism-go-lint
+          project_name: op-monitorism
       - golang-test:
           name: op-defender-golang-test
           project_name: op-defender
