@@ -79,6 +79,8 @@ jobs:
       - image: <<pipeline.parameters.ci_builder_image>>
     steps:
       - checkout
+      - run:
+          command: echo $(pwd)
       - restore_cache:
           name: Restore Go modules cache
           key: gomod-{{ checksum "go.sum" }}
