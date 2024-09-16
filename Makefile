@@ -27,6 +27,14 @@ op-defender:
 	make -C ./op-defender 
 .PHONY: op-defender
 
+lint-go: ## Lints Go code with specific linters
+	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./...
+.PHONY: lint-go
+
+lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
+	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./... --fix
+.PHONY: lint-go-fix
+
 tidy:
 	make -C ./op-monitorism tidy
 	make -C ./op-defender tidy
