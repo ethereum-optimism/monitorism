@@ -188,7 +188,7 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 			Status:  http.StatusInternalServerError,
 		}
 		if err := json.NewEncoder(w).Encode(response); err != nil {
-			http.Error(w, "failed to encode response (Error)", http.StatusInternalServerError)
+			http.Error(w, "failed to encode response (`TxHash` is set to `nil`)", http.StatusInternalServerError)
 			return
 		}
 		return
