@@ -476,11 +476,12 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return common.Hash{}, err
 	}
-	if pause_before_transaction {
-
-		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
-
-	}
+	errors.New("the SuperChainConfig is already paused")
+	// if pause_before_transaction {
+	//
+	// 	return common.Hash{}, errors.New("the SuperChainConfig is already paused")
+	//
+	// }
 	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
@@ -542,8 +543,11 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to get nonce: %v", err)
 	}
-
 	// Set up the transaction parameters
+	_, err = SimulateTransaction(client, fromAddress, toAddress, data)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
+	}
 	value := amount                            // Amount of ether to send in wei
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
