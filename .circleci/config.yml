@@ -80,7 +80,7 @@ jobs:
     steps:
       - checkout
       - run:
-          command: echo $(pwd)
+          command: echo $(ls -lrta)
       - restore_cache:
           name: Restore Go modules cache
           key: gomod-{{ checksum "go.sum" }}
