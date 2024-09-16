@@ -175,16 +175,34 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 			Message: "🛑" + err.Error() + "🛑",
 			Status:  http.StatusInternalServerError,
 		}
-		json.NewEncoder(w).Encode(response)
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (Error)", http.StatusInternalServerError)
+			return
+		}
 		return
 	}
-
+	if (txHash == common.Hash{}) && (err == nil) {
+		response := Response{
+			Message: "🛑 Unknown error, `TxHash` is set to `nil` 🛑",
+			Status:  http.StatusInternalServerError,
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (Error)", http.StatusInternalServerError)
+			return
+		}
+		return
+	}
 	if (txHash != common.Hash{}) && (err != nil) { // If the transaction hash is not empty and the error is not nil we return the transaction hash.
 		response := Response{
 			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occured: " + err.Error() + ". The TxHash: " + txHash.Hex(),
 			Status:  http.StatusInternalServerError,
 		}
-		json.NewEncoder(w).Encode(response)
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (SuperChain not Paused)", http.StatusInternalServerError)
+			return
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -193,7 +211,10 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		Message: "PSP executed successfully ✅ Transaction hash: " + txHash.Hex() + "🎉",
 		Status:  http.StatusOK,
 	}
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "failed to encode response (PSP executed successfully)", http.StatusInternalServerError)
+		return
+	}
 	return
 }
 
@@ -343,7 +364,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	if rpc_url == "" {
 		return nil, fmt.Errorf("rpc.url is not set.")
 	}
-	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") && !strings.Contains(rpc_url, "sepolia") { // Check if the RPC is a mainnet production. if yes return an error, as we should not execute the pause on the fork or sepolia chain in the first version.
+	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") && !strings.Contains(rpc_url, "sepolia") && !strings.Contains(rpc_url, "localhost") { // Check if the RPC is a mainnet production. if yes return an error, as we should not execute the pause on the fork or sepolia or localhost chain in the first version
 		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" or \"sepolia\" so this is a production RPC on mainnet")
 	}
 
