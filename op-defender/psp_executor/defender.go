@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -49,7 +50,7 @@ type DefenderExecutor struct{}
 
 // Executor is an interface that defines the FetchAndExecute method.
 type Executor interface {
-	FetchAndExecute(d *Defender) error // For documentation, see directly the `FetchAndExecute()` function below.
+	FetchAndExecute(d *Defender) (common.Hash, error) // For documentation, see directly the `FetchAndExecute()` function below.
 	ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error)
 }
 
@@ -91,9 +92,8 @@ type PSP struct {
 	Data         []byte
 	DataStr      string `json:"data"`
 	Signatures   []struct {
-		Signer common.Address `json:"signer"`
-		// `Signature` has to have the `0x` prefix
-		Signature []byte `json:"signature"`
+		Signer    common.Address `json:"signer"`
+		Signature string         `json:"signature"`
 	} `json:"signatures"`
 	Calldata    []byte
 	CalldataStr string `json:"calldata"`
@@ -169,19 +169,52 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute the PSP on the chain by calling the FetchAndExecute method of the executor.
-	err := d.executor.FetchAndExecute(d)
-	if err != nil {
-		http.Error(w, "failed to execute the PSP", http.StatusInternalServerError)
+	txHash, err := d.executor.FetchAndExecute(d)
+	if (txHash == common.Hash{}) && (err != nil) { // If TxHash and Error then we return an error as the execution had an issue.
+		response := Response{
+			Message: "🛑" + err.Error() + "🛑",
+			Status:  http.StatusInternalServerError,
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (Error)", http.StatusInternalServerError)
+			return
+		}
 		return
 	}
-	//
+	if (txHash == common.Hash{}) && (err == nil) {
+		response := Response{
+			Message: "🛑 Unknown error, `TxHash` is set to `nil` 🛑",
+			Status:  http.StatusInternalServerError,
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (`TxHash` is set to `nil`)", http.StatusInternalServerError)
+			return
+		}
+		return
+	}
+	if (txHash != common.Hash{}) && (err != nil) { // If the transaction hash is not empty and the error is not nil we return the transaction hash.
+		response := Response{
+			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occured: " + err.Error() + ". The TxHash: " + txHash.Hex(),
+			Status:  http.StatusInternalServerError,
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (SuperChain not Paused)", http.StatusInternalServerError)
+			return
+		}
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := Response{
-		Message: "PSP executed successfully",
+		Message: "PSP executed successfully ✅ Transaction hash: " + txHash.Hex() + "🎉",
 		Status:  http.StatusOK,
 	}
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "failed to encode response (PSP executed successfully)", http.StatusInternalServerError)
+		return
+	}
 	return
 }
 
@@ -300,29 +333,29 @@ func (d *Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 }
 
 // FetchAndExecute will fetch the PSP from a file and execute it this onchain.
-func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
+func (e *DefenderExecutor) FetchAndExecute(d *Defender) (common.Hash, error) {
 	ctx := context.Background()
 	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
 	if err != nil {
 		d.log.Error("failed to get nonce", "error", err)
-		return err
+		return common.Hash{}, err
 	}
 	operationSafe, data, err := GetPSPbyNonceFromFile(nonce, d.path) // return the PSP that has the correct nonce.
 	if err != nil {
 		d.log.Error("failed to get the PSPs from a file", "error", err)
-		return err
+		return common.Hash{}, err
 	}
 	if operationSafe != d.safeAddress {
 		d.log.Error("the safe address in the file is not the same as the one in the configuration!")
-		return err
+		return common.Hash{}, err
 	}
 	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `ExecutePSPOnchain()` function.
-	err = d.ExecutePSPOnchain(ctx, operationSafe, data)
+	txHash, err := d.ExecutePSPOnchain(ctx, operationSafe, data)
 	if err != nil {
 		d.log.Error("failed to execute the PSP onchain", "error", err)
-		return err
+		return txHash, err
 	}
-	return nil
+	return txHash, nil
 }
 
 // CheckAndReturnRPC will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -331,7 +364,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	if rpc_url == "" {
 		return nil, fmt.Errorf("rpc.url is not set.")
 	}
-	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") && !strings.Contains(rpc_url, "sepolia") { // Check if the RPC is a mainnet production. if yes return an error, as we should not execute the pause on the fork or sepolia chain in the first version.
+	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") && !strings.Contains(rpc_url, "sepolia") && !strings.Contains(rpc_url, "localhost") { // Check if the RPC is a mainnet production. if yes return an error, as we should not execute the pause on the fork or sepolia or localhost chain in the first version
 		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" or \"sepolia\" so this is a production RPC on mainnet")
 	}
 
@@ -437,32 +470,37 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 
 // ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
-func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) error {
+func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) (common.Hash, error) {
 	pause_before_transaction, err := d.checkPauseStatus(ctx)
 	if err != nil {
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
-		return err
+		return common.Hash{}, err
 	}
 	if pause_before_transaction {
-		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
+
+		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
+
 	}
 	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
-		log.Crit("failed to send transaction:", "error", err)
+		return common.Hash{}, err
 	}
 	log.Info("Transaction sent!", "TxHash", txHash)
 
 	pause_after_transaction, err := d.checkPauseStatus(ctx)
+	if !pause_after_transaction {
+		return txHash, fmt.Errorf("failed to pause the SuperChainConfig")
+	}
 	if err != nil {
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
-		return err
+		return common.Hash{}, err
 	}
 	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
-	return nil
+	return txHash, nil
 
 }
 
@@ -481,15 +519,15 @@ func (d *Defender) Close(_ context.Context) error {
 }
 
 // sendTransaction: Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
-func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
+func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (common.Hash, error) {
 	if privateKey == nil {
-		return "", fmt.Errorf("private key is nil")
+		return common.Hash{}, fmt.Errorf("private key is nil")
 	}
 	// Derive the public key from the private key.
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return "", fmt.Errorf("error casting public key to ECDSA")
+		return common.Hash{}, fmt.Errorf("error casting public key to ECDSA")
 	}
 
 	// Derive the sender address from the public key
@@ -497,12 +535,12 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 
 	// Ensure the recipient address is valid.
 	if (toAddress == common.Address{}) {
-		return "", fmt.Errorf("invalid recipient address (toAddress)")
+		return common.Hash{}, fmt.Errorf("invalid recipient address (toAddress)")
 	}
 	// Get the nonce for the current transaction.
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
-		return "", fmt.Errorf("failed to get nonce: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %v", err)
 	}
 
 	// Set up the transaction parameters
@@ -510,7 +548,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to suggest gas price: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %v", err)
 	}
 
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
@@ -518,16 +556,16 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	// Sign the transaction with the private key
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to sign transaction: %v", err)
 	}
 
 	// Send the transaction
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %v", err)
 	}
 
-	return signedTx.Hash().Hex(), nil
+	return signedTx.Hash(), nil
 }
 
 // checkPauseStatus: Is a function made for checking the pause status of the SuperChainConfigAddress
