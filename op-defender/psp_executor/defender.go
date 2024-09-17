@@ -529,7 +529,6 @@ func (d *Defender) Run(ctx context.Context) {
 				// log prometheus metric unexpectedRpcErrors
 				continue
 			}
-			ctx := context.Background()
 			nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
 			if err != nil {
 				continue
