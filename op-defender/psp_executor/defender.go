@@ -475,44 +475,44 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 // ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then simulate the transaction to make sure this is valid one and send the onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
 func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) (common.Hash, error) {
+	// 1. Check the status of the SuperChainConfig
 	pause_before_transaction, err := d.checkPauseStatus(ctx)
 	if err != nil {
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return common.Hash{}, err
 	}
+
 	if pause_before_transaction {
-
 		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
-
 	}
-	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
-	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
+	d.log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
+	d.log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
-	// Simulate the transaction to check if it will succeed before sending it onchain if blocknumber = nil this simulate at the last block
+	// 2. Simulate the transaction to check if it will succeed before sending it onchain if blocknumber = nil this simulate at the last block
 	simulation, err := SimulateTransaction(ctx, d.l1Client, nil, d.senderAddress, safe_address, calldata)
 	if err != nil {
 		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
 		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
 	}
 
-	simulationHex := hex.EncodeToString(simulation)
-	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address, "simulation", simulationHex)
-
+	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address, "simulation", hex.EncodeToString(simulation))
+	// 3. As the simulation is correct we execute the transaction onchain.
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
 		return common.Hash{}, err
 	}
-	log.Info("Transaction sent!", "TxHash", txHash)
+	d.log.Info("Transaction sent!", "TxHash", txHash)
 
+	// 4. Check the status of the SuperChainConfig after the transaction is set to pause.
 	pause_after_transaction, err := d.checkPauseStatus(ctx)
 	if !pause_after_transaction {
 		return txHash, fmt.Errorf("failed to pause the SuperChainConfig")
 	}
 	if err != nil {
-		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
+		d.log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return common.Hash{}, err
 	}
-	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
+	d.log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 	return txHash, nil
 
@@ -545,7 +545,7 @@ func (d *Defender) Run(ctx context.Context) {
 
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
-		log.Crit("failed to start the API server", "error", err)
+		d.log.Crit("failed to start the API server", "error", err)
 	}
 }
 
