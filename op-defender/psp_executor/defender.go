@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -62,11 +63,12 @@ type Defender struct {
 	router   *mux.Router
 	executor Executor
 	// Onchain data
-	l1Client   *ethclient.Client
-	privatekey *ecdsa.PrivateKey
-	path       string
-	nonce      uint64
-	chainID    *big.Int
+	l1Client      *ethclient.Client
+	privatekey    *ecdsa.PrivateKey
+	senderAddress common.Address
+	path          string
+	nonce         uint64
+	chainID       *big.Int
 	// superChainConfig
 	superChainConfigAddress common.Address
 	superChainConfig        *bindings.SuperchainConfig
@@ -308,6 +310,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		safeAddress:             cfg.SafeAddress,
 		operationSafe:           safe,
 		path:                    cfg.Path,
+		senderAddress:           address,
 	}
 	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.chainID)
 	if err != nil {
@@ -468,7 +471,7 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 	return PSP{}, fmt.Errorf("no PSP found with nonce %d", nonce)
 }
 
-// ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
+// ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then simulate the transaction to make sure this is valid one and send the onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
 func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) (common.Hash, error) {
 	pause_before_transaction, err := d.checkPauseStatus(ctx)
@@ -476,15 +479,21 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return common.Hash{}, err
 	}
-	errors.New("the SuperChainConfig is already paused")
-	// if pause_before_transaction {
-	//
-	// 	return common.Hash{}, errors.New("the SuperChainConfig is already paused")
-	//
-	// }
+	if pause_before_transaction {
+
+		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
+
+	}
 	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
+	// Simulate the transaction to check if it will succeed before sending it onchain.
+	_, err = SimulateTransaction(d.l1Client, d.senderAddress, safe_address, calldata)
+	if err != nil {
+		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
+		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
+	}
+	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address)
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
 		return common.Hash{}, err
@@ -507,6 +516,42 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 
 // Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {
+	go func() {
+		for {
+			time.Sleep(12 * time.Second) // Sleep for 12 seconds to make sure the PSP is executed onchain.
+			// get the last block number
+			blockNumber, err := d.l1Client.BlockNumber(context.Background())
+			if err != nil {
+				d.log.Error("[MON] failed to get the block number", "error", err)
+				// log prometheus metric unexpectedRpcErrors
+				continue
+			}
+			// get the nonce of the operationSafe
+			nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
+			if err != nil {
+				d.log.Error("[MON] failed to get nonce", "error", err)
+				// log prometheus metric RPC
+				continue
+			}
+			// fetch PSPs
+			operationSafe, data, err := GetPSPbyNonceFromFile(nonce, d.path)
+			if err != nil {
+				d.log.Error("[MON] failed to get the PSPs from a file", "error", err)
+				// log prometheus metric
+				continue
+			}
+			// Simulate the PSPs
+			_, err = SimulateTransaction(d.l1Client, d.senderAddress, operationSafe, data)
+			if err != nil {
+				d.log.Error("[MON] Current PSPs is failing", "from", d.senderAddress, "to", operationSafe, "error", err.Error())
+				// log prometheus metrics
+				continue
+			}
+			d.log.Info("[MON] Current PSP is valid ✅", "nonce", nonce, "from", d.senderAddress, "to", operationSafe)
+			// log prometheus metrics for the block
+		}
+	}()
+
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
 		log.Crit("failed to start the API server", "error", err)
@@ -542,11 +587,6 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to get nonce: %v", err)
-	}
-	// Set up the transaction parameters
-	_, err = SimulateTransaction(client, fromAddress, toAddress, data)
-	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
 	}
 	value := amount                            // Amount of ether to send in wei
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.

@@ -2,7 +2,6 @@ package psp_executor
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -23,11 +22,10 @@ func SimulateTransaction(client *ethclient.Client, fromAddress common.Address, c
 	ctx := context.Background()
 
 	// Simulate the transaction
-	result, err := client.CallContract(ctx, callMsg, nil)
+	_, err := client.CallContract(ctx, callMsg, nil)
 	if err != nil {
+
 		return nil, err
 	}
-
-	fmt.Printf("Simulation result: %x\n", result)
 	return &callMsg, nil
 }
