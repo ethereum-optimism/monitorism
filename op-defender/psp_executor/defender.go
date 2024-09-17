@@ -534,13 +534,13 @@ func (d *Defender) Run(ctx context.Context) {
 				continue
 			}
 
-			res, err := d.executor.FetchAndSimulateAtBlock(d, blocknumber, nonce)
+			_, err = d.executor.FetchAndSimulateAtBlock(d, blocknumber, nonce)
 			if err != nil {
-				d.log.Error("[MON] failed to fetch and simulate the PSP onchain", "error", err, "blocknumber", blocknumber)
+				d.log.Error("[MON] failed to fetch and simulate the PSP onchain", "error", err, "blocknumber", blocknumber, "nonce", nonce)
 				// log prometheus metric FetchAndSimulateAtBlock
 				continue
 			}
-			d.log.Info("[MON] PSP executed onchain successfully ✅", "blocknumber", blocknumber, "simulation", hex.EncodeToString(res))
+			d.log.Info("[MON] PSP executed onchain successfully ✅", "blocknumber", blocknumber, "nonce", nonce)
 		}
 	}()
 
