@@ -70,6 +70,7 @@ type Defender struct {
 	path          string
 	nonce         uint64
 	chainID       *big.Int
+	blockDuration time.Duration
 	// superChainConfig
 	superChainConfigAddress common.Address
 	superChainConfig        *bindings.SuperchainConfig
@@ -266,9 +267,10 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
 	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
 	log.Info("cfg.path", "cfg.path", cfg.Path)
+	log.Info("cfg.blockduration", "cfg.blockduration", cfg.BlockDuration)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
-	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
+	log.Info("cfg.chainID", "cfg.chainID", cfg.ChainID)
 	log.Info("defender address (from privatekey)", "address", address)
 
 	log.Info("===============================================================================")
@@ -283,6 +285,9 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("path is not set.")
+	}
+	if cfg.BlockDuration == 0 {
+		return nil, fmt.Errorf("blockduration is not set.")
 	}
 
 	if cfg.SuperChainConfigAddress == (common.Address{}) {
@@ -312,8 +317,9 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		operationSafe:           safe,
 		path:                    cfg.Path,
 		senderAddress:           address,
+		blockDuration:           time.Duration(cfg.BlockDuration),
 	}
-	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.chainID)
+	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.ChainID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to return the correct chainID: %w", err)
 	}
@@ -522,7 +528,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 func (d *Defender) Run(ctx context.Context) {
 	go func() {
 		for {
-			time.Sleep(2 * time.Second) // Sleep for 12 seconds to make sure the PSP is executed onchain.
+			time.Sleep(d.blockDuration * time.Second) // Sleep for 12 seconds to make sure the PSP is executed onchain.
 			blocknumber, err := d.l1Client.BlockNumber(ctx)
 			if err != nil {
 				d.log.Error("[MON] failed to get the block number", "error", err)
@@ -586,7 +592,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %v", err)
 	}
 
-	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
+	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data) //@TODO: Need to use `NewTx` instead of `NewTransaction` as it is deprecated in future version of `op-defender`.
 
 	// Sign the transaction with the private key
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
