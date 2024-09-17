@@ -527,15 +527,11 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	if privateKey == nil || *privateKey == (ecdsa.PrivateKey{}) {
 		return common.Hash{}, fmt.Errorf("private key is nil")
 	}
-	// Derive the public key from the private key.
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return common.Hash{}, fmt.Errorf("error casting public key to ECDSA")
-	}
 
-	// Derive the sender address from the public key
-	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	fromAddress, err := AddressFromPrivateKey(privateKey)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("fail to get the address from the private key")
+	}
 
 	// Ensure the recipient address is valid.
 	if (toAddress == common.Address{}) {
