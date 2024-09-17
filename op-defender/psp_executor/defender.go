@@ -238,6 +238,9 @@ func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chai
 
 // AddressFromPrivateKey is a function that will return the address of the privatekey.
 func AddressFromPrivateKey(privateKey *ecdsa.PrivateKey) (common.Address, error) {
+	if privateKey == nil {
+		return common.Address{}, fmt.Errorf("private key is not set")
+	}
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
@@ -520,7 +523,8 @@ func (d *Defender) Close(_ context.Context) error {
 
 // sendTransaction: Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
 func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (common.Hash, error) {
-	if privateKey == nil {
+
+	if privateKey == nil || *privateKey == (ecdsa.PrivateKey{}) {
 		return common.Hash{}, fmt.Errorf("private key is nil")
 	}
 	// Derive the public key from the private key.
