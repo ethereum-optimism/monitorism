@@ -488,7 +488,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
-	// Simulate the transaction to check if it will succeed before sending it onchain.
+	// Simulate the transaction to check if it will succeed before sending it onchain if blocknumber = nil this simulate at the last block
 	simulation, err := SimulateTransaction(ctx, d.l1Client, nil, d.senderAddress, safe_address, calldata)
 	if err != nil {
 		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
