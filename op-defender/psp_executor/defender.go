@@ -370,7 +370,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-		log.Crit("failed to connect to the Ethereum client", "error", err)
+		return nil, fmt.Errorf("failed to connect to the Ethereum client: %v", err)
 	}
 	return client, nil
 }
