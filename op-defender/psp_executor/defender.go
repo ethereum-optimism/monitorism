@@ -53,7 +53,7 @@ type DefenderExecutor struct{}
 type Executor interface {
 	FetchAndExecute(d *Defender) (common.Hash, error) // For documentation, see directly the `FetchAndExecute()` function below.
 	ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error)
-	FetchAndSimulateAtBlock(d *Defender, blocknumber uint64, nonce uint64) ([]byte, error)
+	FetchAndSimulateAtBlock(ctx context.Context, d *Defender, blocknumber *uint64, nonce uint64) ([]byte, error)
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -489,7 +489,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
 	// Simulate the transaction to check if it will succeed before sending it onchain.
-	simulation, err := SimulateTransaction(d.l1Client, d.senderAddress, safe_address, calldata)
+	simulation, err := SimulateTransaction(ctx, d.l1Client, nil, d.senderAddress, safe_address, calldata)
 	if err != nil {
 		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
 		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
@@ -533,8 +533,7 @@ func (d *Defender) Run(ctx context.Context) {
 			if err != nil {
 				continue
 			}
-
-			_, err = d.executor.FetchAndSimulateAtBlock(d, blocknumber, nonce)
+			_, err = d.executor.FetchAndSimulateAtBlock(ctx, d, &blocknumber, nonce)
 			if err != nil {
 				d.log.Error("[MON] failed to fetch and simulate the PSP onchain", "error", err, "blocknumber", blocknumber, "nonce", nonce)
 				// log prometheus metric FetchAndSimulateAtBlock

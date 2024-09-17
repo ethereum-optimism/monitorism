@@ -9,8 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-func SimulateTransaction(client *ethclient.Client, fromAddress common.Address, contractAddress common.Address, data []byte) ([]byte, error) {
+func SimulateTransaction(ctx context.Context, client *ethclient.Client, blockNumber *uint64, fromAddress common.Address, contractAddress common.Address, data []byte) ([]byte, error) {
 	// Create a call message
+
 	callMsg := ethereum.CallMsg{
 		From:  fromAddress,
 		To:    &contractAddress,
@@ -19,10 +20,9 @@ func SimulateTransaction(client *ethclient.Client, fromAddress common.Address, c
 	}
 
 	// Context with a background
-	ctx := context.Background()
-
 	// Simulate the transaction
-	simulation, err := client.CallContract(ctx, callMsg, nil) //@TODO: Add the block number better for debugging
+	simulation, err := client.CallContract(ctx, callMsg, new(big.Int).SetUint64(*blockNumber))
+
 	if err != nil {
 
 		return nil, err
@@ -31,7 +31,7 @@ func SimulateTransaction(client *ethclient.Client, fromAddress common.Address, c
 }
 
 // FetchAndSimulate will fetch the PSP from a file and simulate it this onchain.
-func (e *DefenderExecutor) FetchAndSimulateAtBlock(d *Defender, blocknumber uint64, nonce uint64) ([]byte, error) {
+func (e *DefenderExecutor) FetchAndSimulateAtBlock(ctx context.Context, d *Defender, blocknumber *uint64, nonce uint64) ([]byte, error) {
 	operationSafe, data, err := GetPSPbyNonceFromFile(nonce, d.path) // return the PSP that has the correct nonce.
 	if err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func (e *DefenderExecutor) FetchAndSimulateAtBlock(d *Defender, blocknumber uint
 		return nil, err
 	}
 	// When the PSP is fetched correctly then simulate it onchain with the PSP data through the `SimulateTransaction()` function.
-	simulation, err := SimulateTransaction(d.l1Client, d.senderAddress, operationSafe, data)
+	simulation, err := SimulateTransaction(ctx, d.l1Client, blocknumber, d.senderAddress, operationSafe, data)
 	if err != nil {
 		return nil, err
 	}
