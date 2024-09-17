@@ -431,7 +431,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 		}
 		pspData[i].SafeNonce = safeNonce
 
-		if len(psp.CalldataStr) < 2 {
+		if len(psp.CalldataStr) <= 2 {
 			return common.Address{}, []byte{}, fmt.Errorf("calldata is empty")
 		}
 		callData, err := hex.DecodeString(psp.CalldataStr[2:])
@@ -440,7 +440,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 		}
 		pspData[i].Calldata = callData
 
-		if len(psp.DataStr) < 2 {
+		if len(psp.DataStr) <= 2 {
 			return common.Address{}, []byte{}, fmt.Errorf("Data is empty")
 		}
 		Data, err := hex.DecodeString(psp.DataStr[2:])
