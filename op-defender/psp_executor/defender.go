@@ -53,6 +53,7 @@ type DefenderExecutor struct{}
 type Executor interface {
 	FetchAndExecute(d *Defender) (common.Hash, error) // For documentation, see directly the `FetchAndExecute()` function below.
 	ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error)
+	FetchAndSimulateAtBlock(d *Defender, blocknumber uint64, nonce uint64) ([]byte, error)
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -488,12 +489,15 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
 	// Simulate the transaction to check if it will succeed before sending it onchain.
-	_, err = SimulateTransaction(d.l1Client, d.senderAddress, safe_address, calldata)
+	simulation, err := SimulateTransaction(d.l1Client, d.senderAddress, safe_address, calldata)
 	if err != nil {
 		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
 		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
 	}
-	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address)
+
+	simulationHex := hex.EncodeToString(simulation)
+	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address, "simulation", simulationHex)
+
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
 		return common.Hash{}, err
@@ -518,37 +522,26 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 func (d *Defender) Run(ctx context.Context) {
 	go func() {
 		for {
-			time.Sleep(12 * time.Second) // Sleep for 12 seconds to make sure the PSP is executed onchain.
-			// get the last block number
-			blockNumber, err := d.l1Client.BlockNumber(context.Background())
+			time.Sleep(2 * time.Second) // Sleep for 12 seconds to make sure the PSP is executed onchain.
+			blocknumber, err := d.l1Client.BlockNumber(ctx)
 			if err != nil {
 				d.log.Error("[MON] failed to get the block number", "error", err)
 				// log prometheus metric unexpectedRpcErrors
 				continue
 			}
-			// get the nonce of the operationSafe
+			ctx := context.Background()
 			nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
 			if err != nil {
-				d.log.Error("[MON] failed to get nonce", "error", err)
-				// log prometheus metric RPC
 				continue
 			}
-			// fetch PSPs
-			operationSafe, data, err := GetPSPbyNonceFromFile(nonce, d.path)
+
+			res, err := d.executor.FetchAndSimulateAtBlock(d, blocknumber, nonce)
 			if err != nil {
-				d.log.Error("[MON] failed to get the PSPs from a file", "error", err)
-				// log prometheus metric
+				d.log.Error("[MON] failed to fetch and simulate the PSP onchain", "error", err, "blocknumber", blocknumber)
+				// log prometheus metric FetchAndSimulateAtBlock
 				continue
 			}
-			// Simulate the PSPs
-			_, err = SimulateTransaction(d.l1Client, d.senderAddress, operationSafe, data)
-			if err != nil {
-				d.log.Error("[MON] Current PSPs is failing", "from", d.senderAddress, "to", operationSafe, "error", err.Error())
-				// log prometheus metrics
-				continue
-			}
-			d.log.Info("[MON] Current PSP is valid ✅", "nonce", nonce, "from", d.senderAddress, "to", operationSafe)
-			// log prometheus metrics for the block
+			d.log.Info("[MON] PSP executed onchain successfully ✅", "blocknumber", blocknumber, "simulation", hex.EncodeToString(res))
 		}
 	}()
 
