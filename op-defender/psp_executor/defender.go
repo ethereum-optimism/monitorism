@@ -238,6 +238,9 @@ func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chai
 
 // AddressFromPrivateKey is a function that will return the address of the privatekey.
 func AddressFromPrivateKey(privateKey *ecdsa.PrivateKey) (common.Address, error) {
+	if privateKey == nil {
+		return common.Address{}, fmt.Errorf("private key is not set")
+	}
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
@@ -370,7 +373,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-		log.Crit("failed to connect to the Ethereum client", "error", err)
+		return nil, fmt.Errorf("failed to connect to the Ethereum client: %v", err)
 	}
 	return client, nil
 }
@@ -431,7 +434,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 		}
 		pspData[i].SafeNonce = safeNonce
 
-		if len(psp.CalldataStr) < 2 {
+		if len(psp.CalldataStr) <= 2 {
 			return common.Address{}, []byte{}, fmt.Errorf("calldata is empty")
 		}
 		callData, err := hex.DecodeString(psp.CalldataStr[2:])
@@ -440,7 +443,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 		}
 		pspData[i].Calldata = callData
 
-		if len(psp.DataStr) < 2 {
+		if len(psp.DataStr) <= 2 {
 			return common.Address{}, []byte{}, fmt.Errorf("Data is empty")
 		}
 		Data, err := hex.DecodeString(psp.DataStr[2:])
@@ -520,18 +523,15 @@ func (d *Defender) Close(_ context.Context) error {
 
 // sendTransaction: Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
 func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (common.Hash, error) {
-	if privateKey == nil {
+
+	if privateKey == nil || *privateKey == (ecdsa.PrivateKey{}) {
 		return common.Hash{}, fmt.Errorf("private key is nil")
 	}
-	// Derive the public key from the private key.
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return common.Hash{}, fmt.Errorf("error casting public key to ECDSA")
-	}
 
-	// Derive the sender address from the public key
-	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	fromAddress, err := AddressFromPrivateKey(privateKey)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("fail to get the address from the private key")
+	}
 
 	// Ensure the recipient address is valid.
 	if (toAddress == common.Address{}) {
