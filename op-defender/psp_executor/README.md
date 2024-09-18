@@ -36,7 +36,7 @@ Explanation of the options:
 | `--superchainconfig.address` | 0xC2Be75506d5724086DEB7245bd260Cc9753911Be | Address of SuperchainConfig contract |
 | `--rpc.url` | http://localhost:8545 | URL of the RPC node |
 | `--port.api` | 8080 | Port for the HTTP API server |
-
+| `--blockduration` | 12 | Time between 2 blocks on the current network |
 **PSPs Format**
 The PSPs are stored with a JSON format. The JSON file should contain an array of PSPs. Each PSP should have the following fields:
 
@@ -95,6 +95,16 @@ The metrics are using **Prometheus** and can be set with the following options:
 | `--metrics.enabled` | Enable the metrics server | `false` | `DEFENDER_METRICS_ENABLED` |
 | `--metrics.addr` | Metrics listening address | `"0.0.0.0"` | `$DEFENDER_METRICS_ADDR` |
 | `--metrics.port` | Metrics listening port | `7300` | `$DEFENDER_METRICS_PORT` |
+
+The prometheus metrics used are the following:
+
+```golang
+latestValidPspNonce *prometheus.GaugeVec
+latestSafeNonce     *prometheus.GaugeVec
+pspNonceValid       *prometheus.GaugeVec
+highestBlockNumber  *prometheus.GaugeVec
+unexpectedRpcErrors *prometheus.CounterVec
+```
 
 ### 4. Options and Configuration
 
