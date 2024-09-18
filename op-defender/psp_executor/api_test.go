@@ -910,10 +910,6 @@ func TestSendTransaction(t *testing.T) {
 	const rpcURLMainnet = "https://ethereum-rpc.publicnode.com"
 	const rpcURLSepolia = "https://ethereum-sepolia-rpc.publicnode.com"
 	const rpcURLInvalid = "http://www.google.com"
-	//l1ClientMainnet, err := ethclient.Dial(rpcURLMainnet)
-	//if err != nil {
-	//	t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
-	//}
 
 	l1ClientSepolia, err := ethclient.Dial(rpcURLSepolia)
 	if err != nil {
