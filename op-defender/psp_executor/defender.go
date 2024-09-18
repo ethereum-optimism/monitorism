@@ -78,7 +78,10 @@ type Defender struct {
 	safeAddress   common.Address
 	operationSafe *bindings.Safe
 	// Metrics
-	latestPspNonce      *prometheus.GaugeVec
+	latestValidPspNonce *prometheus.GaugeVec
+	latestSafeNonce     *prometheus.GaugeVec
+	pspNonceValid       *prometheus.GaugeVec
+	highestBlockNumber  *prometheus.GaugeVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
@@ -321,6 +324,32 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		path:                    cfg.Path,
 		senderAddress:           address,
 		blockDuration:           time.Duration(cfg.BlockDuration),
+		/** Metrics **/
+		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "highestBlockNumber",
+			Help:      "observed l1 heights (checked and known)",
+		}, []string{"blockNumber"}),
+		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "unexpectedRpcErrors",
+			Help:      "number of unexpected rpc errors",
+		}, []string{"section", "name"}),
+		latestSafeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latestSafeNonce",
+			Help:      "Latest nonce of the FoS",
+		}, []string{"latestSafeNonce"}),
+		latestValidPspNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latestValidPspNonce",
+			Help:      "Latest valid PSP nonce",
+		}, []string{"latestValidPspNonce"}),
+		pspNonceValid: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "pspNonceValid",
+			Help:      "PSPs nonce validity (0 or 1) for each nonce",
+		}, []string{"nonce"}),
 	}
 	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.ChainID)
 	if err != nil {
@@ -531,24 +560,8 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 func (d *Defender) Run(ctx context.Context) {
 	go func() {
 		for {
-			time.Sleep(d.blockDuration * time.Second) // Sleep for 12 seconds to make sure the PSP is executed onchain.
-			blocknumber, err := d.l1Client.BlockNumber(ctx)
-			if err != nil {
-				d.log.Error("[MON] failed to get the block number", "error", err)
-				// log prometheus metric unexpectedRpcErrors
-				continue
-			}
-			nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
-			if err != nil {
-				continue
-			}
-			_, err = d.executor.FetchAndSimulateAtBlock(ctx, d, &blocknumber, nonce)
-			if err != nil {
-				d.log.Error("[MON] failed to fetch and simulate the PSP onchain", "error", err, "blocknumber", blocknumber, "nonce", nonce)
-				// log prometheus metric FetchAndSimulateAtBlock
-				continue
-			}
-			d.log.Info("[MON] PSP executed onchain successfully ✅", "blocknumber", blocknumber, "nonce", nonce)
+			time.Sleep(d.blockDuration * time.Second) // Sleep for `d.blockDuration` seconds to make sure the PSP is executed onchain.
+			d.GetNonceAndFetchAndSimulateAtBlock(ctx)
 		}
 	}()
 

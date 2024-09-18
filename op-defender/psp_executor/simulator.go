@@ -2,11 +2,11 @@ package psp_executor
 
 import (
 	"context"
-	"math/big"
-
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"math/big"
+	"strconv"
 )
 
 // SimulateTransaction will simulate a transaction onchain if the blockNumber is `nil` it will simulate the transaction on the latest block.
@@ -49,4 +49,34 @@ func (e *DefenderExecutor) FetchAndSimulateAtBlock(ctx context.Context, d *Defen
 		return nil, err
 	}
 	return simulation, nil
+}
+
+// GetNonceAndFetchAndSimulateAtBlock will get the nonce of the operationSafe onchain and then fetch the PSP from a file and simulate it onchain at the last block.
+func (d *Defender) GetNonceAndFetchAndSimulateAtBlock(ctx context.Context) error {
+	blocknumber, err := d.l1Client.BlockNumber(ctx) // Get the latest block number.
+	if err != nil {
+		d.log.Error("[MON] failed to get the block number:", "error", err)
+		d.unexpectedRpcErrors.WithLabelValues("l1", "blockNumber").Inc()
+		return err
+	}
+	d.highestBlockNumber.WithLabelValues("blockNumber").Set(float64(blocknumber))
+	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
+	if err != nil {
+		// log prometheus metric FetchAndSimulateAtBlock
+		d.unexpectedRpcErrors.WithLabelValues("l1", "latestSafeNonce").Inc()
+		d.log.Error("[MON] failed to get latest nonce onchain ", "error", err, "blocknumber", blocknumber)
+		return err
+	}
+	d.latestSafeNonce.WithLabelValues("nonce").Set(float64(nonce))
+
+	_, err = d.executor.FetchAndSimulateAtBlock(ctx, d, &blocknumber, nonce) // Fetch and simulate the PSP with the current nonce.
+	if err != nil {
+		d.log.Error("[MON] failed to fetch and simulate the PSP onchain", "error", err, "blocknumber", blocknumber, "nonce", nonce)
+		d.pspNonceValid.WithLabelValues(strconv.FormatUint(nonce, 10)).Set(0)
+		return err
+	}
+	d.pspNonceValid.WithLabelValues(strconv.FormatUint(nonce, 10)).Set(1)
+	d.latestValidPspNonce.WithLabelValues("nonce").Set(float64(nonce))
+	d.log.Info("[MON] PSP executed onchain successfully ✅", "blocknumber", blocknumber, "nonce", nonce)
+	return nil
 }
