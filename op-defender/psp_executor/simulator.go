@@ -62,7 +62,6 @@ func (d *Defender) GetNonceAndFetchAndSimulateAtBlock(ctx context.Context) error
 	d.highestBlockNumber.WithLabelValues("blockNumber").Set(float64(blocknumber))
 	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
 	if err != nil {
-		// log prometheus metric FetchAndSimulateAtBlock
 		d.unexpectedRpcErrors.WithLabelValues("l1", "latestSafeNonce").Inc()
 		d.log.Error("[MON] failed to get latest nonce onchain ", "error", err, "blocknumber", blocknumber)
 		return err
