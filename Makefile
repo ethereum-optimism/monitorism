@@ -27,13 +27,21 @@ op-defender:
 	make -C ./op-defender 
 .PHONY: op-defender
 
-lint-go: ## Lints Go code with specific linters
-	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./op-defender/...
-.PHONY: lint-go
+op-defender-lint-go: ## Lints Go code with specific linters
+	cd op-defender && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./...
+.PHONY: op-defender-lint-go
 
-lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
-	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./... --fix
-.PHONY: lint-go-fix
+op-defender-lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
+	cd op-defender && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./... --fix
+.PHONY: op-defender-lint-go-fix
+
+op-monitorism-lint-go: ## Lints Go code with specific linters
+	cd op-monitorism && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./...
+.PHONY: op-onitorism-lint-go
+
+op-monitorism-lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
+	cd op-monitorism && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./... --fix
+.PHONY: op-monitorism-lint-go-fix
 
 tidy:
 	make -C ./op-monitorism tidy
