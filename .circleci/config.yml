@@ -62,6 +62,7 @@ jobs:
   golang-test:
     parameters:
       project_name:
+        description: "name of the project"
         type: string
         default: ""
     shell: /bin/bash -eo pipefail
@@ -77,6 +78,7 @@ jobs:
   go-lint:
     parameters:
       project_name:
+        description: "name of the project"
         type: string
         default: ""
     docker:
