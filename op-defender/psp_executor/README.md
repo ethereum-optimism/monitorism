@@ -37,6 +37,7 @@ Explanation of the options:
 | `--rpc.url` | http://localhost:8545 | URL of the RPC node |
 | `--port.api` | 8080 | Port for the HTTP API server |
 
+| `--port.api` | 8080 | Port for the HTTP API server |
 **PSPs Format**
 The PSPs are stored with a JSON format. The JSON file should contain an array of PSPs. Each PSP should have the following fields:
 
@@ -96,19 +97,33 @@ The metrics are using **Prometheus** and can be set with the following options:
 | `--metrics.addr` | Metrics listening address | `"0.0.0.0"` | `$DEFENDER_METRICS_ADDR` |
 | `--metrics.port` | Metrics listening port | `7300` | `$DEFENDER_METRICS_PORT` |
 
+The prometheus metrics used are the following:
+
+```golang
+latestValidPspNonce *prometheus.GaugeVec
+latestSafeNonce     *prometheus.GaugeVec
+pspNonceValid       *prometheus.GaugeVec
+highestBlockNumber  *prometheus.GaugeVec
+unexpectedRpcErrors *prometheus.CounterVec
+GetNonceAndFetchAndSimulateAtBlockError *prometheus.CounterVec
+```
+
 ### 4. Options and Configuration
 
 The current options are the following:
 
-```
+Using the `--help` flag will show the options available:
+
 OPTIONS:
+
+```shell
    --rpc.url value                   Node URL of a peer (default: "http://127.0.0.1:8545") [$PSPEXECUTOR_NODE_URL]
    --privatekey value                Privatekey of the account that will issue the pause transaction [$PSPEXECUTOR_PRIVATE_KEY]
    --port.api value                  Port of the API server you want to listen on (e.g. 8080) (default: 8080) [$PSPEXECUTOR_PORT_API]
-   --data value                      calldata to execute the pause on mainnet with the signatures [$PSPEXECUTOR_CALLDATA]
    --superchainconfig.address value  SuperChainConfig address to know the current status of the superchainconfig [$PSPEXECUTOR_SUPERCHAINCONFIG_ADDRESS]
    --safe.address value              Safe address that will execute the PSPs [$PSPEXECUTOR_SAFE_ADDRESS]
    --path value                      Absolute path to the JSON file containing the PSPs [$PSPEXECUTOR_PATH_TO_PSPS]
+   --blockduration value             Block duration of the current chain that op-defender is running on (default: 12) [$PSPEXECUTOR_BLOCK_DURATION]
    --chainid value                   ChainID of the current chain that op-defender is running on (default: 0) [$PSPEXECUTOR_CHAIN_ID]
    --log.level value                 The lowest log level that will be output (default: INFO) [$DEFENDER_LOG_LEVEL]
    --log.format value                Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text) [$DEFENDER_LOG_FORMAT]

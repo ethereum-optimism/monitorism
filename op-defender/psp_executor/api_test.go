@@ -32,6 +32,10 @@ func (e *SimpleExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chainI
 	return big.NewInt(1), nil
 }
 
+func (e *SimpleExecutor) FetchAndSimulateAtBlock(ctx context.Context, d *Defender, blocknumber *uint64, nonce uint64) ([]byte, error) { // Do nothing for now, for mocking purposes
+	return []byte{}, nil
+}
+
 // GeneratePrivatekey generates a private key of the given size useful for testing.
 func GeneratePrivatekey(size int) string {
 	// Generate a random byte slice of the specified size
@@ -62,7 +66,8 @@ func TestHTTPServerHasCorrectRoute(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
-		chainID:                 1,
+		ChainID:                 1,
+		BlockDuration:           12,
 	}
 	// Initialize the Defender with necessary mock or real components
 	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -116,6 +121,7 @@ func TestDefenderInitialization(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
 	}
 	// Initialize the Defender with necessary mock or real components
 	_, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -141,6 +147,7 @@ func TestHandlePostMockFetch(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
 	}
 
 	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -633,6 +640,7 @@ func TestGetNonceSafe(t *testing.T) {
 	const safeAddressSepolia = "0x837DE453AD5F21E89771e3c06239d8236c0EFd5E"
 	const rpcURLMainnet = "https://ethereum-rpc.publicnode.com"
 	const rpcURLSepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+
 	l1ClientMainnet, err := ethclient.Dial(rpcURLMainnet)
 	if err != nil {
 		t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
@@ -648,8 +656,13 @@ func TestGetNonceSafe(t *testing.T) {
 
 	// Initialize the Defender with necessary mock or real components
 	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
-	metricsRegistry := opmetrics.NewRegistry()
-	metricsfactory := opmetrics.With(metricsRegistry)
+
+	metricsRegistry_mainnet := opmetrics.NewRegistry()
+	metricsRegistry_sepolia := opmetrics.NewRegistry()
+	metricsRegistry_sepolia_error := opmetrics.NewRegistry()
+	metricsfactory_mainnet := opmetrics.With(metricsRegistry_mainnet)
+	metricsfactory_sepolia := opmetrics.With(metricsRegistry_sepolia)
+	metricsfactory_sepolia_error := opmetrics.With(metricsRegistry_sepolia_error)
 	executor := &SimpleExecutor{}
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
 
@@ -660,23 +673,24 @@ func TestGetNonceSafe(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
 	}
 
-	defenderMainnet, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderMainnet, err := NewDefender(context.Background(), logger, metricsfactory_mainnet, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 	defenderMainnet.l1Client = l1ClientMainnet
 	defenderMainnet.operationSafe = safeAddressMainnetBindings
 
-	defenderSepolia, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderSepolia, err := NewDefender(context.Background(), logger, metricsfactory_sepolia, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 	defenderSepolia.l1Client = l1ClientSepolia
 	defenderSepolia.operationSafe = safeAddressSepoliaBindings
 
-	defenderError, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderError, err := NewDefender(context.Background(), logger, metricsfactory_sepolia_error, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
@@ -828,8 +842,12 @@ func TestCheckPauseStatus(t *testing.T) {
 
 	// Initialize the Defender with necessary mock or real components
 	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
-	metricsRegistry := opmetrics.NewRegistry()
-	metricsfactory := opmetrics.With(metricsRegistry)
+	metricsRegistry_mainnet := opmetrics.NewRegistry()
+	metricsRegistry_sepolia := opmetrics.NewRegistry()
+	metricsRegistry_sepolia_error := opmetrics.NewRegistry()
+	metricsfactory_mainnet := opmetrics.With(metricsRegistry_mainnet)
+	metricsfactory_sepolia := opmetrics.With(metricsRegistry_sepolia)
+	metricsfactory_sepolia_error := opmetrics.With(metricsRegistry_sepolia_error)
 	executor := &SimpleExecutor{}
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
 
@@ -840,23 +858,24 @@ func TestCheckPauseStatus(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
 	}
 
-	defenderMainnet, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderMainnet, err := NewDefender(context.Background(), logger, metricsfactory_mainnet, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 	defenderMainnet.l1Client = l1ClientMainnet
 	defenderMainnet.superChainConfig = superChainAddressMainnetBindings
 
-	defenderSepolia, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderSepolia, err := NewDefender(context.Background(), logger, metricsfactory_sepolia, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 	defenderSepolia.l1Client = l1ClientSepolia
 	defenderSepolia.superChainConfig = superChainAddressSepoliaBindings
 
-	defenderError, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderError, err := NewDefender(context.Background(), logger, metricsfactory_sepolia_error, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
@@ -901,10 +920,6 @@ func TestSendTransaction(t *testing.T) {
 	const rpcURLMainnet = "https://ethereum-rpc.publicnode.com"
 	const rpcURLSepolia = "https://ethereum-sepolia-rpc.publicnode.com"
 	const rpcURLInvalid = "http://www.google.com"
-	//l1ClientMainnet, err := ethclient.Dial(rpcURLMainnet)
-	//if err != nil {
-	//	t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
-	//}
 
 	l1ClientSepolia, err := ethclient.Dial(rpcURLSepolia)
 	if err != nil {

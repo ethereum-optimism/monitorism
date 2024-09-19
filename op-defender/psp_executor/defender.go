@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -52,6 +53,7 @@ type DefenderExecutor struct{}
 type Executor interface {
 	FetchAndExecute(d *Defender) (common.Hash, error) // For documentation, see directly the `FetchAndExecute()` function below.
 	ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error)
+	FetchAndSimulateAtBlock(ctx context.Context, d *Defender, blocknumber *uint64, nonce uint64) ([]byte, error)
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -62,11 +64,13 @@ type Defender struct {
 	router   *mux.Router
 	executor Executor
 	// Onchain data
-	l1Client   *ethclient.Client
-	privatekey *ecdsa.PrivateKey
-	path       string
-	nonce      uint64
-	chainID    *big.Int
+	l1Client      *ethclient.Client
+	privatekey    *ecdsa.PrivateKey
+	senderAddress common.Address
+	path          string
+	nonce         uint64
+	chainID       *big.Int
+	blockDuration time.Duration
 	// superChainConfig
 	superChainConfigAddress common.Address
 	superChainConfig        *bindings.SuperchainConfig
@@ -74,8 +78,12 @@ type Defender struct {
 	safeAddress   common.Address
 	operationSafe *bindings.Safe
 	// Metrics
-	latestPspNonce      *prometheus.GaugeVec
-	unexpectedRpcErrors *prometheus.CounterVec
+	latestValidPspNonce                     *prometheus.GaugeVec
+	latestSafeNonce                         *prometheus.GaugeVec
+	pspNonceValid                           *prometheus.GaugeVec
+	highestBlockNumber                      *prometheus.GaugeVec
+	unexpectedRpcErrors                     *prometheus.CounterVec
+	GetNonceAndFetchAndSimulateAtBlockError *prometheus.CounterVec
 }
 
 // Define a struct that represents the data structure of your PSP.
@@ -266,9 +274,10 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
 	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
 	log.Info("cfg.path", "cfg.path", cfg.Path)
+	log.Info("cfg.blockduration", "cfg.blockduration", cfg.BlockDuration)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
-	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
+	log.Info("cfg.chainID", "cfg.chainID", cfg.ChainID)
 	log.Info("defender address (from privatekey)", "address", address)
 
 	log.Info("===============================================================================")
@@ -283,6 +292,9 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("path is not set.")
+	}
+	if cfg.BlockDuration == 0 {
+		return nil, fmt.Errorf("blockduration is not set.")
 	}
 
 	if cfg.SuperChainConfigAddress == (common.Address{}) {
@@ -311,8 +323,42 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		safeAddress:             cfg.SafeAddress,
 		operationSafe:           safe,
 		path:                    cfg.Path,
+		senderAddress:           address,
+		blockDuration:           time.Duration(cfg.BlockDuration),
+		/** Metrics **/
+		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "highestBlockNumber",
+			Help:      "observed l1 heights (checked and known)",
+		}, []string{"blockNumber"}),
+		latestSafeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latestSafeNonce",
+			Help:      "Latest nonce of the FoS",
+		}, []string{"latestSafeNonce"}),
+		latestValidPspNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latestValidPspNonce",
+			Help:      "Latest valid PSP nonce",
+		}, []string{"latestValidPspNonce"}),
+		pspNonceValid: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "pspNonceValid",
+			Help:      "PSPs nonce validity (0 or 1) for each nonce",
+		}, []string{"nonce"}),
+
+		GetNonceAndFetchAndSimulateAtBlockError: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "GetNonceAndFetchAndSimulateAtBlockError",
+			Help:      "number of errors from the function GetNonceAndFetchAndSimulateAtBlock",
+		}, []string{"section", "name"}),
+		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "unexpectedRpcErrors",
+			Help:      "number of unexpected rpc errors",
+		}, []string{"section", "name"}),
 	}
-	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.chainID)
+	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.ChainID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to return the correct chainID: %w", err)
 	}
@@ -471,37 +517,48 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 	return PSP{}, fmt.Errorf("no PSP found with nonce %d", nonce)
 }
 
-// ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
+// ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then simulate the transaction to make sure this is valid one and send the onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
 func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) (common.Hash, error) {
+	// 1. Check the status of the SuperChainConfig
 	pause_before_transaction, err := d.checkPauseStatus(ctx)
 	if err != nil {
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return common.Hash{}, err
 	}
 	if pause_before_transaction {
-
 		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
-
 	}
-	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
-	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
+	d.log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
+	d.log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
+
+	// 2. Simulate the transaction to check if it will succeed before sending it onchain if blocknumber = nil this simulate at the last block
+	simulation, err := SimulateTransaction(ctx, d.l1Client, nil, d.senderAddress, safe_address, calldata)
+	if err != nil {
+		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
+		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
+	}
+
+	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address, "simulation", hex.EncodeToString(simulation))
+	// 3. As the simulation is correct we execute the transaction onchain.
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
 		return common.Hash{}, err
 	}
-	log.Info("Transaction sent!", "TxHash", txHash)
+	d.log.Info("Transaction sent!", "TxHash", txHash)
 
+	// 4. Check the status of the SuperChainConfig after the transaction is set to pause.
 	pause_after_transaction, err := d.checkPauseStatus(ctx)
+	if err != nil {
+		d.log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
+		return common.Hash{}, err
+	}
 	if !pause_after_transaction {
 		return txHash, fmt.Errorf("failed to pause the SuperChainConfig")
 	}
-	if err != nil {
-		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
-		return common.Hash{}, err
-	}
-	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
+
+	d.log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 	return txHash, nil
 
@@ -509,9 +566,19 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 
 // Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {
+
+	go func() {
+		for {
+			time.Sleep(d.blockDuration * time.Second) // Sleep for `d.blockDuration` seconds to make sure the PSP is executed onchain.
+			if err := d.GetNonceAndFetchAndSimulateAtBlock(ctx); err != nil {
+				d.GetNonceAndFetchAndSimulateAtBlockError.WithLabelValues("l1", "GetNonceAndFetchAndSimulateAtBlock").Inc()
+			}
+		}
+	}()
+
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
-		log.Crit("failed to start the API server", "error", err)
+		d.log.Crit("failed to start the API server", "error", err)
 	}
 }
 
@@ -542,8 +609,6 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to get nonce: %v", err)
 	}
-
-	// Set up the transaction parameters
 	value := amount                            // Amount of ether to send in wei
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
@@ -551,7 +616,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %v", err)
 	}
 
-	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
+	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data) //@TODO: Need to use `NewTx` instead of `NewTransaction` as it is deprecated in future version of `op-defender`.
 
 	// Sign the transaction with the private key
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
