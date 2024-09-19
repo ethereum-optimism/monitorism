@@ -519,10 +519,10 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return common.Hash{}, err
 	}
-
 	if pause_before_transaction {
 		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
 	}
+
 	d.log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
 	d.log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
@@ -543,13 +543,14 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 
 	// 4. Check the status of the SuperChainConfig after the transaction is set to pause.
 	pause_after_transaction, err := d.checkPauseStatus(ctx)
-	if !pause_after_transaction {
-		return txHash, fmt.Errorf("failed to pause the SuperChainConfig")
-	}
 	if err != nil {
 		d.log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
 		return common.Hash{}, err
 	}
+	if !pause_after_transaction {
+		return txHash, fmt.Errorf("failed to pause the SuperChainConfig")
+	}
+
 	d.log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
 
 	return txHash, nil
