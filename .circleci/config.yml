@@ -81,7 +81,7 @@ jobs:
       - checkout
       - restore_cache:
           name: Restore Go modules cache
-          key: gomod-{{ checksum "<<parameters.project_name>/go.sum" }}
+          key: gomod-{{ checksum "<<parameters.project_name>>/go.sum" }}
       - restore_cache:
           key: golang-build-cache
       - restore_cache:
