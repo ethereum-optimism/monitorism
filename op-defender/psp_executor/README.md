@@ -105,6 +105,7 @@ latestSafeNonce     *prometheus.GaugeVec
 pspNonceValid       *prometheus.GaugeVec
 highestBlockNumber  *prometheus.GaugeVec
 unexpectedRpcErrors *prometheus.CounterVec
+GetNonceAndFetchAndSimulateAtBlockError *prometheus.CounterVec
 ```
 
 ### 4. Options and Configuration

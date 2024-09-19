@@ -78,11 +78,12 @@ type Defender struct {
 	safeAddress   common.Address
 	operationSafe *bindings.Safe
 	// Metrics
-	latestValidPspNonce *prometheus.GaugeVec
-	latestSafeNonce     *prometheus.GaugeVec
-	pspNonceValid       *prometheus.GaugeVec
-	highestBlockNumber  *prometheus.GaugeVec
-	unexpectedRpcErrors *prometheus.CounterVec
+	latestValidPspNonce                     *prometheus.GaugeVec
+	latestSafeNonce                         *prometheus.GaugeVec
+	pspNonceValid                           *prometheus.GaugeVec
+	highestBlockNumber                      *prometheus.GaugeVec
+	unexpectedRpcErrors                     *prometheus.CounterVec
+	GetNonceAndFetchAndSimulateAtBlockError *prometheus.CounterVec
 }
 
 // Define a struct that represents the data structure of your PSP.
@@ -330,11 +331,6 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 			Name:      "highestBlockNumber",
 			Help:      "observed l1 heights (checked and known)",
 		}, []string{"blockNumber"}),
-		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
-			Namespace: MetricsNamespace,
-			Name:      "unexpectedRpcErrors",
-			Help:      "number of unexpected rpc errors",
-		}, []string{"section", "name"}),
 		latestSafeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "latestSafeNonce",
@@ -350,6 +346,17 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 			Name:      "pspNonceValid",
 			Help:      "PSPs nonce validity (0 or 1) for each nonce",
 		}, []string{"nonce"}),
+
+		GetNonceAndFetchAndSimulateAtBlockError: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "GetNonceAndFetchAndSimulateAtBlockError",
+			Help:      "number of errors from the function GetNonceAndFetchAndSimulateAtBlock",
+		}, []string{"section", "name"}),
+		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "unexpectedRpcErrors",
+			Help:      "number of unexpected rpc errors",
+		}, []string{"section", "name"}),
 	}
 	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.ChainID)
 	if err != nil {
@@ -559,10 +566,13 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 
 // Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {
+
 	go func() {
 		for {
 			time.Sleep(d.blockDuration * time.Second) // Sleep for `d.blockDuration` seconds to make sure the PSP is executed onchain.
-			d.GetNonceAndFetchAndSimulateAtBlock(ctx)
+			if err := d.GetNonceAndFetchAndSimulateAtBlock(ctx); err != nil {
+				d.GetNonceAndFetchAndSimulateAtBlockError.WithLabelValues("l1", "GetNonceAndFetchAndSimulateAtBlock").Inc()
+			}
 		}
 	}()
 
