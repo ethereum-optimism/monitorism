@@ -3,14 +3,16 @@ package liveness_expiration
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"math/bits"
+	"time"
+
 	"github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"math/big"
-	"time"
 )
 
 const (
@@ -189,22 +191,24 @@ func (m *Monitor) Run(ctx context.Context) {
 		deadline_date := time.Unix(int64(deadline), 0)
 		formattedDate := deadline_date.Format("Monday, January 2, 2006")
 		// 4. Ensure that the invariant is not broken -> (block.timestamp + BUFFER > lastLive(owner) + livenessInterval) == true
-		if (deadline - now) < 0 {
-			m.log.Warn("`dealine - now` is negative means that the `owner` is not active anymore at all and should be removed fast! This is not suppose to happen because we will be intervening before ensure that is not happening", "deadline", (deadline - now), "owner", owner)
+		result, borrow := bits.Sub64(deadline, now, 0)
+		if borrow != 0 {
+			m.log.Warn("`deadline - now` is negative means that the `owner` is not active anymore at all and should be removed fast! This is not suppose to happen because we will be intervening before ensure that is not happening", "deadline", deadline, "now", now, "owner", owner)
 		}
 
-		days_left_before_deadline := (deadline - now) / day
+		days_left_before_deadline := result / day
+
 		m.log.Info("", "owner", owner, "now", now, "deadline", deadline, "lastlive", lastLive, "interval", interval, "deadline_date", formattedDate, "days_left_before_deadline", days_left_before_deadline)
 		m.ownerDaysBeforeDeadline.WithLabelValues(owner.String()).Set(float64(days_left_before_deadline))
 
-		if (deadline - now) <= 1*day {
+		if result <= 1*day {
 			m.log.Info("deadline is less than 1 day we need to ensure that the owner is doing something in the last 24h otherwise we need to remove it!", "lastLive", lastLive, "owner", owner)
 			m.ownerStalePeriod.WithLabelValues(owner.String()).Set(float64(1))
-		} else if (deadline - now) <= 7*day {
+		} else if result <= 7*day {
 			m.log.Info("deadline is less than 7 days we need to ensure that the owner is doing something in the last 7 days otherwise we need to remove it!", "lastLive", lastLive, "owner", owner)
 			m.ownerStalePeriod.WithLabelValues(owner.String()).Set(float64(7))
 
-		} else if (deadline - now) <= 14*day {
+		} else if result <= 14*day {
 			m.log.Info("deadline is less than 14 days we need to ensure that the owner is doing something in the last 14 days otherwise we need to remove it!", "lastLive", lastLive, "owner", owner)
 			m.ownerStalePeriod.WithLabelValues(owner.String()).Set(float64(14))
 

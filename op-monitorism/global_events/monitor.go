@@ -3,7 +3,10 @@ package global_events
 import (
 	"context"
 	"fmt"
-	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
+	"regexp"
+	"strings"
+	"time"
+
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -11,9 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"regexp"
-	"strings"
-	"time"
 )
 
 const (
@@ -29,13 +29,13 @@ type Monitor struct {
 	l1Client     *ethclient.Client
 	globalconfig GlobalConfiguration
 	// nickname is the nickname of the monitor (we need to change the name this is not an ideal one here).
-	nickname    string
-	safeAddress *bindings.OptimismPortalCaller
+	nickname string
+	//safeAddress *bindings.OptimismPortalCaller
 
 	LiveAddress *common.Address
 
-	filename   string //filename of the yaml rules
-	yamlconfig Configuration
+	//filename   string //filename of the yaml rules
+	//yamlconfig Configuration
 
 	// Prometheus metrics
 	eventEmitted        *prometheus.CounterVec
@@ -83,7 +83,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 	globalConfig.DisplayMonitorAddresses(log) //Display all the addresses that are monitored.
 	log.Info("--------------------------------------- End of Infos -----------------------------\n")
-	time.Sleep(10 * time.Second) // sleep for 10 seconds usefull to read the information before the prod.
+	time.Sleep(10 * time.Second) // sleep for 10 seconds useful to read the information before the prod.
 	return &Monitor{
 		log:          log,
 		l1Client:     l1Client,

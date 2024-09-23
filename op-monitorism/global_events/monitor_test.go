@@ -1,8 +1,9 @@
 package global_events
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func TestFormatSignature(t *testing.T) {

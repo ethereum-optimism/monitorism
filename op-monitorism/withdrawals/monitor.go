@@ -92,7 +92,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		withdrawalsValidated: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "withdrawalsValidated",
-			Help:      "number of withdrawals succesfully validated",
+			Help:      "number of withdrawals successfully validated",
 		}),
 		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,

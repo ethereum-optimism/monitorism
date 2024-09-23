@@ -1,11 +1,12 @@
 package global_events
 
 import (
+	"io"
+	"testing"
+
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	"github.com/ethereum/go-ethereum/common"
 	"gopkg.in/yaml.v3"
-	"io"
-	"testing"
 )
 
 const data = `

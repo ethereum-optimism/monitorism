@@ -6,6 +6,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/common"
@@ -13,11 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gorilla/mux"
-	"math/big"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"testing"
 )
 
 type SimpleExecutor struct{}
@@ -78,7 +79,7 @@ func TestHTTPServerHasCorrectRoute(t *testing.T) {
 	}
 	foundRoutes := make(map[string]string)
 
-	defender.router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+	err = defender.router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
 		path, _ := route.GetPathTemplate()
 		methods, _ := route.GetMethods()
 		if len(methods) > 0 {
@@ -87,6 +88,9 @@ func TestHTTPServerHasCorrectRoute(t *testing.T) {
 		}
 		return nil
 	})
+	if err != nil {
+		t.Errorf("Failed to walk routes: %v", err)
+	}
 
 	if routeCount != 2 {
 		t.Errorf("Expected 2 routes, but got %d", routeCount)
@@ -488,21 +492,21 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
     ],
     "calldata": "0xe4b2f9f3"
   }]`
-	const PSPNoSignature = `[
-  {
-    "chain_id": "11155111",
-    "rpc_url": "https://ethereum-sepolia.publicnode.com",
-    "created_at": "2024-08-22T20:00:06+02:00",
-    "safe_addr": "0x837DE453AD5F21E89771e3c06239d8236c0EFd5E",
-    "safe_nonce": "0",
-    "target_addr": "0xfd7E6Ef1f6c9e4cC34F54065Bf8496cE41A4e2e8",
-    "script_name": "PresignPauseFromJson.s.sol",
-    "data": "0xe4b2f9f3",
-    "signatures": [
-      
-    ],
-    "calldata": "0xe4b2f9f3"
-  }]`
+	/*const PSPNoSignature = `[
+	  {
+	    "chain_id": "11155111",
+	    "rpc_url": "https://ethereum-sepolia.publicnode.com",
+	    "created_at": "2024-08-22T20:00:06+02:00",
+	    "safe_addr": "0x837DE453AD5F21E89771e3c06239d8236c0EFd5E",
+	    "safe_nonce": "0",
+	    "target_addr": "0xfd7E6Ef1f6c9e4cC34F54065Bf8496cE41A4e2e8",
+	    "script_name": "PresignPauseFromJson.s.sol",
+	    "data": "0xe4b2f9f3",
+	    "signatures": [
+
+	    ],
+	    "calldata": "0xe4b2f9f3"
+	  }]`*/
 	tests := []struct {
 		name                string
 		PSPs                string
@@ -523,7 +527,10 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.WriteFile(filename, []byte(tt.PSPs), 0644)
+			err := os.WriteFile(filename, []byte(tt.PSPs), 0644)
+			if err != nil {
+				t.Errorf("Fail to write %s file: %v", filename, err)
+			}
 			safeAddress, data, err := GetPSPbyNonceFromFile(tt.nonce, filename)
 			if tt.expectError {
 				if err == nil {
@@ -537,7 +544,7 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
 					t.Errorf("Test: \"%s\" Expected %#v, but got %#v", tt.name, tt.expectedSafeAddress, safeAddress)
 				}
 
-				if bytes.Compare(data, tt.expectedData) != 0 {
+				if !bytes.Equal(data, tt.expectedData) {
 					t.Errorf("Test: \"%s\" Expected %#v, but got %#v", tt.name, tt.expectedData, data)
 				}
 			}
