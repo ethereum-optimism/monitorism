@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/balances"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/drippie"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/fault"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/global_events"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
@@ -90,6 +91,13 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Description: "Monitor the liveness expiration on Gnosis Safe.",
 				Flags:       append(liveness_expiration.CLIFlags("LIVENESS_EXPIRATION_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(LivenessExpirationMain),
+			},
+			{
+				Name:        "faultproof_withdrawals",
+				Usage:       "Monitors proven withdrawals on L1 against L2, for FaultProof compatible chains",
+				Description: "Monitors proven withdrawals on L1 against L2, for FaultProof compatible chains",
+				Flags:       append(faultproof_withdrawals.CLIFlags("FAULTPROOF_WITHDRAWAL_MON"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(FaultproofWithdrawalsMain),
 			},
 			{
 				Name:        "version",
@@ -175,6 +183,22 @@ func WithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+
+func FaultproofWithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := faultproof_withdrawals.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse withdrawals config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := faultproof_withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
 	}
