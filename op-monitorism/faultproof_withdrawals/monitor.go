@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -24,7 +25,8 @@ type State struct {
 	latestL1Height         uint64
 	lastNotFaultProofBlock uint64
 
-	processedWithdrawals uint64
+	processedProvenWithdrawalsEvents uint64
+	processedGames                   uint64
 
 	isDetectingForgeries     uint64
 	withdrawalsValidated     uint64
@@ -42,14 +44,17 @@ type ProposalWithdrawalsEvent struct {
 }
 
 type Metrics struct {
-	// processedWithdrawals prometheus.Gauge
-	// nextL1Height    prometheus.Gauge
-	// latestL1Height     prometheus.Gauge
-
-	// isDetectingForgeries   prometheus.Gauge
-	// withdrawalsValidated   prometheus.Gauge
-
-	// nodeConnectionFailures prometheus.Gauge
+	NextL1HeightGauge                       prometheus.Gauge
+	LatestL1HeightGauge                     prometheus.Gauge
+	LastNotFaultProofBlockGauge             prometheus.Gauge
+	ProcessedProvenWithdrawalsEventsCounter prometheus.Counter
+	ProcessedGamesCounter                   prometheus.Counter
+	IsDetectingForgeriesGauge               prometheus.Gauge
+	WithdrawalsValidatedCounter             prometheus.Counter
+	WithdrawalsNotFaultProofCounter         prometheus.Counter
+	NodeConnectionFailuresCounter           prometheus.Counter
+	ForgeriesWithdrawalsEventsGauge         prometheus.Gauge
+	InvalidProposalWithdrawalsEventsGauge   prometheus.Gauge
 }
 
 type Monitor struct {
@@ -69,6 +74,124 @@ type Monitor struct {
 
 	state   State
 	metrics Metrics
+
+	// Previous values for counters
+	previousProcessedWithdrawals     uint64
+	previousProcessedGames           uint64
+	previousWithdrawalsValidated     uint64
+	previousWithdrawalsNotFaultProof uint64
+	previousNodeConnectionFailures   uint64
+}
+
+func NewMetrics(m metrics.Factory) *Metrics {
+	ret := &Metrics{
+		NextL1HeightGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "next_l1_height",
+			Help:      "Next L1 Height",
+		}),
+		LatestL1HeightGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latest_l1_height",
+			Help:      "Latest L1 Height",
+		}),
+		LastNotFaultProofBlockGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "last_not_fault_proof_block",
+			Help:      "Last Not Fault Proof Block",
+		}),
+		ProcessedProvenWithdrawalsEventsCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "processed_provenwithdrawals_events_total",
+			Help:      "Total number of processed provebwithdrawals events",
+		}),
+		ProcessedGamesCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "processed_games_total",
+			Help:      "Total number of processed games",
+		}),
+		IsDetectingForgeriesGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "is_detecting_forgeries",
+			Help:      "Is Detecting Forgeries (0 or 1)",
+		}),
+		WithdrawalsValidatedCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "withdrawals_validated_total",
+			Help:      "Total number of withdrawals validated",
+		}),
+		WithdrawalsNotFaultProofCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "withdrawals_not_fault_proof_total",
+			Help:      "Total number of withdrawals not fault-proof",
+		}),
+		NodeConnectionFailuresCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "node_connection_failures_total",
+			Help:      "Total number of node connection failures",
+		}),
+		ForgeriesWithdrawalsEventsGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "forgeries_withdrawals_events_count",
+			Help:      "Number of forgeries withdrawals events",
+		}),
+		InvalidProposalWithdrawalsEventsGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "invalid_proposal_withdrawals_events_count",
+			Help:      "Number of invalid proposal withdrawals events",
+		}),
+	}
+
+	return ret
+}
+
+func (m *Monitor) UpdateMetricsFromState() {
+
+	// Update Gauges
+	m.metrics.NextL1HeightGauge.Set(float64(m.state.nextL1Height))
+	m.metrics.LatestL1HeightGauge.Set(float64(m.state.latestL1Height))
+	m.metrics.LastNotFaultProofBlockGauge.Set(float64(m.state.lastNotFaultProofBlock))
+
+	m.metrics.IsDetectingForgeriesGauge.Set(float64(m.state.isDetectingForgeries))
+
+	m.metrics.ForgeriesWithdrawalsEventsGauge.Set(float64(len(m.state.forgeriesWithdrawalsEvents)))
+	m.metrics.InvalidProposalWithdrawalsEventsGauge.Set(float64(len(m.state.invalidProposalWithdrawalsEvents)))
+
+	// Update Counters by calculating deltas
+	// Processed Withdrawals
+	processedWithdrawalsDelta := m.state.processedProvenWithdrawalsEvents - m.previousProcessedWithdrawals
+	if processedWithdrawalsDelta > 0 {
+		m.metrics.ProcessedProvenWithdrawalsEventsCounter.Add(float64(processedWithdrawalsDelta))
+	}
+	m.previousProcessedWithdrawals = m.state.processedProvenWithdrawalsEvents
+
+	// Processed Games
+	processedGamesDelta := m.state.processedGames - m.previousProcessedGames
+	if processedGamesDelta > 0 {
+		m.metrics.ProcessedGamesCounter.Add(float64(processedGamesDelta))
+	}
+	m.previousProcessedGames = m.state.processedGames
+
+	// Withdrawals Validated
+	withdrawalsValidatedDelta := m.state.withdrawalsValidated - m.previousWithdrawalsValidated
+	if withdrawalsValidatedDelta > 0 {
+		m.metrics.WithdrawalsValidatedCounter.Add(float64(withdrawalsValidatedDelta))
+	}
+	m.previousWithdrawalsValidated = m.state.withdrawalsValidated
+
+	// Withdrawals Not Fault-Proof
+	withdrawalsNotFaultProofDelta := m.state.withdrawalsNotFaultProof - m.previousWithdrawalsNotFaultProof
+	if withdrawalsNotFaultProofDelta > 0 {
+		m.metrics.WithdrawalsNotFaultProofCounter.Add(float64(withdrawalsNotFaultProofDelta))
+	}
+	m.previousWithdrawalsNotFaultProof = m.state.withdrawalsNotFaultProof
+
+	// Node Connection Failures
+	nodeConnectionFailuresDelta := m.state.nodeConnectionFailures - m.previousNodeConnectionFailures
+	if nodeConnectionFailuresDelta > 0 {
+		m.metrics.NodeConnectionFailuresCounter.Add(float64(nodeConnectionFailuresDelta))
+	}
+	m.previousNodeConnectionFailures = m.state.nodeConnectionFailures
 }
 
 func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*State, error) {
@@ -79,13 +202,14 @@ func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*Stat
 	}
 
 	ret := State{
-		processedWithdrawals:   0,
-		nextL1Height:           nextL1Height,
-		latestL1Height:         latestL1Height,
-		isDetectingForgeries:   0,
-		withdrawalsValidated:   0,
-		nodeConnectionFailures: 0,
-		lastNotFaultProofBlock: 0,
+		processedProvenWithdrawalsEvents: 0,
+		nextL1Height:                     nextL1Height,
+		latestL1Height:                   latestL1Height,
+		isDetectingForgeries:             0,
+		withdrawalsValidated:             0,
+		nodeConnectionFailures:           0,
+		lastNotFaultProofBlock:           0,
+		processedGames:                   0,
 	}
 
 	return &ret, nil
@@ -102,6 +226,12 @@ func (s *State) LogState(log log.Logger) {
 		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
 		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
 		"lastNotFaultProofBlock", fmt.Sprintf("%d", s.lastNotFaultProofBlock),
+		"processedProvenWithdrawalsEvents", fmt.Sprintf("%d", s.processedProvenWithdrawalsEvents),
+		"processedGames", fmt.Sprintf("%d", s.processedGames),
+		"isDetectingForgeries", fmt.Sprintf("%d", s.isDetectingForgeries),
+		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
+		"forgeriesWithdrawalsEvents", fmt.Sprintf("%d", len(s.forgeriesWithdrawalsEvents)),
+		"invalidProposalWithdrawalsEvents", fmt.Sprintf("%d", len(s.invalidProposalWithdrawalsEvents)),
 	)
 }
 
@@ -109,17 +239,6 @@ func (s *State) GetPercentages() (uint64, uint64) {
 	blockToProcess := s.latestL1Height - s.nextL1Height
 	syncPercentage := uint64(math.Floor(100 - (float64(blockToProcess) / float64(s.latestL1Height) * 100)))
 	return blockToProcess, syncPercentage
-}
-
-func (metrics *Metrics) LogMetrics(state State) {
-	// metrics.processedWithdrawals.Set(float64(state.processedWithdrawals))
-	// metrics.nextL1Height.Set(float64(state.nextL1Height))
-	// metrics.latestL1Height.Set(float64(state.latestL1Height))
-	// metrics.isDetectingForgeries.Set(float64(state.isDetectingForgeries))
-	// metrics.withdrawalsValidated.Set(float64(state.withdrawalsValidated))
-	// metrics.nodeConnectionFailures.Set(float64(state.nodeConnectionFailures))
-	// metrics.nodeConnectionFailures.Set(float64(state.nodeConnectionFailures))
-	// metrics.nodeConnectionFailures.Set(float64(state.nodeConnectionFailures))
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -164,6 +283,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to create state: %w", err)
 	}
 
+	metrics := NewMetrics(m)
+
 	l1ChainID, err := l1GethClient.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get l1 chain id: %w", err)
@@ -189,35 +310,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 		maxBlockRange: cfg.EventBlockRange,
 
-		state: *state,
-
-		metrics: Metrics{
-			// isDetectingForgeries: m.NewGauge(prometheus.GaugeOpts{
-			// 	Namespace: MetricsNamespace,
-			// 	Name:      "isDetectingForgeries",
-			// 	Help:      "0 if state is ok. 1 if forged withdrawals are detected",
-			// }),
-			// withdrawalsValidated: m.NewCounter(prometheus.CounterOpts{
-			// 	Namespace: MetricsNamespace,
-			// 	Name:      "withdrawalsValidated",
-			// 	Help:      "number of withdrawals succesfully validated",
-			// }),
-			// latestL1Height: m.NewGaugeVec(prometheus.GaugeOpts{
-			// 	Namespace: MetricsNamespace,
-			// 	Name:      "latestL1Height",
-			// 	Help:      "observed l1 heights (checked and known)",
-			// }, []string{"type"}),
-			// nextL1Height: m.NewGaugeVec(prometheus.GaugeOpts{
-			// 	Namespace: MetricsNamespace,
-			// 	Name:      "nextL1Height",
-			// 	Help:      "observed l1 heights (checked and known)",
-			// }, []string{"type"}),
-			// nodeConnectionFailures: m.NewCounterVec(prometheus.CounterOpts{
-			// 	Namespace: MetricsNamespace,
-			// 	Name:      "nodeConnectionFailures",
-			// 	Help:      "number of times node connection has failed",
-			// }, []string{"layer", "section"}),
-		},
+		state:   *state,
+		metrics: *metrics,
 	}
 	ret.Init()
 
@@ -226,7 +320,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 func (m *Monitor) Init() {
 	m.state.LogState(m.log)
-	m.metrics.LogMetrics(m.state)
+	m.UpdateMetricsFromState()
 }
 
 func (m *Monitor) GetLatestBlock() (uint64, error) {
@@ -286,7 +380,7 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	// log state and metrics
 	m.state.LogState(m.log)
-	m.metrics.LogMetrics(m.state)
+	m.UpdateMetricsFromState()
 
 }
 
@@ -330,8 +424,10 @@ func (m *Monitor) ProcessEvent(withdrawalEvent *l1.OptimismPortal2WithdrawalProv
 		return fmt.Errorf("failed to get dispute games: %w", err)
 	}
 	found_at_least_a_game := false
+	m.state.processedProvenWithdrawalsEvents++
 	for _, game := range games {
 		found_at_least_a_game = true
+		m.state.processedGames++
 		//extra safety check
 		if game.l2ChainID.Cmp(m.l2ChainID) != 0 {
 			m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", game.l2ChainID))
