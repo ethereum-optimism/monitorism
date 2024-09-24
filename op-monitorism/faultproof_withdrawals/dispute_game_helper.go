@@ -25,15 +25,6 @@ type DisputeGame struct {
 	rootClaim     [32]byte
 	l2blockNumber *big.Int
 	l2ChainID     *big.Int
-
-	trustedRootProof [32]byte
-
-	gameBlackListed bool
-	gameStatus      GameStatus
-	gameCorrectness GameCorrectness
-
-	enrichmentFinalized bool
-	gameOutputTrusted   bool
 }
 
 type DisputeGameHelper struct {
@@ -77,6 +68,14 @@ type DisputeFactoryGameHelper struct {
 	DisputeGameFactoryCaller dispute.DisputeGameFactoryCaller
 }
 
+type DisputeGameFactoryIterator struct {
+	DisputeGameFactoryCaller      *dispute.DisputeGameFactoryCaller
+	currentIndex                  uint64
+	gameCount                     uint64
+	init                          bool
+	DisputeGameFactoryCoordinates *DisputeGameFactoryCoordinates
+}
+
 // Implement the Stringer interface for pretty printing
 func (gs GameStatus) String() string {
 	switch gs {
@@ -116,15 +115,11 @@ func (gs GameCorrectness) String() string {
 }
 
 func (d DisputeGame) String() string {
-	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s trustedRootClaim=%s l2blockNumber=%s l2ChainID=%s gameBlackListed=%t gameStatus=%s gameCorrectness=%s ]",
+	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s ]",
 		d.disputeGameProxyAddress,
 		common.BytesToHash(d.rootClaim[:]).Hex(),
-		common.BytesToHash(d.trustedRootProof[:]).Hex(),
 		d.l2blockNumber.String(),
 		d.l2ChainID.String(),
-		d.gameBlackListed,
-		d.gameStatus,
-		d.gameCorrectness,
 	)
 }
 
@@ -231,47 +226,6 @@ func (op *DisputeGameHelper) IsValidOutputRoot(gameClaim [32]byte, l2blockNumber
 	return gameClaim == trustedRootClaim, nil
 }
 
-func (op *DisputeGameHelper) enrichDisputeGame(disputeGame *DisputeGame, force bool) error {
-
-	if force || !disputeGame.enrichmentFinalized {
-		l2blockNumber := disputeGame.l2blockNumber
-		trustedRootClaim, err := op.GetRootProofFromTrustedL2Node(l2blockNumber)
-		if err != nil {
-			return fmt.Errorf("failed to get root proof from trusted l2 node: %w", err)
-		}
-
-		//we try to set the value of gameOutputTrusted only if the game is not blacklisted
-		isBlacklisted, err := op.IsGameBlacklisted(disputeGame)
-		if err != nil {
-			return fmt.Errorf("failed to check if game is blacklisted: %w", err)
-		}
-
-		gameStatus, err := disputeGame.faultDisputeGame.Status(nil)
-		if err != nil {
-			return fmt.Errorf("failed to get game status: %w", err)
-		}
-
-		//the enrichmentFinalized is finalized only if there were no errors while fetching the data
-		disputeGame.trustedRootProof = trustedRootClaim
-		disputeGame.gameOutputTrusted = disputeGame.rootClaim == trustedRootClaim
-		disputeGame.gameBlackListed = isBlacklisted
-		disputeGame.gameStatus = GameStatus(gameStatus)
-		if disputeGame.gameStatus == IN_PROGRESS {
-			disputeGame.gameCorrectness = UNKNOWN
-		} else if !disputeGame.gameOutputTrusted && disputeGame.gameStatus == CHALLENGER_WINS {
-			disputeGame.gameCorrectness = CORRECT
-		} else if disputeGame.gameOutputTrusted && disputeGame.gameStatus == DEFENDER_WINS {
-			disputeGame.gameCorrectness = CORRECT
-		} else {
-			disputeGame.gameCorrectness = INCORRECT
-		}
-
-		disputeGame.enrichmentFinalized = true
-	}
-
-	return nil
-}
-
 func (op *DisputeGameHelper) IsGameBlacklisted(disputeGame *DisputeGame) (bool, error) {
 
 	isBlacklisted, err := op.optimismPortal2.DisputeGameBlacklist(nil, disputeGame.disputeGameProxyAddress)
@@ -323,14 +277,6 @@ func NewDisputeGameFactoryHelper(ctx context.Context, l1Client *ethclient.Client
 		l1Client:                 l1Client,
 		DisputeGameFactoryCaller: disputeGameFactoryCaller,
 	}, nil
-}
-
-type DisputeGameFactoryIterator struct {
-	DisputeGameFactoryCaller      *dispute.DisputeGameFactoryCaller
-	currentIndex                  uint64
-	gameCount                     uint64
-	init                          bool
-	DisputeGameFactoryCoordinates *DisputeGameFactoryCoordinates
 }
 
 func (op *DisputeFactoryGameHelper) GetDisputeGameCoordinatesFromGameIndex(gameIndex uint64) (*DisputeGameFactoryCoordinates, error) {

@@ -95,7 +95,8 @@ func (s *State) LogState(log log.Logger) {
 	blockToProcess, syncPercentage := s.GetPercentages()
 
 	log.Info("State",
-		"processedWithdrawals", fmt.Sprintf("%d", s.processedWithdrawals),
+		"withdrawalsValidated", fmt.Sprintf("%d", s.withdrawalsValidated),
+		"withdrawalsNotFaultProof", fmt.Sprintf("%d", s.withdrawalsNotFaultProof),
 		"nextL1Height", fmt.Sprintf("%d", s.nextL1Height),
 		"latestL1Height", fmt.Sprintf("%d", s.latestL1Height),
 		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
@@ -224,7 +225,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 }
 
 func (m *Monitor) Init() {
-
+	m.state.LogState(m.log)
+	m.metrics.LogMetrics(m.state)
 }
 
 func (m *Monitor) GetLatestBlock() (uint64, error) {
@@ -247,6 +249,7 @@ func (m *Monitor) GetMaxBlock() (uint64, error) {
 		stop = latestL1Height
 	}
 	return stop, nil
+
 }
 
 func (m *Monitor) Run(ctx context.Context) {
