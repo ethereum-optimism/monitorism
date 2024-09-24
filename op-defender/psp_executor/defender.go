@@ -68,7 +68,7 @@ type Defender struct {
 	privatekey    *ecdsa.PrivateKey
 	senderAddress common.Address
 	path          string
-	nonce         uint64
+	// nonce         uint64
 	chainID       *big.Int
 	blockDuration time.Duration
 	// superChainConfig
@@ -122,7 +122,9 @@ type RequestData struct {
 
 // handleHealthCheck is a GET method that returns the health status of the Defender
 func (d *Defender) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK"))
+	if _, err := w.Write([]byte("OK")); err != nil {
+		http.Error(w, fmt.Sprintf("failed to write response: %v", err), http.StatusInternalServerError)
+	}
 }
 
 // handlePost handles POST requests and processes the JSON body
@@ -203,7 +205,7 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 	if (txHash != common.Hash{}) && (err != nil) { // If the transaction hash is not empty and the error is not nil we return the transaction hash.
 		response := Response{
-			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occured: " + err.Error() + ". The TxHash: " + txHash.Hex(),
+			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occurred: " + err.Error() + ". The TxHash: " + txHash.Hex(),
 			Status:  http.StatusInternalServerError,
 		}
 
@@ -223,7 +225,6 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to encode response (PSP executed successfully)", http.StatusInternalServerError)
 		return
 	}
-	return
 }
 
 // ReturnCorrectChainID is a function that will return the correct chainID based on the chainID provided in the config against the RPC url.
@@ -236,7 +237,7 @@ func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chai
 	}
 	chainID_RPC, err := l1client.ChainID(context.Background())
 	if err != nil {
-		return &big.Int{}, fmt.Errorf("failed to get network ID: %v", err)
+		return &big.Int{}, fmt.Errorf("failed to get network ID: %w", err)
 	}
 	if chainID_RPC.Uint64() != chainID {
 		return &big.Int{}, fmt.Errorf("chainID mismatch: got %d, expected %d", chainID_RPC.Uint64(), chainID)
@@ -419,7 +420,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to the Ethereum client: %v", err)
+		return nil, fmt.Errorf("failed to connect to the Ethereum client: %w", err)
 	}
 	return client, nil
 }
@@ -442,7 +443,7 @@ func CheckAndReturnPrivateKey(privateKeyStr string) (*ecdsa.PrivateKey, error) {
 	// Attempt to parse the private key
 	privateKey, err := crypto.HexToECDSA(privateKeyStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid private key: %v", err)
+		return nil, fmt.Errorf("invalid private key: %w", err)
 	}
 
 	return privateKey, nil
@@ -537,7 +538,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 	simulation, err := SimulateTransaction(ctx, d.l1Client, nil, d.senderAddress, safe_address, calldata)
 	if err != nil {
 		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
-		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %w", err)
 	}
 
 	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address, "simulation", hex.EncodeToString(simulation))
@@ -607,13 +608,13 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	// Get the nonce for the current transaction.
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to get nonce: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %w", err)
 	}
 	value := amount                            // Amount of ether to send in wei
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %w", err)
 	}
 
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data) //@TODO: Need to use `NewTx` instead of `NewTransaction` as it is deprecated in future version of `op-defender`.
@@ -621,13 +622,13 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	// Sign the transaction with the private key
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to sign transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
 	// Send the transaction
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to send transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %w", err)
 	}
 
 	return signedTx.Hash(), nil

@@ -62,6 +62,7 @@ jobs:
   golang-test:
     parameters:
       project_name:
+        description: "name of the project"
         type: string
         default: ""
     shell: /bin/bash -eo pipefail
@@ -73,6 +74,39 @@ jobs:
       - run:
           name: run <<parameters.project_name>> module tests
           command: cd <<parameters.project_name>> && go test ./... -v
+
+  go-lint:
+    parameters:
+      project_name:
+        description: "name of the project"
+        type: string
+        default: ""
+    docker:
+      - image: <<pipeline.parameters.ci_builder_image>>
+    steps:
+      - checkout
+      - restore_cache:
+          name: Restore Go modules cache
+          key: gomod-{{ checksum "<<parameters.project_name>>/go.sum" }}
+      - restore_cache:
+          key: golang-build-cache
+      - restore_cache:
+          key: golang-lint-cache
+      - run:
+          name: run Go linter
+          command: |
+            # Identify how many cores it defaults to
+            golangci-lint --help | grep concurrency
+            make <<parameters.project_name>>-lint-go
+          working_directory: .
+      - save_cache:
+          key: golang-build-cache
+          paths:
+            - "/root/.cache/go-build"
+      - save_cache:
+          key: golang-lint-cache
+          paths:
+            - "/root/.cache/golangci-lint"
 
   docker-build:
     environment:
@@ -272,13 +306,18 @@ workflows:
             # Trigger on new commits
             - equal: [webhook, << pipeline.trigger_source >>]
     jobs:
+      - go-lint:
+          name: op-defender-go-lint
+          project_name: op-defender
+      - go-lint:
+          name: op-monitorism-go-lint
+          project_name: op-monitorism
       - golang-test:
           name: op-defender-golang-test
           project_name: op-defender
       - golang-test:
           name: op-monitorism-golang-test
           project_name: op-monitorism
-
       - docker-build:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
