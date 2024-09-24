@@ -614,7 +614,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %w", err)
 	}
 
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data) //@TODO: Need to use `NewTx` instead of `NewTransaction` as it is deprecated in future version of `op-defender`.
@@ -622,13 +622,13 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	// Sign the transaction with the private key
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to sign transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
 	// Send the transaction
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to send transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %w", err)
 	}
 
 	return signedTx.Hash(), nil
