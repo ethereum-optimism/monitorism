@@ -209,7 +209,7 @@ func (m *Monitor) Run(ctx context.Context) {
 			return
 		}
 
-		// Check if the initation secret exists.
+		// Check if the initiation secret exists.
 		secretHex1 := common.Bytes2Hex(checkparams.SecretHashMustExist[:])
 		m.log.Info("checking initiation secret", "name", name, "hash", secretHex1)
 		exists1, err := dripcheck.RevealedSecrets(&callOpts, checkparams.SecretHashMustExist)
@@ -221,7 +221,7 @@ func (m *Monitor) Run(ctx context.Context) {
 
 		// Update metrics.
 		if exists1.Cmp(big.NewInt(0)) > 0 {
-			m.log.Info("revealed initation secret", "name", name, "hash", secretHex1)
+			m.log.Info("revealed initiation secret", "name", name, "hash", secretHex1)
 			m.revealedSecrets.WithLabelValues("initiation", name, secretHex1).Set(1)
 		}
 

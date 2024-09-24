@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // **********************************************************************
@@ -64,8 +63,8 @@ type Defender struct {
 	l1Client   *ethclient.Client
 	privatekey *ecdsa.PrivateKey
 	path       string
-	nonce      uint64
-	chainID    *big.Int
+	//nonce      uint64
+	chainID *big.Int
 	// superChainConfig
 	superChainConfigAddress common.Address
 	superChainConfig        *bindings.SuperchainConfig
@@ -73,8 +72,8 @@ type Defender struct {
 	safeAddress   common.Address
 	operationSafe *bindings.Safe
 	// Metrics
-	latestPspNonce      *prometheus.GaugeVec
-	unexpectedRpcErrors *prometheus.CounterVec
+	//latestPspNonce      *prometheus.GaugeVec
+	//unexpectedRpcErrors *prometheus.CounterVec
 }
 
 // Define a struct that represents the data structure of your PSP.
@@ -114,7 +113,9 @@ type RequestData struct {
 
 // handleHealthCheck is a GET method that returns the health status of the Defender
 func (d *Defender) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK"))
+	if _, err := w.Write([]byte("OK")); err != nil {
+		http.Error(w, fmt.Sprintf("failed to write response: %v", err), http.StatusInternalServerError)
+	}
 }
 
 // handlePost handles POST requests and processes the JSON body
@@ -182,8 +183,10 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		Message: "PSP executed successfully",
 		Status:  http.StatusOK,
 	}
-	json.NewEncoder(w).Encode(response)
-	return
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "failed to encode response (PSP executed successfully)", http.StatusInternalServerError)
+		return
+	}
 }
 
 // ReturnCorrectChainID is a function that will return the correct chainID based on the chainID provided in the config against the RPC url.
@@ -196,7 +199,7 @@ func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chai
 	}
 	chainID_RPC, err := l1client.ChainID(context.Background())
 	if err != nil {
-		return &big.Int{}, fmt.Errorf("failed to get network ID: %v", err)
+		return &big.Int{}, fmt.Errorf("failed to get network ID: %w", err)
 	}
 	if chainID_RPC.Uint64() != chainID {
 		return &big.Int{}, fmt.Errorf("chainID mismatch: got %d, expected %d", chainID_RPC.Uint64(), chainID)
@@ -343,7 +346,7 @@ func CheckAndReturnPrivateKey(privateKeyStr string) (*ecdsa.PrivateKey, error) {
 	// Attempt to parse the private key
 	privateKey, err := crypto.HexToECDSA(privateKeyStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid private key: %v", err)
+		return nil, fmt.Errorf("invalid private key: %w", err)
 	}
 
 	return privateKey, nil
@@ -485,7 +488,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	// Get the nonce for the current transaction.
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
-		return "", fmt.Errorf("failed to get nonce: %v", err)
+		return "", fmt.Errorf("failed to get nonce: %w", err)
 	}
 
 	// Set up the transaction parameters
@@ -493,7 +496,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to suggest gas price: %v", err)
+		return "", fmt.Errorf("failed to suggest gas price: %w", err)
 	}
 
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
@@ -501,13 +504,13 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	// Sign the transaction with the private key
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign transaction: %v", err)
+		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
 	// Send the transaction
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return "", fmt.Errorf("failed to send transaction: %v", err)
+		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
 
 	return signedTx.Hash().Hex(), nil

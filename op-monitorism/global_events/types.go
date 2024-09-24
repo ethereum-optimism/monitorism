@@ -3,11 +3,12 @@ package global_events
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"gopkg.in/yaml.v3"
-	"os"
-	"path/filepath"
 )
 
 // EventTopic is the struct that will contain the index of the topic and the values that will be monitored (not used currently).
@@ -37,7 +38,7 @@ type GlobalConfiguration struct {
 	Configuration []Configuration `yaml:"configuration"`
 }
 
-// ReturnEventsMonitoredForAnAddress will return the list of events monitored for a given address /!\ This will return the first occurence of the address in the configuration.
+// ReturnEventsMonitoredForAnAddress will return the list of events monitored for a given address /!\ This will return the first occurrence of the address in the configuration.
 // We assume currently there is no duplicates into the rules.
 func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddress(target_address common.Address) []Event {
 	for _, config := range G.Configuration {
@@ -51,7 +52,7 @@ func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddress(target_address co
 
 }
 
-// ReturnEventsMonitoredForAnAddressFromAConfig will return the list of events monitored for a given address from a given configuration. /!\ This will return the first occurence of the address in the configuration. As we assume currently there is no duplicates into the rules.
+// ReturnEventsMonitoredForAnAddressFromAConfig will return the list of events monitored for a given address from a given configuration. /!\ This will return the first occurrence of the address in the configuration. As we assume currently there is no duplicates into the rules.
 func (G GlobalConfiguration) ReturnEventsMonitoredForAnAddressFromAConfig(target_address common.Address, config Configuration) []Event {
 	for _, address := range config.Addresses {
 		if address == target_address {
@@ -151,6 +152,10 @@ func ReadAllYamlRules(PathYamlRules string, log log.Logger) (GlobalConfiguration
 	}
 
 	yaml_marshalled, err := yaml.Marshal(GlobalConfig)
+	if err != nil {
+		log.Warn("Fail to marshal GlobalConfig to yaml", "ERROR", err)
+		panic("Fail to marshal GlobalConfig to yaml")
+	}
 	err = os.WriteFile("/tmp/globalconfig.yaml", yaml_marshalled, 0644) // Storing the configuration if we need to debug and knows what is monitored in the future.
 	if err != nil {
 		log.Warn("Error writing the globalconfig YAML file on the disk:", "ERROR", err)
