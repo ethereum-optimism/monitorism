@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // **********************************************************************
