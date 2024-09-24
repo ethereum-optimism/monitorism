@@ -21,8 +21,8 @@ DESCRIPTION:
 
 OPTIONS:
    --l1.node.url value         Node URL of L1 peer (default: "http://127.0.0.1:8545") [$GLOBAL_EVENT_MON_L1_NODE_URL]
-   --nickname value            Nickname of chain being monitored [$GLOBAL_EVENT_MON_NICKNAME]
-   --PathYamlRules value       Path to the yaml file containing the events to monitor [$GLOBAL_EVENT_MON_PATH_YAML]
+   --nickname value            Nickname of the chain being monitored [$GLOBAL_EVENT_MON_NICKNAME]
+   --PathYamlRules value       Path to the directory containing the yaml files with the events to monitor [$GLOBAL_EVENT_MON_PATH_YAML]
    --log.level value           The lowest log level that will be output (default: INFO) [$MONITORISM_LOG_LEVEL]
    --log.format value          Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text) [$MONITORISM_LOG_FORMAT]
    --log.color                 Color the log output if in terminal mode (default: false) [$MONITORISM_LOG_COLOR]
@@ -36,7 +36,7 @@ OPTIONS:
 
 ### Yaml rules
 
-The rules are located here: `op-monitorism/global_events/rules/` then we have multiples folders depending the networks you want to monitore (`mainnet` or `sepolia`) for now.
+The rules are located here: `op-monitorism/global_events/rules/`. Then we have multiple folders depending on the networks you want to monitor (`mainnet` or `sepolia`) for now.
 
 ```yaml
 # This is a TEMPLATE file please copy this one
@@ -44,7 +44,7 @@ The rules are located here: `op-monitorism/global_events/rules/` then we have mu
 version: 1.0
 name: Template SafeExecution Events (Success/Failure) L1 # Please put the L1 or L2 at the end of the name.
 priority: P5 # This is a test, so it is a P5
-#If addresses is empty like below it will watch all addresses otherwise you can address specific addresses.
+#If addresses are empty like below, it will watch all addresses; otherwise, you can address specific addresses.
 addresses:
   # - 0xbEb5Fc579115071764c7423A4f12eDde41f106Ed # Specific Addresses /!\ We are not supporting EIP 3770 yet, if the address is not starting by 0x, this will panic by safety measure.
 events:
