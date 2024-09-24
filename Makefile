@@ -37,7 +37,7 @@ op-defender-lint-go-fix: ## Lints Go code with specific linters and fixes report
 
 op-monitorism-lint-go: ## Lints Go code with specific linters
 	cd op-monitorism && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./...
-.PHONY: op-onitorism-lint-go
+.PHONY: op-monitorism-lint-go
 
 op-monitorism-lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
 	cd op-monitorism && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./... --fix
