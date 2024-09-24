@@ -5,12 +5,14 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -48,8 +50,9 @@ type DefenderExecutor struct{}
 
 // Executor is an interface that defines the FetchAndExecute method.
 type Executor interface {
-	FetchAndExecute(d *Defender) error // For documentation, see directly the `FetchAndExecute()` function below.
+	FetchAndExecute(d *Defender) (common.Hash, error) // For documentation, see directly the `FetchAndExecute()` function below.
 	ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error)
+	FetchAndSimulateAtBlock(ctx context.Context, d *Defender, blocknumber *uint64, nonce uint64) ([]byte, error)
 }
 
 // Defender is a struct that represents the Defender API server.
@@ -60,11 +63,13 @@ type Defender struct {
 	router   *mux.Router
 	executor Executor
 	// Onchain data
-	l1Client   *ethclient.Client
-	privatekey *ecdsa.PrivateKey
-	path       string
-	//nonce      uint64
-	chainID *big.Int
+	l1Client      *ethclient.Client
+	privatekey    *ecdsa.PrivateKey
+	senderAddress common.Address
+	path          string
+	nonce         uint64
+	chainID       *big.Int
+	blockDuration time.Duration
 	// superChainConfig
 	superChainConfigAddress common.Address
 	superChainConfig        *bindings.SuperchainConfig
@@ -72,8 +77,12 @@ type Defender struct {
 	safeAddress   common.Address
 	operationSafe *bindings.Safe
 	// Metrics
-	//latestPspNonce      *prometheus.GaugeVec
-	//unexpectedRpcErrors *prometheus.CounterVec
+	latestValidPspNonce                     *prometheus.GaugeVec
+	latestSafeNonce                         *prometheus.GaugeVec
+	pspNonceValid                           *prometheus.GaugeVec
+	highestBlockNumber                      *prometheus.GaugeVec
+	unexpectedRpcErrors                     *prometheus.CounterVec
+	GetNonceAndFetchAndSimulateAtBlockError *prometheus.CounterVec
 }
 
 // Define a struct that represents the data structure of your PSP.
@@ -90,9 +99,8 @@ type PSP struct {
 	Data         []byte
 	DataStr      string `json:"data"`
 	Signatures   []struct {
-		Signer common.Address `json:"signer"`
-		// `Signature` has to have the `0x` prefix
-		Signature []byte `json:"signature"`
+		Signer    common.Address `json:"signer"`
+		Signature string         `json:"signature"`
 	} `json:"signatures"`
 	Calldata    []byte
 	CalldataStr string `json:"calldata"`
@@ -150,7 +158,6 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Timestamp field must be a number", http.StatusBadRequest)
 		return
 	}
-
 	operator, ok := requestMap["Operator"].(string)
 	if !ok {
 		http.Error(w, "Operator field must be a string", http.StatusBadRequest)
@@ -171,22 +178,54 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute the PSP on the chain by calling the FetchAndExecute method of the executor.
-	err := d.executor.FetchAndExecute(d)
-	if err != nil {
-		http.Error(w, "failed to execute the PSP", http.StatusInternalServerError)
+	txHash, err := d.executor.FetchAndExecute(d)
+	if (txHash == common.Hash{}) && (err != nil) { // If TxHash and Error then we return an error as the execution had an issue.
+		response := Response{
+			Message: "🛑" + err.Error() + "🛑",
+			Status:  http.StatusInternalServerError,
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (Error)", http.StatusInternalServerError)
+			return
+		}
 		return
 	}
-	//
+	if (txHash == common.Hash{}) && (err == nil) {
+		response := Response{
+			Message: "🛑 Unknown error, `TxHash` is set to `nil` 🛑",
+			Status:  http.StatusInternalServerError,
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (`TxHash` is set to `nil`)", http.StatusInternalServerError)
+			return
+		}
+		return
+	}
+	if (txHash != common.Hash{}) && (err != nil) { // If the transaction hash is not empty and the error is not nil we return the transaction hash.
+		response := Response{
+			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occured: " + err.Error() + ". The TxHash: " + txHash.Hex(),
+			Status:  http.StatusInternalServerError,
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response (SuperChain not Paused)", http.StatusInternalServerError)
+			return
+		}
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := Response{
-		Message: "PSP executed successfully",
+		Message: "PSP executed successfully ✅ Transaction hash: " + txHash.Hex() + "🎉",
 		Status:  http.StatusOK,
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "failed to encode response (PSP executed successfully)", http.StatusInternalServerError)
 		return
 	}
+	return
+
 }
 
 // ReturnCorrectChainID is a function that will return the correct chainID based on the chainID provided in the config against the RPC url.
@@ -207,16 +246,42 @@ func (e *DefenderExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chai
 	return chainID_RPC, nil
 }
 
+// AddressFromPrivateKey is a function that will return the address of the privatekey.
+func AddressFromPrivateKey(privateKey *ecdsa.PrivateKey) (common.Address, error) {
+	if privateKey == nil {
+		return common.Address{}, fmt.Errorf("private key is not set")
+	}
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return common.Address{}, fmt.Errorf("error casting public key to ECDSA")
+	}
+	return crypto.PubkeyToAddress(*publicKeyECDSA), nil
+
+}
+
 // NewDefender creates a new HTTP API Server for the PSP Executor and starts listening on the specified port from the args passed.
 func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig, executor Executor) (*Defender, error) {
 	// Set the route and handler function for the `/api/psp_execution` endpoint.
+	privatekey, err := CheckAndReturnPrivateKey(cfg.privatekeyflag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to return the privatekey: %w", err)
+	}
+	address, err := AddressFromPrivateKey(privatekey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to return the address associated to the private key: %w", err)
+	}
+
 	log.Info("============================ Configuration Info ================================")
 	log.Info("cfg.nodeurl", "cfg.nodeurl", cfg.NodeURL)
 	log.Info("cfg.portapi", "cfg.portapi", cfg.PortAPI)
 	log.Info("cfg.path", "cfg.path", cfg.Path)
+	log.Info("cfg.blockduration", "cfg.blockduration", cfg.BlockDuration)
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
-	log.Info("cfg.chainID", "cfg.chainID", cfg.chainID)
+	log.Info("cfg.chainID", "cfg.chainID", cfg.ChainID)
+	log.Info("defender address (from privatekey)", "address", address)
+
 	log.Info("===============================================================================")
 
 	l1client, err := CheckAndReturnRPC(cfg.NodeURL) //@TODO: Need to check if the latest blocknumber returned is 0.
@@ -230,9 +295,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	if cfg.Path == "" {
 		return nil, fmt.Errorf("path is not set.")
 	}
-	privatekey, err := CheckAndReturnPrivateKey(cfg.privatekeyflag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to return the privatekey: %w", err)
+	if cfg.BlockDuration == 0 {
+		return nil, fmt.Errorf("blockduration is not set.")
 	}
 
 	if cfg.SuperChainConfigAddress == (common.Address{}) {
@@ -261,8 +325,42 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		safeAddress:             cfg.SafeAddress,
 		operationSafe:           safe,
 		path:                    cfg.Path,
+		senderAddress:           address,
+		blockDuration:           time.Duration(cfg.BlockDuration),
+		/** Metrics **/
+		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "highestBlockNumber",
+			Help:      "observed l1 heights (checked and known)",
+		}, []string{"blockNumber"}),
+		latestSafeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latestSafeNonce",
+			Help:      "Latest nonce of the FoS",
+		}, []string{"latestSafeNonce"}),
+		latestValidPspNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latestValidPspNonce",
+			Help:      "Latest valid PSP nonce",
+		}, []string{"latestValidPspNonce"}),
+		pspNonceValid: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "pspNonceValid",
+			Help:      "PSPs nonce validity (0 or 1) for each nonce",
+		}, []string{"nonce"}),
+
+		GetNonceAndFetchAndSimulateAtBlockError: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "GetNonceAndFetchAndSimulateAtBlockError",
+			Help:      "number of errors from the function GetNonceAndFetchAndSimulateAtBlock",
+		}, []string{"section", "name"}),
+		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "unexpectedRpcErrors",
+			Help:      "number of unexpected rpc errors",
+		}, []string{"section", "name"}),
 	}
-	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.chainID)
+	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.ChainID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to return the correct chainID: %w", err)
 	}
@@ -286,29 +384,29 @@ func (d *Defender) getNonceSafe(ctx context.Context) (uint64, error) {
 }
 
 // FetchAndExecute will fetch the PSP from a file and execute it this onchain.
-func (e *DefenderExecutor) FetchAndExecute(d *Defender) error {
+func (e *DefenderExecutor) FetchAndExecute(d *Defender) (common.Hash, error) {
 	ctx := context.Background()
 	nonce, err := d.getNonceSafe(ctx) // Get the the current nonce of the operationSafe.
 	if err != nil {
 		d.log.Error("failed to get nonce", "error", err)
-		return err
+		return common.Hash{}, err
 	}
 	operationSafe, data, err := GetPSPbyNonceFromFile(nonce, d.path) // return the PSP that has the correct nonce.
 	if err != nil {
 		d.log.Error("failed to get the PSPs from a file", "error", err)
-		return err
+		return common.Hash{}, err
 	}
 	if operationSafe != d.safeAddress {
 		d.log.Error("the safe address in the file is not the same as the one in the configuration!")
-		return err
+		return common.Hash{}, err
 	}
 	// When all the data is fetched correctly then execute the PSP onchain with the PSP data through the `ExecutePSPOnchain()` function.
-	err = d.ExecutePSPOnchain(ctx, operationSafe, data)
+	txHash, err := d.ExecutePSPOnchain(ctx, operationSafe, data)
 	if err != nil {
 		d.log.Error("failed to execute the PSP onchain", "error", err)
-		return err
+		return txHash, err
 	}
-	return nil
+	return txHash, nil
 }
 
 // CheckAndReturnRPC will return the L1 client based on the RPC provided in the config and ensure that the RPC is not production one.
@@ -317,13 +415,13 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 	if rpc_url == "" {
 		return nil, fmt.Errorf("rpc.url is not set.")
 	}
-	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") { // Check if the RPC is a production one. if yes return an error, as we should not execute the pause on the production chain in the first version.
-		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" is a production RPC.")
+	if !strings.Contains(rpc_url, "rpc.tenderly.co/fork") && !strings.Contains(rpc_url, "sepolia") && !strings.Contains(rpc_url, "localhost") { // Check if the RPC is a mainnet production. if yes return an error, as we should not execute the pause on the fork or sepolia or localhost chain in the first version
+		return nil, fmt.Errorf("rpc.url doesn't contains \"fork\" or \"sepolia\" so this is a production RPC on mainnet")
 	}
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-		log.Crit("failed to connect to the Ethereum client", "error", err)
+		return nil, fmt.Errorf("failed to connect to the Ethereum client: %v", err)
 	}
 	return client, nil
 }
@@ -384,7 +482,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 		}
 		pspData[i].SafeNonce = safeNonce
 
-		if len(psp.CalldataStr) < 2 {
+		if len(psp.CalldataStr) <= 2 {
 			return common.Address{}, []byte{}, fmt.Errorf("calldata is empty")
 		}
 		callData, err := hex.DecodeString(psp.CalldataStr[2:])
@@ -393,7 +491,7 @@ func GetPSPbyNonceFromFile(nonce uint64, path string) (common.Address, []byte, e
 		}
 		pspData[i].Calldata = callData
 
-		if len(psp.DataStr) < 2 {
+		if len(psp.DataStr) <= 2 {
 			return common.Address{}, []byte{}, fmt.Errorf("Data is empty")
 		}
 		Data, err := hex.DecodeString(psp.DataStr[2:])
@@ -421,42 +519,68 @@ func getLatestPSP(pspData []PSP, nonce uint64) (PSP, error) {
 	return PSP{}, fmt.Errorf("no PSP found with nonce %d", nonce)
 }
 
-// ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then send onchain transaction to pause the superchain.
+// ExecutePSPOnchain is a core function that will check that status of the superchain is not paused and then simulate the transaction to make sure this is valid one and send the onchain transaction to pause the superchain.
 // This function take the PSP data in parameter, we make sure before that the nonce is correct to execute the PSP.
-func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) error {
+func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Address, calldata []byte) (common.Hash, error) {
+	// 1. Check the status of the SuperChainConfig
 	pause_before_transaction, err := d.checkPauseStatus(ctx)
 	if err != nil {
 		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
-		return err
+		return common.Hash{}, err
 	}
 	if pause_before_transaction {
-		log.Crit("The SuperChainConfig is already paused! Exiting the program.")
+		return common.Hash{}, errors.New("the SuperChainConfig is already paused")
 	}
-	log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
-	log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
 
+	d.log.Info("[Before Transaction] status of the pause()", "pause", pause_before_transaction)
+	d.log.Info("Current parameters", "SuperchainConfigAddress", d.superChainConfigAddress, "safe_address", d.safeAddress, "chainID", d.chainID)
+
+	// 2. Simulate the transaction to check if it will succeed before sending it onchain if blocknumber = nil this simulate at the last block
+	simulation, err := SimulateTransaction(ctx, d.l1Client, nil, d.senderAddress, safe_address, calldata)
+	if err != nil {
+		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
+		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
+	}
+
+	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address, "simulation", hex.EncodeToString(simulation))
+	// 3. As the simulation is correct we execute the transaction onchain.
 	txHash, err := sendTransaction(d.l1Client, d.chainID, d.privatekey, safe_address, big.NewInt(0), calldata) // Send the transaction to the chain with 0 wei.
 	if err != nil {
-		log.Crit("failed to send transaction:", "error", err)
+		return common.Hash{}, err
 	}
-	log.Info("Transaction sent!", "TxHash", txHash)
+	d.log.Info("Transaction sent!", "TxHash", txHash)
 
+	// 4. Check the status of the SuperChainConfig after the transaction is set to pause.
 	pause_after_transaction, err := d.checkPauseStatus(ctx)
 	if err != nil {
-		log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
-		return err
+		d.log.Error("failed to check the pause status of the SuperChainConfig", "error", err, "superchainconfig_address", d.superChainConfigAddress)
+		return common.Hash{}, err
 	}
-	log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
+	if !pause_after_transaction {
+		return txHash, fmt.Errorf("failed to pause the SuperChainConfig")
+	}
 
-	return nil
+	d.log.Info("[After Transaction] status of the pause()", "pause", pause_after_transaction)
+
+	return txHash, nil
 
 }
 
 // Run() will start the Defender API server and block the thread.
 func (d *Defender) Run(ctx context.Context) {
+
+	go func() {
+		for {
+			time.Sleep(d.blockDuration * time.Second) // Sleep for `d.blockDuration` seconds to make sure the PSP is executed onchain.
+			if err := d.GetNonceAndFetchAndSimulateAtBlock(ctx); err != nil {
+				d.GetNonceAndFetchAndSimulateAtBlockError.WithLabelValues("l1", "GetNonceAndFetchAndSimulateAtBlock").Inc()
+			}
+		}
+	}()
+
 	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
 	if err != nil {
-		log.Crit("failed to start the API server", "error", err)
+		d.log.Crit("failed to start the API server", "error", err)
 	}
 }
 
@@ -467,53 +591,48 @@ func (d *Defender) Close(_ context.Context) error {
 }
 
 // sendTransaction: Is a function made for sending a transaction on chain with the parameters : eth client, privatekey, toAddress, amount of eth in wei, data.
-func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (string, error) {
-	if privateKey == nil {
-		return "", fmt.Errorf("private key is nil")
-	}
-	// Derive the public key from the private key.
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return "", fmt.Errorf("error casting public key to ECDSA")
+func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecdsa.PrivateKey, toAddress common.Address, amount *big.Int, data []byte) (common.Hash, error) {
+
+	if privateKey == nil || *privateKey == (ecdsa.PrivateKey{}) {
+		return common.Hash{}, fmt.Errorf("private key is nil")
 	}
 
-	// Derive the sender address from the public key
-	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	fromAddress, err := AddressFromPrivateKey(privateKey)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("fail to get the address from the private key")
+	}
 
 	// Ensure the recipient address is valid.
 	if (toAddress == common.Address{}) {
-		return "", fmt.Errorf("invalid recipient address (toAddress)")
+		return common.Hash{}, fmt.Errorf("invalid recipient address (toAddress)")
 	}
 	// Get the nonce for the current transaction.
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
-		return "", fmt.Errorf("failed to get nonce: %w", err)
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %v", err)
 	}
-
-	// Set up the transaction parameters
 	value := amount                            // Amount of ether to send in wei
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to suggest gas price: %w", err)
+		return common.Hash{}, fmt.Errorf("failed to suggest gas price: %v", err)
 	}
 
-	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
+	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data) //@TODO: Need to use `NewTx` instead of `NewTransaction` as it is deprecated in future version of `op-defender`.
 
 	// Sign the transaction with the private key
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign transaction: %w", err)
+		return common.Hash{}, fmt.Errorf("failed to sign transaction: %v", err)
 	}
 
 	// Send the transaction
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return "", fmt.Errorf("failed to send transaction: %w", err)
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %v", err)
 	}
 
-	return signedTx.Hash().Hex(), nil
+	return signedTx.Hash(), nil
 }
 
 // checkPauseStatus: Is a function made for checking the pause status of the SuperChainConfigAddress

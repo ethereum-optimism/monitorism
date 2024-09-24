@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
+  "golang.org/x/crypto/sha3"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -23,13 +24,17 @@ import (
 
 type SimpleExecutor struct{}
 
-func (e *SimpleExecutor) FetchAndExecute(d *Defender) error {
+func (e *SimpleExecutor) FetchAndExecute(d *Defender) (common.Hash, error) {
 	// Do nothing for now, for mocking purposes
-	return nil
+	return common.Hash{}, nil
 }
 
 func (e *SimpleExecutor) ReturnCorrectChainID(l1client *ethclient.Client, chainID uint64) (*big.Int, error) { // Do nothing for now, for mocking purposes
 	return big.NewInt(1), nil
+}
+
+func (e *SimpleExecutor) FetchAndSimulateAtBlock(ctx context.Context, d *Defender, blocknumber *uint64, nonce uint64) ([]byte, error) { // Do nothing for now, for mocking purposes
+	return []byte{}, nil
 }
 
 // GeneratePrivatekey generates a private key of the given size useful for testing.
@@ -62,7 +67,8 @@ func TestHTTPServerHasCorrectRoute(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
-		chainID:                 1,
+		ChainID:                 1,
+		BlockDuration:           12,
 	}
 	// Initialize the Defender with necessary mock or real components
 	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -119,6 +125,7 @@ func TestDefenderInitialization(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
 	}
 	// Initialize the Defender with necessary mock or real components
 	_, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -144,6 +151,7 @@ func TestHandlePostMockFetch(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
 	}
 
 	defender, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
@@ -171,8 +179,32 @@ func TestHandlePostMockFetch(t *testing.T) {
 		},
 		{
 			path:           "/api/psp_execution",
+			name:           "Invalid request with a non boolean for the pause field",
+			body:           `{"Pause":"not a boolean","Timestamp":1596240000,"Operator":"0x123"}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			path:           "/api/psp_execution",
+			name:           "Invalid timestamp",
+			body:           `{"Pause":true, "Timestamp":"invalid","Operator":"0x123"}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			path:           "/api/psp_execution",
+			name:           "Empty operator",
+			body:           `{"Pause":true, "Timestamp":1596240000,"Operator":""}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			path:           "/api/psp_execution",
+			name:           "Empty operator",
+			body:           `{"Pause":true, "Timestamp":1596240000,"Operator":[""]}`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			path:           "/api/psp_execution",
 			name:           "Invalid JSON", // Check if the JSON is invalid return the 400 status code.
-			body:           `{"Pause":true, "Timestamp":"invalid","Operator":}`,
+			body:           `{"Pause":true, "Timestamp":"1596240000","Operator":}`,
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -224,13 +256,16 @@ func TestHandlePostMockFetch(t *testing.T) {
 
 // TestCheckAndReturnRPC tests that the CheckAndReturnRPC function returns the correct client or error for an incorrect URL provided.
 func TestCheckAndReturnRPC(t *testing.T) {
+	nullByte, _ := hex.DecodeString("00")
 	tests := []struct {
 		name        string
 		rpcURL      string
 		expectError bool
 	}{
 		{"Empty URL", "", true},
-		{"Production URL", "https://mainnet.infura.io", true},
+		{"Production URL Mainnet", "https://mainnet.infura.io", true},
+		{"Invalid URL", "https://sepolia.infura.io/" + string(nullByte), true},
+		{"Production URL Sepolia", "https://sepolia.infura.io", false},
 		{"Valid Tenderly Fork URL", "https://rpc.tenderly.co/fork/some-id", false},
 	}
 
@@ -403,7 +438,6 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
     "target_addr": "0xfd7E6Ef1f6c9e4cC34F54065Bf8496cE41A4e2e8",
     "script_name": "PresignPauseFromJson.s.sol",
 `
-
 	const PSPNoData = `[
   {
     "chain_id": "11155111",
@@ -426,8 +460,8 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
     ],
     "calldata": "0xe4b2f9f3"
   }]`
-	const PSPNoCalldata = `[
-  {
+	const PSPInvalidData = `[
+    {
     "chain_id": "11155111",
     "rpc_url": "https://ethereum-sepolia.publicnode.com",
     "created_at": "2024-08-22T20:00:06+02:00",
@@ -435,7 +469,7 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
     "safe_nonce": "0",
     "target_addr": "0xfd7E6Ef1f6c9e4cC34F54065Bf8496cE41A4e2e8",
     "script_name": "PresignPauseFromJson.s.sol",
-    "data": "",
+    "data": "0xzz",
     "signatures": [
       {
         "signer": "0x0000000000000000000000000000000000003333",
@@ -447,6 +481,50 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
       }
     ],
     "calldata": "0xe4b2f9f3"
+  }]`
+	const PSPNoCalldata = `[
+  {
+    "chain_id": "11155111",
+    "rpc_url": "https://ethereum-sepolia.publicnode.com",
+    "created_at": "2024-08-22T20:00:06+02:00",
+    "safe_addr": "0x837DE453AD5F21E89771e3c06239d8236c0EFd5E",
+    "safe_nonce": "0",
+    "target_addr": "0xfd7E6Ef1f6c9e4cC34F54065Bf8496cE41A4e2e8",
+    "script_name": "PresignPauseFromJson.s.sol",
+    "data": "0xe4b2f9f3",
+    "signatures": [
+      {
+        "signer": "0x0000000000000000000000000000000000003333",
+        "signature": "DEADBEEF"
+      },
+      {
+        "signer": "0x0000000000000000000000000000000000004444",
+        "signature": "DEADBEEF"
+      }
+    ],
+    "calldata": "0x"
+  }]`
+	const PSPInvalidCallData = `[
+  {
+    "chain_id": "11155111",
+    "rpc_url": "https://ethereum-sepolia.publicnode.com",
+    "created_at": "2024-08-22T20:00:06+02:00",
+    "safe_addr": "0x837DE453AD5F21E89771e3c06239d8236c0EFd5E",
+    "safe_nonce": "0",
+    "target_addr": "0xfd7E6Ef1f6c9e4cC34F54065Bf8496cE41A4e2e8",
+    "script_name": "PresignPauseFromJson.s.sol",
+    "data": "0xe4b2f9f3",
+    "signatures": [
+      {
+        "signer": "0x0000000000000000000000000000000000003333",
+        "signature": "DEADBEEF"
+      },
+      {
+        "signer": "0x0000000000000000000000000000000000004444",
+        "signature": "DEADBEEF"
+      }
+    ],
+    "calldata": "0xzz"
   }]`
 	const PSPInvalidSafeNonce = `[
   {
@@ -519,7 +597,9 @@ func TestGetPSPbyNonceFromFile(t *testing.T) {
 		{"Valid PSP with unknown nonce", PSPsValid, 1, common.Address{}, []byte{}, true},
 		{"PSP with incorrect JSON", PSPIncorrectJSON, 0, common.Address{}, []byte{}, true},
 		{"PSP with no data", PSPNoData, 0, common.Address{}, []byte{}, true},
+		{"PSP with invalid data", PSPInvalidData, 0, common.Address{}, []byte{}, true},
 		{"PSP with no calldata", PSPNoCalldata, 0, common.Address{}, []byte{}, true},
+		{"PSP with an invalid calldata", PSPInvalidCallData, 0, common.Address{}, []byte{}, true},
 		{"PSP with invalid safe nonce", PSPInvalidSafeNonce, 0, common.Address{}, []byte{}, true},
 		{"PSP with invalid chain id", PSPInvalidChainID, 0, common.Address{}, []byte{}, true},
 		// {"PSP with no signature", PSPNoSignature, 0, common.Address{}, []byte{}, true},
@@ -567,6 +647,7 @@ func TestGetNonceSafe(t *testing.T) {
 	const safeAddressSepolia = "0x837DE453AD5F21E89771e3c06239d8236c0EFd5E"
 	const rpcURLMainnet = "https://ethereum-rpc.publicnode.com"
 	const rpcURLSepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+
 	l1ClientMainnet, err := ethclient.Dial(rpcURLMainnet)
 	if err != nil {
 		t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
@@ -582,8 +663,13 @@ func TestGetNonceSafe(t *testing.T) {
 
 	// Initialize the Defender with necessary mock or real components
 	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
-	metricsRegistry := opmetrics.NewRegistry()
-	metricsfactory := opmetrics.With(metricsRegistry)
+
+	metricsRegistry_mainnet := opmetrics.NewRegistry()
+	metricsRegistry_sepolia := opmetrics.NewRegistry()
+	metricsRegistry_sepolia_error := opmetrics.NewRegistry()
+	metricsfactory_mainnet := opmetrics.With(metricsRegistry_mainnet)
+	metricsfactory_sepolia := opmetrics.With(metricsRegistry_sepolia)
+	metricsfactory_sepolia_error := opmetrics.With(metricsRegistry_sepolia_error)
 	executor := &SimpleExecutor{}
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
 
@@ -594,23 +680,24 @@ func TestGetNonceSafe(t *testing.T) {
 		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		Path:                    "/tmp",
 		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
 	}
 
-	defenderMainnet, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderMainnet, err := NewDefender(context.Background(), logger, metricsfactory_mainnet, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 	defenderMainnet.l1Client = l1ClientMainnet
 	defenderMainnet.operationSafe = safeAddressMainnetBindings
 
-	defenderSepolia, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderSepolia, err := NewDefender(context.Background(), logger, metricsfactory_sepolia, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
 	defenderSepolia.l1Client = l1ClientSepolia
 	defenderSepolia.operationSafe = safeAddressSepoliaBindings
 
-	defenderError, err := NewDefender(context.Background(), logger, metricsfactory, cfg, executor)
+	defenderError, err := NewDefender(context.Background(), logger, metricsfactory_sepolia_error, cfg, executor)
 	if err != nil {
 		t.Fatalf("Failed to create Defender: %v", err)
 	}
@@ -695,6 +782,194 @@ func TestReturnCorrectChainID(t *testing.T) {
 				}
 				if chainID.Cmp(tt.expectedChainID) != 0 {
 					t.Errorf("Test: \"%s\" Expected %#v, but got %#v", tt.name, tt.expectedChainID, chainID)
+				}
+			}
+
+		})
+	}
+
+}
+
+func TestAddressFromPrivateKey(t *testing.T) {
+	validPrivateKeyGeneratedStr := GeneratePrivatekey(32)
+	validPrivateKeyGenerated, _ := crypto.HexToECDSA(validPrivateKeyGeneratedStr[2:])
+	validPrivateKeyGeneratedBytes := crypto.FromECDSAPub(validPrivateKeyGenerated.Public().(*ecdsa.PublicKey))
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write(validPrivateKeyGeneratedBytes[1:])
+	hardCodedTestPrivateKey, _ := crypto.HexToECDSA("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+
+	tests := []struct {
+		name            string
+		privateKey      *ecdsa.PrivateKey
+		expectedAddress common.Address
+		expectError     bool
+	}{
+		{"Valid private key", hardCodedTestPrivateKey, common.HexToAddress("0x1Be31A94361a391bBaFB2a4CCd704F57dc04d4bb"), false},
+		{"Valid private key without 0x", hardCodedTestPrivateKey, common.HexToAddress("0x1Be31A94361a391bBaFB2a4CCd704F57dc04d4bb"), false},
+		{"Valid private key generated", validPrivateKeyGenerated, common.BytesToAddress(hash.Sum(nil)[12:]), false},
+		{"Empty private key", nil, common.Address{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := AddressFromPrivateKey(tt.privateKey)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Test: \"%s\" Expected an error, but got no error", tt.name)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if tt.expectedAddress != result {
+					t.Errorf("Test: \"%s\" Expected %s, but got %s", tt.name, tt.expectedAddress, result)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckPauseStatus(t *testing.T) {
+	const superChainAddressMainnet = "0x95703e0982140D16f8ebA6d158FccEde42f04a4C"
+	const superChainAddressSepolia = "0xC2Be75506d5724086DEB7245bd260Cc9753911Be"
+	const rpcURLMainnet = "https://ethereum-rpc.publicnode.com"
+	const rpcURLSepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+	l1ClientMainnet, err := ethclient.Dial(rpcURLMainnet)
+	if err != nil {
+		t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
+	}
+
+	l1ClientSepolia, err := ethclient.Dial(rpcURLSepolia)
+	if err != nil {
+		t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
+	}
+
+	superChainAddressMainnetBindings, _ := bindings.NewSuperchainConfig(common.HexToAddress(superChainAddressMainnet), l1ClientMainnet)
+	superChainAddressSepoliaBindings, _ := bindings.NewSuperchainConfig(common.HexToAddress(superChainAddressSepolia), l1ClientSepolia)
+
+	// Initialize the Defender with necessary mock or real components
+	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
+	metricsRegistry_mainnet := opmetrics.NewRegistry()
+	metricsRegistry_sepolia := opmetrics.NewRegistry()
+	metricsRegistry_sepolia_error := opmetrics.NewRegistry()
+	metricsfactory_mainnet := opmetrics.With(metricsRegistry_mainnet)
+	metricsfactory_sepolia := opmetrics.With(metricsRegistry_sepolia)
+	metricsfactory_sepolia_error := opmetrics.With(metricsRegistry_sepolia_error)
+	executor := &SimpleExecutor{}
+	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
+
+	cfg := CLIConfig{
+		NodeURL:                 mockNodeUrl,
+		PortAPI:                 "8080",
+		privatekeyflag:          GeneratePrivatekey(32),
+		SuperChainConfigAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		Path:                    "/tmp",
+		SafeAddress:             common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+		BlockDuration:           12,
+	}
+
+	defenderMainnet, err := NewDefender(context.Background(), logger, metricsfactory_mainnet, cfg, executor)
+	if err != nil {
+		t.Fatalf("Failed to create Defender: %v", err)
+	}
+	defenderMainnet.l1Client = l1ClientMainnet
+	defenderMainnet.superChainConfig = superChainAddressMainnetBindings
+
+	defenderSepolia, err := NewDefender(context.Background(), logger, metricsfactory_sepolia, cfg, executor)
+	if err != nil {
+		t.Fatalf("Failed to create Defender: %v", err)
+	}
+	defenderSepolia.l1Client = l1ClientSepolia
+	defenderSepolia.superChainConfig = superChainAddressSepoliaBindings
+
+	defenderError, err := NewDefender(context.Background(), logger, metricsfactory_sepolia_error, cfg, executor)
+	if err != nil {
+		t.Fatalf("Failed to create Defender: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		defender       *Defender
+		expectedResult bool
+		expectError    bool
+	}{
+		{"Nonce from Mainnet", defenderMainnet, false, false},
+		{"Nonce from Sepolia", defenderSepolia, false, false},
+		{"Nonce with an incorrect RPC", defenderError, false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.defender.checkPauseStatus(context.Background())
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Test: \"%s\" Expected an error, but got no error", tt.name)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if result != tt.expectedResult {
+					t.Errorf("Test: \"%s\" Expected a nonce > %#v, but got %#v", tt.name, tt.expectedResult, result)
+				}
+			}
+
+		})
+	}
+}
+
+func TestSendTransaction(t *testing.T) {
+
+	validPrivateKeyGeneratedStr := GeneratePrivatekey(32)
+	validPrivateKeyGenerated, _ := crypto.HexToECDSA(validPrivateKeyGeneratedStr[2:])
+
+	const superChainAddressSepolia = "0xC2Be75506d5724086DEB7245bd260Cc9753911Be"
+	const rpcURLMainnet = "https://ethereum-rpc.publicnode.com"
+	const rpcURLSepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+	const rpcURLInvalid = "http://www.google.com"
+
+	l1ClientSepolia, err := ethclient.Dial(rpcURLSepolia)
+	if err != nil {
+		t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
+	}
+
+	l1InvalidClient, err := ethclient.Dial(rpcURLInvalid)
+	if err != nil {
+		t.Errorf("Fail to connet to RPC %s: %v", rpcURLMainnet, err)
+	}
+
+	tests := []struct {
+		name         string
+		l1Client     *ethclient.Client
+		chainID      *big.Int
+		privateKey   *ecdsa.PrivateKey
+		toAddress    common.Address
+		amount       *big.Int
+		data         []byte
+		expectedHash common.Hash
+		expectError  bool
+	}{
+		{"Send transaction on Sepolia", l1ClientSepolia, big.NewInt(11155111), validPrivateKeyGenerated, common.HexToAddress("0xC2Be75506d5724086DEB7245bd260Cc9753911Be"), big.NewInt(1), []byte("test"), common.Hash{}, true},
+		{"Send transaction on Sepolia with an invalid chain id", l1ClientSepolia, big.NewInt(1), validPrivateKeyGenerated, common.HexToAddress("0xC2Be75506d5724086DEB7245bd260Cc9753911Be"), big.NewInt(1), []byte("test"), common.Hash{}, true},
+		{"Send transaction on Sepolia with nil private key", l1ClientSepolia, big.NewInt(1), nil, common.HexToAddress("0xC2Be75506d5724086DEB7245bd260Cc9753911Be"), big.NewInt(1), []byte("test"), common.Hash{}, true},
+		{"Send transaction on Sepolia with empty private key", l1ClientSepolia, big.NewInt(1), &ecdsa.PrivateKey{}, common.HexToAddress("0xC2Be75506d5724086DEB7245bd260Cc9753911Be"), big.NewInt(1), []byte("test"), common.Hash{}, true},
+		{"Send transaction on Sepolia with invalid toAddress", l1ClientSepolia, big.NewInt(1), validPrivateKeyGenerated, common.Address{}, big.NewInt(1), []byte("test"), common.Hash{}, true},
+		{"Send transaction on Sepolia with invalid RPC", l1InvalidClient, big.NewInt(1), validPrivateKeyGenerated, common.HexToAddress("0xC2Be75506d5724086DEB7245bd260Cc9753911Be"), big.NewInt(1), []byte("test"), common.Hash{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hash, err := sendTransaction(tt.l1Client, tt.chainID, tt.privateKey, tt.toAddress, tt.amount, tt.data)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Test: \"%s\" Expected an error, but got no error", tt.name)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if hash != tt.expectedHash {
+					t.Errorf("Test: \"%s\" Expected %#v, but got %#v", tt.name, tt.expectedHash, hash)
 				}
 			}
 
