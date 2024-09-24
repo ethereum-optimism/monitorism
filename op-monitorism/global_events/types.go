@@ -105,7 +105,7 @@ func StringFunctionToHex(config Configuration, log log.Logger) Configuration {
 		return FinalConfig
 	}
 	// If there is addresses to monitor, we will resolve the signature of the events.
-	for _ = range config.Addresses { //resolve the hex signature from a topic
+	for range config.Addresses { //resolve the hex signature from a topic
 		keccak256_topic_0 := config.Events
 		for i, event := range config.Events {
 			keccak256_topic_0[i].Keccak256_Signature = FormatAndHash(event.Signature)
