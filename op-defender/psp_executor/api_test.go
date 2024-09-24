@@ -6,12 +6,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
-	"golang.org/x/crypto/sha3"
+
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"

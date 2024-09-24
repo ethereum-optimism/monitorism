@@ -2,11 +2,12 @@ package psp_executor
 
 import (
 	"context"
+	"math/big"
+	"strconv"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"math/big"
-	"strconv"
 )
 
 // SimulateTransaction will simulate a transaction onchain if the blockNumber is `nil` it will simulate the transaction on the latest block.
