@@ -68,7 +68,7 @@ type Defender struct {
 	privatekey    *ecdsa.PrivateKey
 	senderAddress common.Address
 	path          string
-	nonce         uint64
+	// nonce         uint64
 	chainID       *big.Int
 	blockDuration time.Duration
 	// superChainConfig
@@ -205,7 +205,7 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 	if (txHash != common.Hash{}) && (err != nil) { // If the transaction hash is not empty and the error is not nil we return the transaction hash.
 		response := Response{
-			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occured: " + err.Error() + ". The TxHash: " + txHash.Hex(),
+			Message: "🚧 Transaction Executed 🚧, but the SuperchainConfig is not *pause*. An error occurred: " + err.Error() + ". The TxHash: " + txHash.Hex(),
 			Status:  http.StatusInternalServerError,
 		}
 
@@ -225,8 +225,6 @@ func (d *Defender) handlePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to encode response (PSP executed successfully)", http.StatusInternalServerError)
 		return
 	}
-	return
-
 }
 
 // ReturnCorrectChainID is a function that will return the correct chainID based on the chainID provided in the config against the RPC url.
@@ -422,7 +420,7 @@ func CheckAndReturnRPC(rpc_url string) (*ethclient.Client, error) {
 
 	client, err := ethclient.Dial(rpc_url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to the Ethereum client: %v", err)
+		return nil, fmt.Errorf("failed to connect to the Ethereum client: %w", err)
 	}
 	return client, nil
 }
@@ -540,7 +538,7 @@ func (d *Defender) ExecutePSPOnchain(ctx context.Context, safe_address common.Ad
 	simulation, err := SimulateTransaction(ctx, d.l1Client, nil, d.senderAddress, safe_address, calldata)
 	if err != nil {
 		d.log.Warn("🛑 Simulated transaction failed 🛑", "from", d.senderAddress, "to", safe_address, "error", err.Error())
-		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to simulate transaction: %w", err)
 	}
 
 	d.log.Info("✅ Simulated transaction succeed ✅", "from", d.senderAddress, "to", safe_address, "simulation", hex.EncodeToString(simulation))
@@ -610,7 +608,7 @@ func sendTransaction(client *ethclient.Client, chainID *big.Int, privateKey *ecd
 	// Get the nonce for the current transaction.
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed to get nonce: %v", err)
+		return common.Hash{}, fmt.Errorf("failed to get nonce: %w", err)
 	}
 	value := amount                            // Amount of ether to send in wei
 	gasLimit := uint64(1000 * DefaultGasLimit) // In units TODO: Need to use `estimateGas()` to get the correct value.

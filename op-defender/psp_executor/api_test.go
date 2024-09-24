@@ -6,7 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
-  "golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/sha3"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -923,7 +923,6 @@ func TestSendTransaction(t *testing.T) {
 	validPrivateKeyGeneratedStr := GeneratePrivatekey(32)
 	validPrivateKeyGenerated, _ := crypto.HexToECDSA(validPrivateKeyGeneratedStr[2:])
 
-	const superChainAddressSepolia = "0xC2Be75506d5724086DEB7245bd260Cc9753911Be"
 	const rpcURLMainnet = "https://ethereum-rpc.publicnode.com"
 	const rpcURLSepolia = "https://ethereum-sepolia-rpc.publicnode.com"
 	const rpcURLInvalid = "http://www.google.com"
