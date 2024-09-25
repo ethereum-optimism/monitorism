@@ -67,10 +67,11 @@ type Monitor struct {
 	l1ChainID      *big.Int
 	l2ChainID      *big.Int
 
-	maxBlockRange            uint64
-	disputeGameHelper        DisputeGameHelper
-	disputeFactoryGameHelper DisputeFactoryGameHelper
-	withdrawalHelper         WithdrawalHelper
+	maxBlockRange             uint64
+	faultDisputeGameHelper    FaultDisputeGameHelper
+	optimismPortal2Helper     OptimismPortal2Helper
+	l2ToL1MessagePasserHelper L2ToL1MessagePasserHelper
+	l2NodeHelper              L2NodeHelper
 
 	state   State
 	metrics Metrics
@@ -257,19 +258,24 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to dial l2: %w", err)
 	}
 
-	withdrawalHelper, err := NewWithdrawalHelper(ctx, l1GethClient, l2OpGethClient, cfg.OptimismPortalAddress)
+	optimismPortal2Helper, err := NewOptimismPortal2Helper(ctx, l1GethClient, cfg.OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
 	}
 
-	disputeGameHelper, err := NewDisputeGameHelper(ctx, l1GethClient, l2OpNodeClient, withdrawalHelper.GetOptimismPortal2())
+	faultDisputeGameHelper, err := NewFaultDisputeGameHelper(ctx, l1GethClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dispute game helper: %w", err)
 	}
 
-	disputeFactoryGameHelper, err := NewDisputeGameFactoryHelper(ctx, l1GethClient, withdrawalHelper.GetOptimismPortal2())
+	l2ToL1MessagePasserHelper, err := NewL2ToL1MessagePasserHelper(ctx, l2OpGethClient)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create dispute game factory helper: %w", err)
+		return nil, fmt.Errorf("failed to create l2 to l1 message passer helper: %w", err)
+	}
+
+	l2NodeHelper, err := NewL2NodeHelper(ctx, l2OpNodeClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create l2 node helper: %w", err)
 	}
 
 	latestL1Height, err := l1GethClient.BlockNumber(ctx)
@@ -304,9 +310,10 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1ChainID: l1ChainID,
 		l2ChainID: l2ChainID,
 
-		disputeGameHelper:        *disputeGameHelper,
-		disputeFactoryGameHelper: *disputeFactoryGameHelper,
-		withdrawalHelper:         *withdrawalHelper,
+		faultDisputeGameHelper:    *faultDisputeGameHelper,
+		optimismPortal2Helper:     *optimismPortal2Helper,
+		l2ToL1MessagePasserHelper: *l2ToL1MessagePasserHelper,
+		l2NodeHelper:              *l2NodeHelper,
 
 		maxBlockRange: cfg.EventBlockRange,
 
@@ -359,7 +366,7 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	m.ProcessInvalidWithdrawals()
 
-	events, err := m.withdrawalHelper.GetProvenWithdrawalsEventsIterartor(start, &stop)
+	events, err := m.optimismPortal2Helper.GetProvenWithdrawalsEventsIterartor(start, &stop)
 	if err != nil {
 		m.state.nodeConnectionFailures++
 		return
@@ -432,14 +439,14 @@ func (m *Monitor) ProcessEvent(withdrawalEvent *l1.OptimismPortal2WithdrawalProv
 		if game.l2ChainID.Cmp(m.l2ChainID) != 0 {
 			m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", game.l2ChainID))
 		}
-		validRoot, err := m.disputeGameHelper.IsValidOutputRoot(game.rootClaim, game.l2blockNumber)
+		validRoot, err := m.l2NodeHelper.IsValidOutputRoot(game.rootClaim, game.l2blockNumber)
 		if err != nil {
 			return fmt.Errorf("failed to validate output root: %w", err)
 		}
 		if validRoot {
 			m.log.Info("output root is valid for", "game", game.disputeGameProxyAddress.Hex(), "rootClaim", common.BytesToHash(game.rootClaim[:]).Hex(), "l2blockNumber", fmt.Sprintf("%d", game.l2blockNumber))
 
-			withdrawalExists, err := m.withdrawalHelper.WithdrawalExistsOnL2(withdrawalEvent.WithdrawalHash)
+			withdrawalExists, err := m.l2ToL1MessagePasserHelper.WithdrawalExistsOnL2(withdrawalEvent.WithdrawalHash)
 			if err != nil {
 				return fmt.Errorf("failed to check withdrawal existence on L2: %w", err)
 			}
@@ -497,7 +504,7 @@ func (m *Monitor) ProcessInvalidWithdrawals() error {
 			"WithdrawalHash", common.BytesToHash(withdrawalEvent.WithdrawalHash[:]).Hex(), "eventTx", withdrawalEvent.Raw.TxHash, "eventBlock", fmt.Sprintf("%d", withdrawalEvent.Raw.BlockNumber))
 
 		disputeGame := proposalWithdrawalsEvent.DisputeGame
-		blacklisted, err := m.disputeGameHelper.IsGameBlacklisted(disputeGame)
+		blacklisted, err := m.optimismPortal2Helper.IsGameBlacklisted(disputeGame)
 		if err != nil {
 			m.state.nodeConnectionFailures++
 			m.log.Error("failed to check if game is blacklisted", "error", err)
@@ -508,7 +515,7 @@ func (m *Monitor) ProcessInvalidWithdrawals() error {
 			m.log.Info("game is blacklisted,removing from invalidProposalWithdrawalsEvents list", "game", disputeGame.disputeGameProxyAddress.Hex())
 			continue
 		}
-		inProgress, err := m.disputeGameHelper.IsGameStateINPROGRESS(disputeGame)
+		inProgress, err := m.faultDisputeGameHelper.IsGameStateINPROGRESS(disputeGame)
 		if err != nil {
 			m.state.nodeConnectionFailures++
 			m.log.Error("failed to check if game is in progress", "error", err)
@@ -519,7 +526,7 @@ func (m *Monitor) ProcessInvalidWithdrawals() error {
 			newInvalidProposalWithdrawalsEvents = append(newInvalidProposalWithdrawalsEvents, proposalWithdrawalsEvent)
 		} else {
 
-			challengerWins, err := m.disputeGameHelper.IsGameStateCHALLENGER_WINS(disputeGame)
+			challengerWins, err := m.faultDisputeGameHelper.IsGameStateCHALLENGER_WINS(disputeGame)
 			if err != nil {
 				m.state.nodeConnectionFailures++
 				m.log.Error("failed to check if challenger wins", "error", err)
@@ -531,7 +538,7 @@ func (m *Monitor) ProcessInvalidWithdrawals() error {
 				continue
 			} else {
 
-				defenderWins, err := m.disputeGameHelper.IsGameStateDEFENDER_WINS(disputeGame)
+				defenderWins, err := m.faultDisputeGameHelper.IsGameStateDEFENDER_WINS(disputeGame)
 				if err != nil {
 					m.state.nodeConnectionFailures++
 					m.log.Error("failed to check if defender wins", "error", err)
@@ -570,7 +577,7 @@ func (m *Monitor) ProcessInvalidWithdrawals() error {
 // The function increments the nodeConnectionFailures counter in the state if there are any errors during the process.
 func (m *Monitor) getDisputeGamesFromWithdrawalhash(withdrawalHash [32]byte) ([]DisputeGame, error) {
 
-	submittedProofsData, error := m.withdrawalHelper.GetSumittedProofsDataFromWithdrawalhash(withdrawalHash)
+	submittedProofsData, error := m.optimismPortal2Helper.GetSumittedProofsDataFromWithdrawalhash(withdrawalHash)
 	if error != nil {
 		m.state.nodeConnectionFailures++
 		return nil, fmt.Errorf("failed to get games addresses: %w", error)
@@ -578,7 +585,7 @@ func (m *Monitor) getDisputeGamesFromWithdrawalhash(withdrawalHash [32]byte) ([]
 	gameList := make([]DisputeGame, 0)
 	for _, submittedProofData := range submittedProofsData {
 		disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress
-		game, error := m.disputeGameHelper.GetDisputeGameFromAddress(disputeGameProxyAddress)
+		game, error := m.faultDisputeGameHelper.GetDisputeGameFromAddress(disputeGameProxyAddress)
 		if error != nil {
 			m.state.nodeConnectionFailures++
 			return nil, fmt.Errorf("failed to get games: %w", error)

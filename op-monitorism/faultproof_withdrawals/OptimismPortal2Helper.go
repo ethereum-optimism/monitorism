@@ -6,8 +6,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
-	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l2"
-	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -27,52 +25,52 @@ type WithdrawalEvent struct {
 	TxHash         common.Hash
 }
 
-type WithdrawalHelper struct {
+type OptimismPortal2Helper struct {
 	//strings
 	optimismPortalAddress common.Address
 
 	//objects
-	l1Client            *ethclient.Client
-	l2Client            *ethclient.Client
-	optimismPortal2     *l1.OptimismPortal2
-	l2ToL1MessagePasser *l2.L2ToL1MessagePasser
+	l1Client        *ethclient.Client
+	optimismPortal2 *l1.OptimismPortal2
 
 	ctx context.Context
 }
 
-func NewWithdrawalHelper(ctx context.Context, l1Client *ethclient.Client, l2Client *ethclient.Client, optimismPortalAddress common.Address) (*WithdrawalHelper, error) {
+func NewOptimismPortal2Helper(ctx context.Context, l1Client *ethclient.Client, optimismPortalAddress common.Address) (*OptimismPortal2Helper, error) {
 
 	optimismPortal, err := l1.NewOptimismPortal2(optimismPortalAddress, l1Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
 	}
 
-	l2ToL1MessagePasser, err := l2.NewL2ToL1MessagePasser(predeploys.L2ToL1MessagePasserAddr, l2Client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to bind to dispute game factory: %w", err)
-	}
-
-	return &WithdrawalHelper{
+	return &OptimismPortal2Helper{
 		optimismPortalAddress: optimismPortalAddress,
 
-		l1Client:            l1Client,
-		l2Client:            l2Client,
-		optimismPortal2:     optimismPortal,
-		l2ToL1MessagePasser: l2ToL1MessagePasser,
-
-		ctx: ctx,
+		l1Client:        l1Client,
+		optimismPortal2: optimismPortal,
+		ctx:             ctx,
 	}, nil
 }
 
-func (op *WithdrawalHelper) WithdrawalExistsOnL2(withdrawalHash [32]byte) (bool, error) {
-	return op.l2ToL1MessagePasser.L2ToL1MessagePasserCaller.SentMessages(nil, withdrawalHash)
+func (op *OptimismPortal2Helper) IsGameBlacklisted(disputeGame *DisputeGame) (bool, error) {
+
+	isBlacklisted, err := op.optimismPortal2.DisputeGameBlacklist(nil, disputeGame.disputeGameProxyAddress)
+	if err != nil {
+		return false, fmt.Errorf("failed to get dispute game blacklist status: %w", err)
+	}
+
+	return isBlacklisted, err
 }
 
-func (op *WithdrawalHelper) GetOptimismPortal2() *l1.OptimismPortal2 {
-	return op.optimismPortal2
-}
+func (op *OptimismPortal2Helper) GetDisputeGameFactoryAddress() (common.Address, error) {
 
-func (op *WithdrawalHelper) GetProvenWithdrawalsEventsIterartor(start uint64, end *uint64) (*l1.OptimismPortal2WithdrawalProvenIterator, error) {
+	disputeGameFactoryAddress, err := op.optimismPortal2.DisputeGameFactory(nil)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("failed to get dispute game factory address: %w", err)
+	}
+	return disputeGameFactoryAddress, nil
+}
+func (op *OptimismPortal2Helper) GetProvenWithdrawalsEventsIterartor(start uint64, end *uint64) (*l1.OptimismPortal2WithdrawalProvenIterator, error) {
 
 	filterOpts := &bind.FilterOpts{Context: op.ctx, Start: start, End: end}
 	iterator, err := op.optimismPortal2.FilterWithdrawalProven(filterOpts, nil, nil, nil)
@@ -83,7 +81,7 @@ func (op *WithdrawalHelper) GetProvenWithdrawalsEventsIterartor(start uint64, en
 	return iterator, nil
 }
 
-func (op *WithdrawalHelper) GetSumittedProofsDataFromWithdrawalhash(withdrawalHash [32]byte) ([]SubmittedProofData, error) {
+func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhash(withdrawalHash [32]byte) ([]SubmittedProofData, error) {
 
 	numProofSubmitters, err := op.optimismPortal2.NumProofSubmitters(nil, withdrawalHash)
 	if err != nil {
