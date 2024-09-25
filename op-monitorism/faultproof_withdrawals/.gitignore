@@ -1,2 +1,2 @@
-*_test.go
-monitor_extra.go
+utilities
+!.env.*.example
