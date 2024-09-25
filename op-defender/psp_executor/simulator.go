@@ -52,6 +52,17 @@ func (e *DefenderExecutor) FetchAndSimulateAtBlock(ctx context.Context, d *Defen
 	return simulation, nil
 }
 
+// GetBalance will get the balance of the senderAddress
+func (d *Defender) GetBalance(ctx context.Context) error {
+	balance, err := d.l1Client.BalanceAt(ctx, d.senderAddress, nil)
+	if err != nil {
+		return err
+	}
+	balanceInEther := weiToEther(balance)
+	d.balanceSenderAddress.WithLabelValues(d.senderAddress.Hex()).Set(balanceInEther)
+	return nil
+}
+
 // GetNonceAndFetchAndSimulateAtBlock will get the nonce of the operationSafe onchain and then fetch the PSP from a file and simulate it onchain at the last block.
 func (d *Defender) GetNonceAndFetchAndSimulateAtBlock(ctx context.Context) error {
 	blocknumber, err := d.l1Client.BlockNumber(ctx) // Get the latest block number.
