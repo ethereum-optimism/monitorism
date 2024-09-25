@@ -14,21 +14,22 @@ import (
 type SubmittedProofData struct {
 	proofSubmitterAddress     common.Address
 	withdrawalHash            [32]byte
-	proofSubmitterIndex       uint64
 	disputeGameProxyAddress   common.Address
 	disputeGameProxyTimestamp uint64
 }
 
-type WithdrawalEvent struct {
+type WithdrawalProvenExtension1Event struct {
 	WithdrawalHash [32]byte
-	BlockNumber    uint64
-	TxHash         common.Hash
+	ProofSubmitter common.Address
+	Raw            Raw
+}
+
+type WithdrawalProvenEvent struct {
+	WithdrawalHash [32]byte
+	Raw            Raw
 }
 
 type OptimismPortal2Helper struct {
-	//strings
-	optimismPortalAddress common.Address
-
 	//objects
 	l1Client        *ethclient.Client
 	optimismPortal2 *l1.OptimismPortal2
@@ -44,17 +45,15 @@ func NewOptimismPortal2Helper(ctx context.Context, l1Client *ethclient.Client, o
 	}
 
 	return &OptimismPortal2Helper{
-		optimismPortalAddress: optimismPortalAddress,
-
 		l1Client:        l1Client,
 		optimismPortal2: optimismPortal,
 		ctx:             ctx,
 	}, nil
 }
 
-func (op *OptimismPortal2Helper) IsGameBlacklisted(disputeGame *DisputeGame) (bool, error) {
+func (op *OptimismPortal2Helper) IsGameBlacklisted(disputeGameProxy *FaultDisputeGameProxy) (bool, error) {
 
-	isBlacklisted, err := op.optimismPortal2.DisputeGameBlacklist(nil, disputeGame.disputeGameProxyAddress)
+	isBlacklisted, err := op.optimismPortal2.DisputeGameBlacklist(nil, disputeGameProxy.DisputeGameData.ProxyAddress)
 	if err != nil {
 		return false, fmt.Errorf("failed to get dispute game blacklist status: %w", err)
 	}
@@ -70,6 +69,7 @@ func (op *OptimismPortal2Helper) GetDisputeGameFactoryAddress() (common.Address,
 	}
 	return disputeGameFactoryAddress, nil
 }
+
 func (op *OptimismPortal2Helper) GetProvenWithdrawalsEventsIterartor(start uint64, end *uint64) (*l1.OptimismPortal2WithdrawalProvenIterator, error) {
 
 	filterOpts := &bind.FilterOpts{Context: op.ctx, Start: start, End: end}
@@ -79,6 +79,64 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsEventsIterartor(start uint6
 	}
 
 	return iterator, nil
+}
+
+func (op *OptimismPortal2Helper) GetProvenWithdrawalsEvents(start uint64, end *uint64) ([]WithdrawalProvenEvent, error) {
+
+	iterator, err := op.GetProvenWithdrawalsEventsIterartor(start, end)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
+	}
+
+	events := make([]WithdrawalProvenEvent, 0)
+	for iterator.Next() {
+		event := iterator.Event
+		events = append(events, WithdrawalProvenEvent{
+			WithdrawalHash: event.WithdrawalHash,
+			Raw: Raw{
+				BlockNumber: event.Raw.BlockNumber,
+				TxHash:      event.Raw.TxHash,
+			},
+		})
+	}
+
+	return events, nil
+
+}
+
+func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1EventsIterartor(start uint64, end *uint64) (*l1.OptimismPortal2WithdrawalProvenExtension1Iterator, error) {
+
+	filterOpts := &bind.FilterOpts{Context: op.ctx, Start: start, End: end}
+	iterator, err := op.optimismPortal2.FilterWithdrawalProvenExtension1(filterOpts, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to filter withdrawal proven start_block:%d end_block:%d error:%w", start, *end, err)
+	}
+
+	return iterator, nil
+}
+
+func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1Events(start uint64, end *uint64) ([]WithdrawalProvenExtension1Event, error) {
+
+	iterator, err := op.GetProvenWithdrawalsExtension1EventsIterartor(start, end)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
+	}
+
+	events := make([]WithdrawalProvenExtension1Event, 0)
+	for iterator.Next() {
+		event := iterator.Event
+		events = append(events, WithdrawalProvenExtension1Event{
+			WithdrawalHash: event.WithdrawalHash,
+			ProofSubmitter: event.ProofSubmitter,
+			Raw: Raw{
+				BlockNumber: event.Raw.BlockNumber,
+				TxHash:      event.Raw.TxHash,
+			},
+		})
+	}
+
+	return events, nil
+
 }
 
 func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhash(withdrawalHash [32]byte) ([]SubmittedProofData, error) {
@@ -103,7 +161,6 @@ func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhash(withdra
 		withdrawals[i] = SubmittedProofData{
 			proofSubmitterAddress:     proofSubmitterAddress,
 			withdrawalHash:            withdrawalHash,
-			proofSubmitterIndex:       uint64(i),
 			disputeGameProxyAddress:   gameProxyStruct.DisputeGameProxy,
 			disputeGameProxyTimestamp: gameProxyStruct.Timestamp,
 		}
@@ -111,4 +168,19 @@ func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhash(withdra
 	}
 
 	return withdrawals, nil
+}
+
+func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
+
+	gameProxyStruct, err := op.optimismPortal2.ProvenWithdrawals(nil, withdrawalHash, proofSubmitterAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x error:%w", withdrawalHash, proofSubmitterAddress, err)
+	}
+
+	return &SubmittedProofData{
+		proofSubmitterAddress:     proofSubmitterAddress,
+		withdrawalHash:            withdrawalHash,
+		disputeGameProxyAddress:   gameProxyStruct.DisputeGameProxy,
+		disputeGameProxyTimestamp: gameProxyStruct.Timestamp,
+	}, nil
 }

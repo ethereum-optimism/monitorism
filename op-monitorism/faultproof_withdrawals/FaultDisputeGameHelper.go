@@ -12,15 +12,18 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 )
 
-type DisputeGame struct {
-	disputeGameProxyAddress common.Address
-	//game object
-	faultDisputeGame *dispute.FaultDisputeGame
+type FaultDisputeGameProxy struct {
+	FaultDisputeGame *dispute.FaultDisputeGame
+	DisputeGameData  *DisputeGameData
+}
 
+type DisputeGameData struct {
+	ProxyAddress common.Address
 	// game data
-	rootClaim     [32]byte
-	l2blockNumber *big.Int
-	l2ChainID     *big.Int
+	RootClaim     [32]byte
+	L2blockNumber *big.Int
+	L2ChainID     *big.Int
+	Status        GameStatus
 }
 
 type FaultDisputeGameHelper struct {
@@ -59,36 +62,12 @@ func (gs GameStatus) String() string {
 	}
 }
 
-// Define the GameStatus type
-type GameCorrectness uint8
-
-// Define constants for the GameStatus using iota
-const (
-	UNKNOWN GameCorrectness = iota
-	CORRECT
-	INCORRECT
-)
-
-// Implement the Stringer interface for pretty printing
-func (gs GameCorrectness) String() string {
-	switch gs {
-	case UNKNOWN:
-		return "UNKNOWN"
-	case CORRECT:
-		return "CORRECT"
-	case INCORRECT:
-		return "INCORRECT"
-	default:
-		return "UNKNOWN"
-	}
-}
-
-func (d DisputeGame) String() string {
+func (d DisputeGameData) String() string {
 	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s ]",
-		d.disputeGameProxyAddress,
-		common.BytesToHash(d.rootClaim[:]).Hex(),
-		d.l2blockNumber.String(),
-		d.l2ChainID.String(),
+		d.ProxyAddress,
+		common.BytesToHash(d.RootClaim[:]).Hex(),
+		d.L2blockNumber.String(),
+		d.L2ChainID.String(),
 	)
 }
 
@@ -106,7 +85,7 @@ func NewFaultDisputeGameHelper(ctx context.Context, l1Client *ethclient.Client) 
 	}, nil
 }
 
-func (op *FaultDisputeGameHelper) GetDisputeGameFromAddress(disputeGameProxyAddress common.Address) (*DisputeGame, error) {
+func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (*FaultDisputeGameProxy, error) {
 
 	ret, found := op.gameCache.Get(disputeGameProxyAddress)
 	if !found {
@@ -130,41 +109,34 @@ func (op *FaultDisputeGameHelper) GetDisputeGameFromAddress(disputeGameProxyAddr
 			return nil, fmt.Errorf("failed to get l2 chain id for game: %w", err)
 		}
 
-		ret = &DisputeGame{
-			disputeGameProxyAddress: disputeGameProxyAddress,
-			rootClaim:               rootClaim,
-			l2blockNumber:           l2blockNumber,
-			l2ChainID:               l2ChainID,
-			faultDisputeGame:        faultDisputeGame,
+		gameStatus, err := faultDisputeGame.Status(nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get game status: %w", err)
+		}
+
+		ret = &FaultDisputeGameProxy{
+			DisputeGameData: &DisputeGameData{
+				ProxyAddress:  disputeGameProxyAddress,
+				RootClaim:     rootClaim,
+				L2blockNumber: l2blockNumber,
+				L2ChainID:     l2ChainID,
+				Status:        GameStatus(gameStatus),
+			},
+			FaultDisputeGame: faultDisputeGame,
 		}
 
 		op.gameCache.Add(disputeGameProxyAddress, ret)
 
 	}
 
-	return ret.(*DisputeGame), nil
+	return ret.(*FaultDisputeGameProxy), nil
 }
 
-func (op *FaultDisputeGameHelper) IsGameStateINPROGRESS(disputeGame *DisputeGame) (bool, error) {
-	gameStatus, err := disputeGame.faultDisputeGame.Status(nil)
+func (op *FaultDisputeGameProxy) RefreshState() error {
+	gameStatus, err := op.FaultDisputeGame.Status(nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to get game status: %w", err)
+		return fmt.Errorf("failed to get game status: %w", err)
 	}
-	return GameStatus(gameStatus) == IN_PROGRESS, nil
-}
-
-func (op *FaultDisputeGameHelper) IsGameStateCHALLENGER_WINS(disputeGame *DisputeGame) (bool, error) {
-	gameStatus, err := disputeGame.faultDisputeGame.Status(nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to get game status: %w", err)
-	}
-	return GameStatus(gameStatus) == CHALLENGER_WINS, nil
-}
-
-func (op *FaultDisputeGameHelper) IsGameStateDEFENDER_WINS(disputeGame *DisputeGame) (bool, error) {
-	gameStatus, err := disputeGame.faultDisputeGame.Status(nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to get game status: %w", err)
-	}
-	return GameStatus(gameStatus) == DEFENDER_WINS, nil
+	op.DisputeGameData.Status = GameStatus(gameStatus)
+	return nil
 }

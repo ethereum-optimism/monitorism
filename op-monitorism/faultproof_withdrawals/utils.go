@@ -7,12 +7,18 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/joho/godotenv"
 )
+
+type Raw struct {
+	BlockNumber uint64
+	TxHash      common.Hash
+}
 
 type L2NodeHelper struct {
 	//objects
