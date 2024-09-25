@@ -25,6 +25,7 @@ var (
 	l1GethClient           *ethclient.Client
 	optimismPortal2Helper  *OptimismPortal2Helper
 	faultDisputeGameHelper *FaultDisputeGameHelper
+	l2NodeHelper           *L2NodeHelper
 )
 
 // TestMain sets up the environment and necessary connections before running the tests
@@ -35,6 +36,7 @@ func TestMain(m *testing.M) {
 	}
 
 	L1GethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL")
+	L2OpNodeURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL")
 	portalAddr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL")
 	OptimismPortalAddress := common.HexToAddress(portalAddr)
 
@@ -42,6 +44,10 @@ func TestMain(m *testing.M) {
 	l1GethClient, err = ethclient.Dial(L1GethURL)
 	if err != nil {
 		panic("Failed to connect to L1 Geth client: " + err.Error())
+	}
+	l2OpNodeClient, err := ethclient.Dial(L2OpNodeURL)
+	if err != nil {
+		panic("Failed to connect to L2 Optimism Node client: " + err.Error())
 	}
 
 	optimismPortal2Helper, err = NewOptimismPortal2Helper(ctx, l1GethClient, OptimismPortalAddress)
@@ -51,6 +57,10 @@ func TestMain(m *testing.M) {
 	faultDisputeGameHelper, err = NewFaultDisputeGameHelper(ctx, l1GethClient)
 	if err != nil {
 		panic("Failed to initialize FaultDisputeGameHelper: " + err.Error())
+	}
+	l2NodeHelper, err = NewL2NodeHelper(ctx, l2OpNodeClient)
+	if err != nil {
+		panic("Failed to initialize L2NodeHelper: " + err.Error())
 	}
 
 	// Run the tests
@@ -102,7 +112,7 @@ func TestGetProvenWithdrawalsEvents(t *testing.T) {
 	require.Equal(t, expectedEvent, events[0], "Expected event not found")
 }
 
-func TestGetDisputeGameFromAddress(t *testing.T) {
+func TestGetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(t *testing.T) {
 
 	// https://sepolia.etherscan.io/tx/0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132
 	withdrawalEvent := WithdrawalProvenExtension1Event{
@@ -131,11 +141,72 @@ func TestGetDisputeGameFromAddress(t *testing.T) {
 		L2blockNumber: big.NewInt(12030787),
 		L2ChainID:     big.NewInt(11155420),
 		Status:        DEFENDER_WINS,
+		CreatedAt:     1715864520,
+		ResolvedAt:    1716166980,
 	}
+
+	expectedTrustedL2OutputRoot := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
+	trustedL2OutputRoot, err := l2NodeHelper.GetOutputRootFromTrustedL2Node(expectedDisputeGameData.L2blockNumber)
+	require.NoError(t, err)
+	require.Equal(t, true, trustedL2OutputRoot == expectedTrustedL2OutputRoot, "Expected root claim not found")
+
 	disputeGameProxy, error := faultDisputeGameHelper.GetDisputeGameProxyFromAddress(sumittedProofsData.disputeGameProxyAddress)
 	require.NoError(t, error)
 	disputeGameData := disputeGameProxy.DisputeGameData
-
 	require.Equal(t, expectedDisputeGameData, disputeGameData, "Expected Dispute Game not found")
+
+	require.Equal(t, true, disputeGameData.RootClaim == trustedL2OutputRoot, "Expected root claim not found")
+
+}
+
+func TestGetOutputRootFromTrustedL2Node(t *testing.T) {
+
+	//https://sepolia.etherscan.io/address/0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7#readContract
+	expectedDisputeGameData := &DisputeGameData{
+		ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
+		RootClaim:     common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597"),
+		L2blockNumber: big.NewInt(12030787),
+		L2ChainID:     big.NewInt(11155420),
+		Status:        DEFENDER_WINS,
+		CreatedAt:     1715864520,
+		ResolvedAt:    1716166980,
+	}
+
+	expectedTrustedL2OutputRoot := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
+	trustedL2OutputRoot, err := l2NodeHelper.GetOutputRootFromTrustedL2Node(expectedDisputeGameData.L2blockNumber)
+	require.NoError(t, err)
+	require.Equal(t, true, trustedL2OutputRoot == expectedTrustedL2OutputRoot, "Expected root claim not found")
+
+	disputeGameProxy, error := faultDisputeGameHelper.GetDisputeGameProxyFromAddress(expectedDisputeGameData.ProxyAddress)
+	require.NoError(t, error)
+	disputeGameData := disputeGameProxy.DisputeGameData
+	require.Equal(t, expectedDisputeGameData, disputeGameData, "Expected Dispute Game not found")
+
+	require.Equal(t, true, disputeGameData.RootClaim == trustedL2OutputRoot, "Expected root claim not found")
+
+}
+
+func TestGetDisputeGameProxyFromAddress(t *testing.T) {
+
+	//https://sepolia.etherscan.io/address/0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7#readContract
+	expectedDisputeGameData := &DisputeGameData{
+		ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
+		RootClaim:     common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597"),
+		L2blockNumber: big.NewInt(12030787),
+		L2ChainID:     big.NewInt(11155420),
+		Status:        DEFENDER_WINS,
+		CreatedAt:     1715864520,
+		ResolvedAt:    1716166980,
+	}
+
+	//block https://sepolia-optimism.etherscan.io/block/12030787
+	expectedTrustedL2OutputRoot := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
+
+	disputeGameProxy, error := faultDisputeGameHelper.GetDisputeGameProxyFromAddress(expectedDisputeGameData.ProxyAddress)
+	require.NoError(t, error)
+	disputeGameData := disputeGameProxy.DisputeGameData
+	require.Equal(t, expectedDisputeGameData, disputeGameData, "Expected Dispute Game not found")
+
+	require.Equal(t, true, disputeGameData.RootClaim == expectedTrustedL2OutputRoot, "Expected root claim not found")
 
 }

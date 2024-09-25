@@ -24,6 +24,8 @@ type DisputeGameData struct {
 	L2blockNumber *big.Int
 	L2ChainID     *big.Int
 	Status        GameStatus
+	CreatedAt     uint64
+	ResolvedAt    uint64
 }
 
 type FaultDisputeGameHelper struct {
@@ -63,11 +65,14 @@ func (gs GameStatus) String() string {
 }
 
 func (d DisputeGameData) String() string {
-	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s ]",
+	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s status=%v createdAt=%v  resolvedAt=%v ]",
 		d.ProxyAddress,
 		common.BytesToHash(d.RootClaim[:]).Hex(),
 		d.L2blockNumber.String(),
 		d.L2ChainID.String(),
+		d.Status,
+		Timestamp(d.CreatedAt),
+		Timestamp(d.ResolvedAt),
 	)
 }
 
@@ -114,6 +119,16 @@ func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProx
 			return nil, fmt.Errorf("failed to get game status: %w", err)
 		}
 
+		createdAt, err := faultDisputeGame.CreatedAt(nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get game created at: %w", err)
+		}
+
+		resolvedAt, err := faultDisputeGame.ResolvedAt(nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get game resolved at: %w", err)
+		}
+
 		ret = &FaultDisputeGameProxy{
 			DisputeGameData: &DisputeGameData{
 				ProxyAddress:  disputeGameProxyAddress,
@@ -121,6 +136,8 @@ func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProx
 				L2blockNumber: l2blockNumber,
 				L2ChainID:     l2ChainID,
 				Status:        GameStatus(gameStatus),
+				CreatedAt:     createdAt,
+				ResolvedAt:    resolvedAt,
 			},
 			FaultDisputeGame: faultDisputeGame,
 		}
@@ -138,5 +155,11 @@ func (op *FaultDisputeGameProxy) RefreshState() error {
 		return fmt.Errorf("failed to get game status: %w", err)
 	}
 	op.DisputeGameData.Status = GameStatus(gameStatus)
+
+	resolvedAt, err := op.FaultDisputeGame.ResolvedAt(nil)
+	if err != nil {
+		return fmt.Errorf("failed to get game resolved at: %w", err)
+	}
+	op.DisputeGameData.ResolvedAt = resolvedAt
 	return nil
 }

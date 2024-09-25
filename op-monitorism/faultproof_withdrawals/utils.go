@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -20,23 +21,30 @@ type Raw struct {
 	TxHash      common.Hash
 }
 
+type Timestamp uint64
+
+func (timestamp Timestamp) String() string {
+	t := time.Unix(int64(timestamp), 0)
+	return t.Format("2006-01-02 15:04:05 MST")
+}
+
 type L2NodeHelper struct {
 	//objects
-	l2Client          *ethclient.Client
+	l2OpNodeClient    *ethclient.Client
 	rpc_l2Client      *rpc.Client
 	ctx               context.Context
 	l2OutputRootCache *lru.Cache
 }
 
-func NewL2NodeHelper(ctx context.Context, l2Client *ethclient.Client) (*L2NodeHelper, error) {
+func NewL2NodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client) (*L2NodeHelper, error) {
 	l2OutputRootCache, err := lru.New(1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache: %w", err)
 	}
-	rpc_l2Client := l2Client.Client()
+	rpc_l2Client := l2OpNodeClient.Client()
 
 	return &L2NodeHelper{
-		l2Client:          l2Client,
+		l2OpNodeClient:    l2OpNodeClient,
 		rpc_l2Client:      rpc_l2Client,
 		ctx:               ctx,
 		l2OutputRootCache: l2OutputRootCache,
