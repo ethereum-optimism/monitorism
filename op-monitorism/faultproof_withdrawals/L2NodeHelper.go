@@ -40,7 +40,6 @@ func (op *L2NodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) (
 
 	ret, found := op.l2OutputRootCache.Get(l2blockNumber)
 	if !found {
-		// log.Info("Cache Miss", "l2blockNumber", l2blockNumber)
 
 		var result OutputResponse
 		l2blockNumberHex := hexutil.EncodeBig(l2blockNumber)
