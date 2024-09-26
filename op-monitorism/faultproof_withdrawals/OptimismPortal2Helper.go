@@ -37,6 +37,18 @@ type OptimismPortal2Helper struct {
 	ctx context.Context
 }
 
+func (e *WithdrawalProvenExtension1Event) String() string {
+	return fmt.Sprintf("WithdrawalHash: %x, ProofSubmitter: %v, Raw: %v", e.WithdrawalHash, e.ProofSubmitter, e.Raw)
+}
+
+func (e *WithdrawalProvenEvent) String() string {
+	return fmt.Sprintf("WithdrawalHash: %x, Raw: %v", e.WithdrawalHash, e.Raw)
+}
+
+func (p *SubmittedProofData) String() string {
+	return fmt.Sprintf("proofSubmitterAddress: %x, withdrawalHash: %x, disputeGameProxyAddress: %x, disputeGameProxyTimestamp: %d", p.proofSubmitterAddress, p.withdrawalHash, p.disputeGameProxyAddress, p.disputeGameProxyTimestamp)
+}
+
 func NewOptimismPortal2Helper(ctx context.Context, l1Client *ethclient.Client, optimismPortalAddress common.Address) (*OptimismPortal2Helper, error) {
 
 	optimismPortal, err := l1.NewOptimismPortal2(optimismPortalAddress, l1Client)

@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -31,13 +30,8 @@ type State struct {
 
 	nodeConnectionFailures uint64
 
-	forgeriesWithdrawalsEvents       []ProposalWithdrawalsEvent
-	invalidProposalWithdrawalsEvents []ProposalWithdrawalsEvent
-}
-
-type ProposalWithdrawalsEvent struct {
-	DisputeGame *FaultDisputeGameProxy
-	Event       *WithdrawalProvenExtension1Event
+	forgeriesWithdrawalsEvents       []EnrichedWithdrawalEvent
+	invalidProposalWithdrawalsEvents []EnrichedWithdrawalEvent
 }
 
 type Metrics struct {
@@ -67,6 +61,7 @@ type Monitor struct {
 	optimismPortal2Helper     OptimismPortal2Helper
 	l2ToL1MessagePasserHelper L2ToL1MessagePasserHelper
 	l2NodeHelper              L2NodeHelper
+	withdrawalValidator       WithdrawalValidator
 
 	state   State
 	metrics Metrics
@@ -251,6 +246,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to create l2 node helper: %w", err)
 	}
 
+	withdrawalValidator := NewWithdrawalValidator(ctx, optimismPortal2Helper, l2NodeHelper, l2ToL1MessagePasserHelper, faultDisputeGameHelper)
+
 	latestL1Height, err := l1GethClient.BlockNumber(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query latest block number: %w", err)
@@ -287,6 +284,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		optimismPortal2Helper:     *optimismPortal2Helper,
 		l2ToL1MessagePasserHelper: *l2ToL1MessagePasserHelper,
 		l2NodeHelper:              *l2NodeHelper,
+		withdrawalValidator:       *withdrawalValidator,
 
 		maxBlockRange: cfg.EventBlockRange,
 
@@ -337,20 +335,20 @@ func (m *Monitor) Run(ctx context.Context) {
 		return
 	}
 
-	var newInvalidProposalWithdrawalsEvents []ProposalWithdrawalsEvent = make([]ProposalWithdrawalsEvent, 0)
+	// var newInvalidProposalWithdrawalsEvents []EnrichedWithdrawalEvent = make([]EnrichedWithdrawalEvent, 0)
 
-	for _, proposalWithdrawalsEvent := range m.state.invalidProposalWithdrawalsEvents {
+	// for _, proposalWithdrawalsEvent := range m.state.invalidProposalWithdrawalsEvents {
 
-		proposalWithdrawalsEventToProcess, err := m.ProcessInvalidWithdrawal(&proposalWithdrawalsEvent)
-		if err != nil {
-			m.log.Error("failed to process event", "error", err)
-			return
-		} else if proposalWithdrawalsEventToProcess != nil {
-			newInvalidProposalWithdrawalsEvents = append(newInvalidProposalWithdrawalsEvents, *proposalWithdrawalsEventToProcess)
-		}
-	}
+	// 	proposalWithdrawalsEventToProcess, err := m.ProcessInvalidWithdrawal(&proposalWithdrawalsEvent)
+	// 	if err != nil {
+	// 		m.log.Error("failed to process event", "error", err)
+	// 		return
+	// 	} else if proposalWithdrawalsEventToProcess != nil {
+	// 		newInvalidProposalWithdrawalsEvents = append(newInvalidProposalWithdrawalsEvents, *proposalWithdrawalsEventToProcess)
+	// 	}
+	// }
 
-	m.state.invalidProposalWithdrawalsEvents = newInvalidProposalWithdrawalsEvents
+	// m.state.invalidProposalWithdrawalsEvents = newInvalidProposalWithdrawalsEvents
 
 	events, err := m.optimismPortal2Helper.GetProvenWithdrawalsExtension1Events(start, &stop)
 	if err != nil {
@@ -359,12 +357,16 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 
 	for event := range events {
-		proposalWithdrawalsEventToProcess, err := m.ProcessEvent(&events[event])
+		enrichedWithdrawalEvent, err := m.withdrawalValidator.GetEnrichedWithdrawalEvent(&events[event])
 		if err != nil {
-			m.log.Error("failed to process event", "error", err)
+			m.state.nodeConnectionFailures++
+			m.log.Error("failed to get enriched withdrawal event", "error", err)
 			return
-		} else if proposalWithdrawalsEventToProcess != nil {
-			m.state.invalidProposalWithdrawalsEvents = append(m.state.invalidProposalWithdrawalsEvents, *proposalWithdrawalsEventToProcess)
+		}
+		m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
+		addToInvalidProposalWithdrawalsEvents := m.UpdateWithdrawalState(enrichedWithdrawalEvent)
+		if addToInvalidProposalWithdrawalsEvents != nil {
+			m.state.invalidProposalWithdrawalsEvents = append(m.state.invalidProposalWithdrawalsEvents, *addToInvalidProposalWithdrawalsEvents)
 		}
 	}
 
@@ -377,181 +379,126 @@ func (m *Monitor) Run(ctx context.Context) {
 
 }
 
-type ValidateProofWithdrawalState uint8
+func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdrawalEvent) *EnrichedWithdrawalEvent {
 
-const (
-	INVALID_PROOF_FORGERY_DETECTED ValidateProofWithdrawalState = iota
-	INVALID_PROPOSAL_FORGERY_DETECTED
-	INVALID_PROPOSAL_INPROGRESS
-	INVALID_PROPOSAL_CORRECTLY_RESOLVED
-	VALID_PROOF
-)
-
-func (m *Monitor) ValidateProofWithdrawal(disputeGameData *DisputeGameData, l2BlockOutputRoot [32]byte, withdrawalHashPresentOnL2 bool) ValidateProofWithdrawalState {
-
-	validGameRootClaim := disputeGameData.RootClaim == l2BlockOutputRoot
-
-	if validGameRootClaim {
-		// Assuming the l1 and l2 node are not malicious. We have a valid Game Root Claim.
-		if withdrawalHashPresentOnL2 {
-			// In this case all the information matches. The withdrawal is valid.
-			return VALID_PROOF
-		} else {
-			return INVALID_PROOF_FORGERY_DETECTED
-		}
-	} else {
-		if disputeGameData.Status == IN_PROGRESS {
-			// The game is still in progress. We can't make a decision yet.
-			return INVALID_PROPOSAL_INPROGRESS
-		} else if disputeGameData.Status == DEFENDER_WINS {
-			// The game is resolved and the defender won. This is a forgery.
-			return INVALID_PROPOSAL_FORGERY_DETECTED
-		} else {
-			// The game is resolved and the challenger won. The withdrawal is not valid.
-			return INVALID_PROPOSAL_CORRECTLY_RESOLVED
-		}
-	}
-}
-func (m *Monitor) ManageValidateProofWithdrawal(disputeGameData *DisputeGameData, l2BlockOutputRoot [32]byte, withdrawalHashPresentOnL2 bool, proposalWithdrawalsEvent ProposalWithdrawalsEvent) *ProposalWithdrawalsEvent {
-
-	result := m.ValidateProofWithdrawal(disputeGameData, l2BlockOutputRoot, withdrawalHashPresentOnL2)
+	result := m.withdrawalValidator.ValidateWithdrawal(enrichedWithdrawalEvent)
 
 	switch result {
+	case PROOF_ON_BLACKLISTED_GAME:
+		m.log.Info("game is blacklisted,removing from invalidProposalWithdrawalsEvents list", "game", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
+		// m.state.blacklistedGames++
+		return nil
 	case INVALID_PROOF_FORGERY_DETECTED:
 		m.log.Error("withdrawal is NOT valid, forgery detected",
-			"WithdrawalHash", common.BytesToHash(proposalWithdrawalsEvent.Event.WithdrawalHash[:]).Hex(),
-			"eventTx", proposalWithdrawalsEvent.Event.Raw.TxHash,
-			"eventBlock", fmt.Sprintf("%d", proposalWithdrawalsEvent.Event.Raw.BlockNumber),
-			"game", proposalWithdrawalsEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
+			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.isDetectingForgeries++
-		m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, proposalWithdrawalsEvent)
+		m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, *enrichedWithdrawalEvent)
 	case INVALID_PROPOSAL_FORGERY_DETECTED:
 		m.log.Error("withdrawal is NOT valid, forgery detected",
-			"WithdrawalHash", common.BytesToHash(proposalWithdrawalsEvent.Event.WithdrawalHash[:]).Hex(),
-			"eventTx", proposalWithdrawalsEvent.Event.Raw.TxHash,
-			"eventBlock", fmt.Sprintf("%d", proposalWithdrawalsEvent.Event.Raw.BlockNumber),
-			"game", proposalWithdrawalsEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
+			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.isDetectingForgeries++
-		m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, proposalWithdrawalsEvent)
+		m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, *enrichedWithdrawalEvent)
 	case INVALID_PROPOSAL_INPROGRESS:
 		m.log.Warn("game is still in progress",
-			"WithdrawalHash", common.BytesToHash(proposalWithdrawalsEvent.Event.WithdrawalHash[:]).Hex(),
-			"eventTx", proposalWithdrawalsEvent.Event.Raw.TxHash,
-			"eventBlock", fmt.Sprintf("%d", proposalWithdrawalsEvent.Event.Raw.BlockNumber),
-			"game", proposalWithdrawalsEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
-		return &proposalWithdrawalsEvent
+			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		return enrichedWithdrawalEvent
 	case INVALID_PROPOSAL_CORRECTLY_RESOLVED:
 		m.log.Info("withdrawal was correctly resolved",
-			"WithdrawalHash", common.BytesToHash(proposalWithdrawalsEvent.Event.WithdrawalHash[:]).Hex(),
-			"eventTx", proposalWithdrawalsEvent.Event.Raw.TxHash,
-			"eventBlock", fmt.Sprintf("%d", proposalWithdrawalsEvent.Event.Raw.BlockNumber),
-			"game", proposalWithdrawalsEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
+			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.withdrawalsValidated++
 	case VALID_PROOF:
-		m.log.Info("withdrawal is valid",
-			"WithdrawalHash", common.BytesToHash(proposalWithdrawalsEvent.Event.WithdrawalHash[:]).Hex(),
-			"eventTx", proposalWithdrawalsEvent.Event.Raw.TxHash,
-			"eventBlock", fmt.Sprintf("%d", proposalWithdrawalsEvent.Event.Raw.BlockNumber),
-			"game", proposalWithdrawalsEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
+		m.log.Info("withdrawal is valid", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.withdrawalsValidated++
 	}
 	return nil
 }
 
-// ProcessEvent
-// For a given event:
-// Retrieve Dispute Games associated with this withdrawal event:
-//
-//	Calls getDisputeGamesFromWithdrawalhash(event.withdrawalhash) to obtain all dispute games associated with the withdrawal hash.
-//
-//
-//			Validate Game Root Claim:
-//				Calls isValidOutputRoot(rootClaim, l2BlockNumber) to check if the output root is valid.
-//			If Output Root is Valid:
-//				Check Withdrawal Existence on L2:
-//					Checks if the withdrawal hash exists in the sentMessages mapping of the L2ToL1MessagePasser contract on L2.
-//				If Withdrawal Exists:
-//					Logs that the withdrawal is valid.
-//					Increments the withdrawalsValidated metric.
-//				If Withdrawal Does Not Exist:
-//					Adds the withdrawal to invalidProofWithdrawals.
-//					Logs an error indicating a forgery was detected.
-//					Sets forgeryDetected to true.
-//			If Output Root is Invalid:
-//				Adds the withdrawal to invalidProposalWithdrawalsEvents.
-//				Logs a warning indicating an invalid proposal.
-//
-// Parameters:
-// - withdrawalEvent: A pointer to an OptimismPortal2WithdrawalProven event.
-//
-// Returns:
-// - error: An error if any step in the process fails, otherwise nil.
-func (m *Monitor) ProcessEvent(withdrawalEvent *WithdrawalProvenExtension1Event) (*ProposalWithdrawalsEvent, error) {
+// func (m *Monitor) ProcessEvent(withdrawalEvent *WithdrawalProvenExtension1Event) (*ProposalWithdrawalsEvent, error) {
 
-	m.log.Info("processing event:",
-		"WithdrawalHash", common.BytesToHash(withdrawalEvent.WithdrawalHash[:]).Hex(), "eventTx", withdrawalEvent.Raw.TxHash, "eventBlock", fmt.Sprintf("%d", withdrawalEvent.Raw.BlockNumber))
+// 	m.log.Info("processing event:",
+// 		"WithdrawalHash", common.BytesToHash(withdrawalEvent.WithdrawalHash[:]).Hex(), "eventTx", withdrawalEvent.Raw.TxHash, "eventBlock", fmt.Sprintf("%d", withdrawalEvent.Raw.BlockNumber))
 
-	m.state.processedProvenWithdrawalsExtension1Events++
-	disputeGameProxy, err := m.getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dispute games: %w", err)
-	}
-	m.state.processedGames++
+// 	m.state.processedProvenWithdrawalsExtension1Events++
+// 	disputeGameProxy, err := m.getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get dispute games: %w", err)
+// 	}
+// 	m.state.processedGames++
 
-	//extra safety check
-	if disputeGameProxy.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
-		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", disputeGameProxy.DisputeGameData.L2ChainID))
-	}
+// 	//extra safety check
+// 	if disputeGameProxy.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
+// 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", disputeGameProxy.DisputeGameData.L2ChainID))
+// 	}
 
-	l2BlockOutputRoot, err := m.l2NodeHelper.GetOutputRootFromTrustedL2Node(disputeGameProxy.DisputeGameData.L2blockNumber)
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate output root: %w", err)
-	}
+// 	l2BlockOutputRoot, err := m.l2NodeHelper.GetOutputRootFromTrustedL2Node(disputeGameProxy.DisputeGameData.L2blockNumber)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to validate output root: %w", err)
+// 	}
 
-	withdrawalExists, err := m.l2ToL1MessagePasserHelper.WithdrawalExistsOnL2(withdrawalEvent.WithdrawalHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check withdrawal existence on L2: %w", err)
-	}
+// 	withdrawalExists, err := m.l2ToL1MessagePasserHelper.WithdrawalExistsOnL2(withdrawalEvent.WithdrawalHash)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to check withdrawal existence on L2: %w", err)
+// 	}
 
-	proposalWithdrawalsEvent := ProposalWithdrawalsEvent{
-		DisputeGame: disputeGameProxy,
-		Event:       withdrawalEvent,
-	}
+// 	proposalWithdrawalsEvent := ProposalWithdrawalsEvent{
+// 		DisputeGame: disputeGameProxy,
+// 		Event:       withdrawalEvent,
+// 	}
 
-	return m.ManageValidateProofWithdrawal(disputeGameProxy.DisputeGameData, l2BlockOutputRoot, withdrawalExists, proposalWithdrawalsEvent), nil
+// 	blacklisted, err := m.optimismPortal2Helper.IsGameBlacklisted(disputeGameProxy)
+// 	if err != nil {
+// 		m.state.nodeConnectionFailures++
+// 		m.log.Error("failed to check if game is blacklisted", "error", err)
+// 		return nil, err
+// 	}
 
-}
+// 	if blacklisted {
+// 		m.log.Info("game is blacklisted,removing from invalidProposalWithdrawalsEvents list", "game", disputeGameProxy.DisputeGameData.ProxyAddress.Hex())
+// 		return nil, nil
+// 	}
 
-func (m *Monitor) ProcessInvalidWithdrawal(proposalWithdrawalsEvent *ProposalWithdrawalsEvent) (*ProposalWithdrawalsEvent, error) {
+// 	err = disputeGameProxy.RefreshState()
+// 	if err != nil {
+// 		m.state.nodeConnectionFailures++
+// 		m.log.Error("failed to refresh game state", "error", err)
+// 		return nil, err
+// 	}
 
-	m.log.Info("processing invalid proposal event:",
-		"WithdrawalHash", common.BytesToHash(proposalWithdrawalsEvent.Event.WithdrawalHash[:]).Hex(),
-		"eventTx", proposalWithdrawalsEvent.Event.Raw.TxHash,
-		"eventBlock", fmt.Sprintf("%d", proposalWithdrawalsEvent.Event.Raw.BlockNumber))
+// 	return m.ManageValidateProofWithdrawal(disputeGameProxy.DisputeGameData, l2BlockOutputRoot, withdrawalExists, proposalWithdrawalsEvent, blacklisted), nil
 
-	disputeGameProxy := proposalWithdrawalsEvent.DisputeGame
-	blacklisted, err := m.optimismPortal2Helper.IsGameBlacklisted(disputeGameProxy)
-	if err != nil {
-		m.state.nodeConnectionFailures++
-		m.log.Error("failed to check if game is blacklisted", "error", err)
-		return nil, err
-	}
+// }
 
-	if blacklisted {
-		m.log.Info("game is blacklisted,removing from invalidProposalWithdrawalsEvents list", "game", disputeGameProxy.DisputeGameData.ProxyAddress.Hex())
-		return nil, nil
-	}
+// func (m *Monitor) ProcessInvalidWithdrawal(proposalWithdrawalsEvent *ProposalWithdrawalsEvent) (*ProposalWithdrawalsEvent, error) {
 
-	//refresh state to make sure is the latest one we have on the game
-	err = disputeGameProxy.RefreshState()
-	if err != nil {
-		m.state.nodeConnectionFailures++
-		m.log.Error("failed to refresh game state", "error", err)
-		return nil, err
-	}
+// 	m.log.Info("processing invalid proposal event:",
+// 		"WithdrawalHash", common.BytesToHash(proposalWithdrawalsEvent.Event.WithdrawalHash[:]).Hex(),
+// 		"eventTx", proposalWithdrawalsEvent.Event.Raw.TxHash,
+// 		"eventBlock", fmt.Sprintf("%d", proposalWithdrawalsEvent.Event.Raw.BlockNumber))
 
-	return m.ManageValidateProofWithdrawal(disputeGameProxy.DisputeGameData, disputeGameProxy.DisputeGameData.RootClaim, false, *proposalWithdrawalsEvent), nil
-}
+// 	disputeGameProxy := proposalWithdrawalsEvent.DisputeGame
+
+// 	blacklisted, err := m.optimismPortal2Helper.IsGameBlacklisted(disputeGameProxy)
+// 	if err != nil {
+// 		m.state.nodeConnectionFailures++
+// 		m.log.Error("failed to check if game is blacklisted", "error", err)
+// 		return nil, err
+// 	}
+
+// 	if blacklisted {
+// 		m.log.Info("game is blacklisted,removing from invalidProposalWithdrawalsEvents list", "game", disputeGameProxy.DisputeGameData.ProxyAddress.Hex())
+// 		return nil, nil
+// 	}
+
+// 	//refresh state to make sure is the latest one we have on the game
+// 	err = disputeGameProxy.RefreshState()
+// 	if err != nil {
+// 		m.state.nodeConnectionFailures++
+// 		m.log.Error("failed to refresh game state", "error", err)
+// 		return nil, err
+// 	}
+
+// 	return m.ManageValidateProofWithdrawal(disputeGameProxy.DisputeGameData, disputeGameProxy.DisputeGameData.RootClaim, false, *proposalWithdrawalsEvent, blacklisted), nil
+// }
 
 // getDisputeGamesFromWithdrawalhash retrieves a list of DisputeGame instances associated with a given withdrawal hash.
 // It first fetches the submitted proofs data using the provided withdrawal hash, and then iterates over the data to
@@ -585,43 +532,6 @@ func (m *Monitor) getDisputeGamesFromWithdrawalhash(withdrawalHash [32]byte) ([]
 	}
 
 	return gameList, nil
-}
-
-// getDisputeGamesFromWithdrawalhashAndProofSubmitter retrieves a DisputeGame object
-// based on the provided withdrawal hash and proof submitter address.
-//
-// This function performs the following steps:
-//  1. Retrieves the proof data related to the withdrawal hash and proof submitter
-//     using the `GetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress` method.
-//  2. Extracts the dispute game proxy address from the retrieved proof data.
-//  3. Retrieves the corresponding DisputeGame object using the
-//     `GetDisputeGameFromAddress` method with the proxy address.
-//
-// If any errors occur during these steps, the connection failure counter
-// (`nodeConnectionFailures`) is incremented, and the error is returned.
-//
-// Parameters:
-// - withdrawalHash: A 32-byte array representing the withdrawal hash.
-// - proofSubmitter: The address of the submitter of the proof.
-//
-// Returns:
-// - A pointer to a DisputeGame object if successful.
-// - An error if any issue occurs while fetching the dispute game or proof data.
-func (m *Monitor) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (*FaultDisputeGameProxy, error) {
-
-	submittedProofData, error := m.optimismPortal2Helper.GetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
-	if error != nil {
-		m.state.nodeConnectionFailures++
-		return nil, fmt.Errorf("failed to get games addresses: %w", error)
-	}
-	disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress
-	disputeGame, error := m.faultDisputeGameHelper.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)
-	if error != nil {
-		m.state.nodeConnectionFailures++
-		return nil, fmt.Errorf("failed to get games: %w", error)
-	}
-
-	return disputeGame, nil
 }
 
 func (m *Monitor) Close(_ context.Context) error {

@@ -45,8 +45,13 @@ type GameStatus uint8
 
 // Define constants for the GameStatus using iota
 const (
+	// The game is currently in progress, and has not been resolved.
 	IN_PROGRESS GameStatus = iota
+
+	// The game has concluded, and the `rootClaim` was challenged successfully.
 	CHALLENGER_WINS
+
+	// The game has concluded, and the `rootClaim` could not be contested.
 	DEFENDER_WINS
 )
 
@@ -74,6 +79,10 @@ func (d DisputeGameData) String() string {
 		Timestamp(d.CreatedAt),
 		Timestamp(d.ResolvedAt),
 	)
+}
+
+func (p *FaultDisputeGameProxy) String() string {
+	return fmt.Sprintf("FaultDisputeGameProxy[ DisputeGameData=%v ]", p.DisputeGameData)
 }
 
 func NewFaultDisputeGameHelper(ctx context.Context, l1Client *ethclient.Client) (*FaultDisputeGameHelper, error) {
