@@ -79,6 +79,7 @@ type Defender struct {
 	operationSafe *bindings.Safe
 	// Metrics
 	latestValidPspNonce                     *prometheus.GaugeVec
+	balanceSenderAddress                    *prometheus.GaugeVec
 	latestSafeNonce                         *prometheus.GaugeVec
 	pspNonceValid                           *prometheus.GaugeVec
 	highestBlockNumber                      *prometheus.GaugeVec
@@ -266,7 +267,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	if err != nil {
 		return nil, fmt.Errorf("failed to return the privatekey: %w", err)
 	}
-	address, err := AddressFromPrivateKey(privatekey)
+	sender_address, err := AddressFromPrivateKey(privatekey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to return the address associated to the private key: %w", err)
 	}
@@ -279,7 +280,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 	log.Info("cfg.SuperChainConfigAddress", "cfg.SuperChainConfigAddress", cfg.SuperChainConfigAddress)
 	log.Info("cfg.operationSafe", "cfg.operationSafe", cfg.SafeAddress)
 	log.Info("cfg.chainID", "cfg.chainID", cfg.ChainID)
-	log.Info("defender address (from privatekey)", "address", address)
+	log.Info("defender address (from privatekey)", "address", sender_address)
 
 	log.Info("===============================================================================")
 
@@ -324,7 +325,7 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 		safeAddress:             cfg.SafeAddress,
 		operationSafe:           safe,
 		path:                    cfg.Path,
-		senderAddress:           address,
+		senderAddress:           sender_address,
 		blockDuration:           time.Duration(cfg.BlockDuration),
 		/** Metrics **/
 		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
@@ -342,6 +343,11 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 			Name:      "latestValidPspNonce",
 			Help:      "Latest valid PSP nonce",
 		}, []string{"latestValidPspNonce"}),
+		balanceSenderAddress: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "balanceSenderAddress",
+			Help:      "balance of the address that will execute the PSP",
+		}, []string{"address"}),
 		pspNonceValid: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "pspNonceValid",
@@ -570,10 +576,14 @@ func (d *Defender) Run(ctx context.Context) {
 
 	go func() {
 		for {
-			time.Sleep(d.blockDuration * time.Second) // Sleep for `d.blockDuration` seconds to make sure the PSP is executed onchain.
+			if err := d.GetBalance(ctx); err != nil {
+				d.log.Error("[MON] failed to get the balance of the senderAddress:", "error", err)
+				d.unexpectedRpcErrors.WithLabelValues("l1", "balance").Inc()
+			}
 			if err := d.GetNonceAndFetchAndSimulateAtBlock(ctx); err != nil {
 				d.GetNonceAndFetchAndSimulateAtBlockError.WithLabelValues("l1", "GetNonceAndFetchAndSimulateAtBlock").Inc()
 			}
+			time.Sleep(d.blockDuration * time.Second) // Sleep for `d.blockDuration` seconds to make sure the PSP is executed onchain.
 		}
 	}()
 

@@ -101,6 +101,7 @@ The prometheus metrics used are the following:
 
 ```golang
 latestValidPspNonce *prometheus.GaugeVec
+balanceSenderAddress *prometheus.GaugeVec
 latestSafeNonce     *prometheus.GaugeVec
 pspNonceValid       *prometheus.GaugeVec
 highestBlockNumber  *prometheus.GaugeVec
