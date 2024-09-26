@@ -58,7 +58,11 @@ func (d *Defender) GetBalance(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	balanceInEther := weiToEther(balance)
+	balanceInEther, err := weiToEther(balance)
+	if err != nil {
+		return err
+	}
+
 	d.balanceSenderAddress.WithLabelValues(d.senderAddress.Hex()).Set(balanceInEther)
 	return nil
 }
