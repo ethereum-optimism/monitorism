@@ -99,7 +99,7 @@ func (m *WithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent *Withdr
 
 	enrichedWithdrawalEvent := EnrichedWithdrawalEvent{
 		Event:              withdrawalEvent,
-		DisputeGame:        disputeGameProxy,
+		DisputeGame:        &disputeGameProxy,
 		validGameRootClaim: false,
 		Blacklisted:        false,
 		Enriched:           false,
@@ -157,16 +157,16 @@ func (m *WithdrawalValidator) ValidateWithdrawal(enrichedWithdrawalEvent *Enrich
 // Returns:
 // - A pointer to a DisputeGame object if successful.
 // - An error if any issue occurs while fetching the dispute game or proof data.
-func (m *WithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (*FaultDisputeGameProxy, error) {
+func (m *WithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (FaultDisputeGameProxy, error) {
 
 	submittedProofData, error := m.optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
 	if error != nil {
-		return nil, fmt.Errorf("failed to get games addresses: %w", error)
+		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games addresses: %w", error)
 	}
 	disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress
 	disputeGame, error := m.faultDisputeGameHelper.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)
 	if error != nil {
-		return nil, fmt.Errorf("failed to get games: %w", error)
+		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games: %w", error)
 	}
 
 	return disputeGame, nil

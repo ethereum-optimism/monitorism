@@ -1,6 +1,3 @@
-//go:build live
-// +build live
-
 package faultproof_withdrawals
 
 import (
@@ -22,10 +19,15 @@ The tests have a custom setup tailored for this chain, including specific block 
 */
 
 var (
-	l1GethClient           *ethclient.Client
-	optimismPortal2Helper  *OptimismPortal2Helper
-	faultDisputeGameHelper *FaultDisputeGameHelper
-	l2NodeHelper           *L2NodeHelper
+	l1GethClient   *ethclient.Client
+	l2GethClient   *ethclient.Client
+	l2OpNodeClient *ethclient.Client
+
+	l2NodeHelper              *L2NodeHelper
+	optimismPortal2Helper     *OptimismPortal2Helper
+	faultDisputeGameHelper    *FaultDisputeGameHelper
+	withdrawalValidator       *WithdrawalValidator
+	l2ToL1MessagePasserHelper *L2ToL1MessagePasserHelper
 )
 
 // TestMain sets up the environment and necessary connections before running the tests
@@ -37,6 +39,8 @@ func TestMain(m *testing.M) {
 
 	L1GethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL")
 	L2OpNodeURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL")
+	L2OpGethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL")
+
 	portalAddr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL")
 	OptimismPortalAddress := common.HexToAddress(portalAddr)
 
@@ -45,9 +49,13 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("Failed to connect to L1 Geth client: " + err.Error())
 	}
-	l2OpNodeClient, err := ethclient.Dial(L2OpNodeURL)
+	l2OpNodeClient, err = ethclient.Dial(L2OpNodeURL)
 	if err != nil {
 		panic("Failed to connect to L2 Optimism Node client: " + err.Error())
+	}
+	l2GethClient, err = ethclient.Dial(L2OpGethURL)
+	if err != nil {
+		panic("Failed to connect to L2 Optimism Geth client: " + err.Error())
 	}
 
 	optimismPortal2Helper, err = NewOptimismPortal2Helper(ctx, l1GethClient, OptimismPortalAddress)
@@ -62,6 +70,11 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("Failed to initialize L2NodeHelper: " + err.Error())
 	}
+	l2ToL1MessagePasserHelper, err = NewL2ToL1MessagePasserHelper(ctx, l2GethClient)
+	if err != nil {
+		panic("Failed to initialize L2ToL1MessagePasserHelper: " + err.Error())
+	}
+	withdrawalValidator = NewWithdrawalValidator(ctx, optimismPortal2Helper, l2NodeHelper, l2ToL1MessagePasserHelper, faultDisputeGameHelper)
 
 	// Run the tests
 	code := m.Run()
@@ -130,7 +143,7 @@ func TestGetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(t *test
 		disputeGameProxyAddress:   common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
 		disputeGameProxyTimestamp: 1716028908,
 	}
-	sumittedProofsData, err := optimismPortal2Helper.GetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+	sumittedProofsData, err := optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
 	require.NoError(t, err)
 	require.Equal(t, expectedSumittedProofsData, sumittedProofsData, "Expected game not found")
 
@@ -209,4 +222,85 @@ func TestGetDisputeGameProxyFromAddress(t *testing.T) {
 
 	require.Equal(t, true, disputeGameData.RootClaim == expectedTrustedL2OutputRoot, "Expected root claim not found")
 
+}
+
+func TestGetEnrichedWithdrawalEvent(t *testing.T) {
+
+	// https://sepolia.etherscan.io/tx/0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132
+	withdrawalEvent := &WithdrawalProvenExtension1Event{
+		WithdrawalHash: common.HexToHash("0xedbe26c8f9b11835295aee42123335f920599f01448e0ec697e9a47e69ed673e"),
+		ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
+		Raw: Raw{
+			BlockNumber: 5915676,
+			TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
+		},
+	}
+
+	// https: //sepolia.etherscan.io/address/0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7#readContract
+	expectedDisputeGameData := &DisputeGameData{
+		ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
+		RootClaim:     common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597"),
+		L2blockNumber: big.NewInt(12030787),
+		L2ChainID:     big.NewInt(11155420),
+		Status:        DEFENDER_WINS,
+		CreatedAt:     1715864520,
+		ResolvedAt:    1716166980,
+	}
+
+	expectedFaultDisputeGameProxy := &FaultDisputeGameProxy{
+		FaultDisputeGame: nil, //we want to ignore the pointer to the object in the check
+		DisputeGameData:  expectedDisputeGameData,
+	}
+
+	expectedEnrichedWithdrawalEvent := &EnrichedWithdrawalEvent{
+		Event:                     withdrawalEvent,
+		DisputeGame:               expectedFaultDisputeGameProxy,
+		validGameRootClaim:        false,
+		Blacklisted:               false,
+		withdrawalHashPresentOnL2: false,
+		Enriched:                  false,
+	}
+
+	// Testing before enriching the event
+	enrichedWithdrawalEvent, err := withdrawalValidator.GetEnrichedWithdrawalEvent(withdrawalEvent)
+	require.NoError(t, err)
+
+	enrichedWithdrawalEvent.DisputeGame.FaultDisputeGame = nil //we want to ignore the pointer to the object in the check
+
+	require.Equal(t, expectedEnrichedWithdrawalEvent, enrichedWithdrawalEvent, "Expected Enriched Withdrawal Event not found")
+
+	// Testing after enriching the event
+
+	//modify the expected values
+	expectedEnrichedWithdrawalEvent.validGameRootClaim = true
+	expectedEnrichedWithdrawalEvent.Blacklisted = false
+	expectedEnrichedWithdrawalEvent.withdrawalHashPresentOnL2 = true
+	expectedEnrichedWithdrawalEvent.Enriched = true
+
+	enrichedWithdrawalEvent2, err := withdrawalValidator.GetEnrichedWithdrawalEvent(withdrawalEvent)
+	require.NoError(t, err)
+
+	err = withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent2)
+	require.NoError(t, err)
+
+	enrichedWithdrawalEvent2.DisputeGame.FaultDisputeGame = nil //we want to ignore the pointer to the object in the check
+	require.Equal(t, expectedEnrichedWithdrawalEvent, enrichedWithdrawalEvent2, "Expected Enriched Withdrawal Event not found")
+
+	expected_validateProofWithdrawalState := withdrawalValidator.ValidateWithdrawal(expectedEnrichedWithdrawalEvent)
+	validateProofWithdrawalState := withdrawalValidator.ValidateWithdrawal(enrichedWithdrawalEvent2)
+	require.Equal(t, expected_validateProofWithdrawalState, validateProofWithdrawalState, "Expected Validate Proof Withdrawal State not found")
+
+	withdrawalEventDoNotExists := &WithdrawalProvenExtension1Event{
+		WithdrawalHash: common.HexToHash("0xedbe26c8f9b11835295aee42123335f920599f11448e0ec697e9a47e69ed673e"),
+		ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
+		Raw: Raw{
+			BlockNumber: 5915676,
+			TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
+		},
+	}
+
+	// Testing before enriching the event
+	enrichedwithdrawalEventDoNotExists, err := withdrawalValidator.GetEnrichedWithdrawalEvent(withdrawalEventDoNotExists)
+	require.Error(t, err)
+	require.Nil(t, enrichedwithdrawalEventDoNotExists)
 }

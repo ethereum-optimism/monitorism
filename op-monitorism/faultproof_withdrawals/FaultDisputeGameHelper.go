@@ -101,43 +101,42 @@ func NewFaultDisputeGameHelper(ctx context.Context, l1Client *ethclient.Client) 
 	}, nil
 }
 
-func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (*FaultDisputeGameProxy, error) {
+func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (FaultDisputeGameProxy, error) {
 
 	ret, found := op.gameCache.Get(disputeGameProxyAddress)
 	if !found {
-		// log.Info("Cache Miss", "disputeGameProxyAddress", disputeGameProxyAddress)
 		faultDisputeGame, err := dispute.NewFaultDisputeGame(disputeGameProxyAddress, op.l1Client)
 		if err != nil {
-			return nil, fmt.Errorf("failed to bind to dispute game: %w", err)
+			return FaultDisputeGameProxy{}, fmt.Errorf("failed to bind to dispute game: %w", err)
 		}
 
 		rootClaim, err := faultDisputeGame.RootClaim(nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get root claim for game: %w", err)
+			return FaultDisputeGameProxy{}, fmt.Errorf("failed to get root claim for game: %w", err)
 		}
 		l2blockNumber, err := faultDisputeGame.L2BlockNumber(nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get l2 block number for game: %w", err)
+			return FaultDisputeGameProxy{}, fmt.Errorf("failed to get l2 block number for game: %w", err)
 		}
 
 		l2ChainID, err := faultDisputeGame.L2ChainId(nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get l2 chain id for game: %w", err)
+			return FaultDisputeGameProxy{}, fmt.Errorf("failed to get l2 chain id for game: %w", err)
 		}
 
 		gameStatus, err := faultDisputeGame.Status(nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get game status: %w", err)
+			return FaultDisputeGameProxy{}, fmt.Errorf("failed to get game status: %w", err)
 		}
 
 		createdAt, err := faultDisputeGame.CreatedAt(nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get game created at: %w", err)
+			return FaultDisputeGameProxy{}, fmt.Errorf("failed to get game created at: %w", err)
 		}
 
 		resolvedAt, err := faultDisputeGame.ResolvedAt(nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get game resolved at: %w", err)
+			return FaultDisputeGameProxy{}, fmt.Errorf("failed to get game resolved at: %w", err)
 		}
 
 		ret = &FaultDisputeGameProxy{
@@ -157,14 +156,19 @@ func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProx
 
 	}
 
-	return ret.(*FaultDisputeGameProxy), nil
+	// return ret.(*FaultDisputeGameProxy), nil
+	return *(ret.(*FaultDisputeGameProxy)), nil
+
 }
 
 func (op *FaultDisputeGameProxy) RefreshState() error {
+
 	gameStatus, err := op.FaultDisputeGame.Status(nil)
+
 	if err != nil {
 		return fmt.Errorf("failed to get game status: %w", err)
 	}
+
 	op.DisputeGameData.Status = GameStatus(gameStatus)
 
 	resolvedAt, err := op.FaultDisputeGame.ResolvedAt(nil)
