@@ -514,7 +514,7 @@ func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdra
 // The function increments the nodeConnectionFailures counter in the state if there are any errors during the process.
 func (m *Monitor) getDisputeGamesFromWithdrawalhash(withdrawalHash [32]byte) ([]FaultDisputeGameProxy, error) {
 
-	submittedProofsData, error := m.optimismPortal2Helper.GetSumittedProofsDataFromWithdrawalhash(withdrawalHash)
+	submittedProofsData, error := m.optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhash(withdrawalHash)
 	if error != nil {
 		m.state.nodeConnectionFailures++
 		return nil, fmt.Errorf("failed to get games addresses: %w", error)

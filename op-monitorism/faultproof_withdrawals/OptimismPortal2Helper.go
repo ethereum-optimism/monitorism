@@ -151,7 +151,7 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1Events(start uint
 
 }
 
-func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhash(withdrawalHash [32]byte) ([]SubmittedProofData, error) {
+func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhash(withdrawalHash [32]byte) ([]SubmittedProofData, error) {
 
 	numProofSubmitters, err := op.optimismPortal2.NumProofSubmitters(nil, withdrawalHash)
 	if err != nil {
@@ -182,7 +182,7 @@ func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhash(withdra
 	return withdrawals, nil
 }
 
-func (op *OptimismPortal2Helper) GetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
+func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
 
 	gameProxyStruct, err := op.optimismPortal2.ProvenWithdrawals(nil, withdrawalHash, proofSubmitterAddress)
 	if err != nil {

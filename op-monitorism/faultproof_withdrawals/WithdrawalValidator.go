@@ -159,7 +159,7 @@ func (m *WithdrawalValidator) ValidateWithdrawal(enrichedWithdrawalEvent *Enrich
 // - An error if any issue occurs while fetching the dispute game or proof data.
 func (m *WithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (*FaultDisputeGameProxy, error) {
 
-	submittedProofData, error := m.optimismPortal2Helper.GetSumittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
+	submittedProofData, error := m.optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
 	if error != nil {
 		return nil, fmt.Errorf("failed to get games addresses: %w", error)
 	}
