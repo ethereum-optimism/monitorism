@@ -184,7 +184,7 @@ func WithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
+		return nil, fmt.Errorf("failed to create withdrawals monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -194,13 +194,13 @@ func FaultproofWithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFun
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := faultproof_withdrawals.ReadCLIFlags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse withdrawals config from flags: %w", err)
+		return nil, fmt.Errorf("failed to parse faultproof withdrawals config from flags: %w", err)
 	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := faultproof_withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
+		return nil, fmt.Errorf("failed to create faultproof withdrawals monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
