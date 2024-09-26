@@ -7,7 +7,7 @@ import (
 
 const ether = 1e18
 
-// weiToEther converts a wei value to ether return a float64 return an error if the float is toolarge
+// weiToEther converts a wei value to ether return a float64 return an error if the float is too large.
 func weiToEther(wei *big.Int) (float64, error) {
 	num := new(big.Rat).SetInt(wei)
 	denom := big.NewRat(ether, 1)
