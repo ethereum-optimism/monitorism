@@ -85,9 +85,11 @@ func (p *FaultDisputeGameProxy) String() string {
 	return fmt.Sprintf("FaultDisputeGameProxy[ DisputeGameData=%v ]", p.DisputeGameData)
 }
 
+const gameCacheSize = 1000
+
 func NewFaultDisputeGameHelper(ctx context.Context, l1Client *ethclient.Client) (*FaultDisputeGameHelper, error) {
 
-	gameCache, err := lru.New(1000)
+	gameCache, err := lru.New(gameCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache: %w", err)
 	}

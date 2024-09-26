@@ -19,8 +19,10 @@ type L2NodeHelper struct {
 	l2OutputRootCache *lru.Cache
 }
 
+const outputRootCacheSize = 1000
+
 func NewL2NodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client) (*L2NodeHelper, error) {
-	l2OutputRootCache, err := lru.New(1000)
+	l2OutputRootCache, err := lru.New(outputRootCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache: %w", err)
 	}
