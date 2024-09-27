@@ -26,7 +26,7 @@ The suite is composed of two main components: `op-monitorism` and `op-defender`,
 ### Op-Monitorism
 Op-Monitorism Docker images are published with each release and build, ensuring you have access to the latest features and fixes.
 
-The latest release version for linux/amd64 can be found in the[release notes](https://github.com/ethereum-optimism/monitorism/releases/tag/op-monitorism%2Fv0.0.4)
+The latest release version for linux/amd64 can be found in the [release notes](https://github.com/ethereum-optimism/monitorism/releases/tag/op-monitorism%2Fv0.0.4)
 
 To pull the latest Docker image, run:
 ```bash
