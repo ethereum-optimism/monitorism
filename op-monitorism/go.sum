@@ -1,3 +1,5 @@
+github.com/BurntSushi/toml v1.4.0 h1:kuoIxZQy2WRRk1pttg9asf+WVv6tWQuBNVmK8+nqPr0=
+github.com/BurntSushi/toml v1.4.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e h1:ZIWapoIRN1VqT8GR8jAwb1Ie9GyehWjVcGh32Y2MznE=
 github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e/go.mod h1:g4AWEaM3yOg3HYfnJ3YIawPnVdXJh9QME85blwSAmyw=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
@@ -55,14 +57,16 @@ github.com/decred/dcrd/crypto/blake256 v1.0.1 h1:7PltbUIQB7u/FfZ39+DGa/ShuMyJ5il
 github.com/decred/dcrd/crypto/blake256 v1.0.1/go.mod h1:2OfgNZ5wDpcsFmHmCK5gZTPcCXqlm2ArzUIkw9czNJo=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 h1:rpfIENRNNilwHwZeG5+P150SMrnNEcHYvcCuK6dPZSg=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0/go.mod h1:v57UDF4pDQJcEfFUCRop3lJL149eHGSe9Jvczhzjo/0=
+github.com/ethereum-optimism/op-geth v1.101408.0 h1:BsWdwWaurrLRtXOmKUDoFCwXi/ugMtxYUQ3GQODcO24=
+github.com/ethereum-optimism/op-geth v1.101408.0/go.mod h1:Mk8AhvlqFbjI9oW2ymThSSoqc6kiEH0/tCmHGMEu6ac=
 github.com/ethereum-optimism/optimism v1.9.1 h1:IUhfJgd2TK5Lk+yDIuSx5VhIhBtrcmGa84pv3V8hnYQ=
 github.com/ethereum-optimism/optimism v1.9.1/go.mod h1:pn4QCTrtpBnYySBLTPwJz+985qbTday98bnLCkx76K4=
 github.com/ethereum-optimism/optimism/op-bindings v0.10.14 h1:SMMnMdNb1QIhJDyvk7QMUv+crAP4UHHoSYBOASBDIjM=
 github.com/ethereum-optimism/optimism/op-bindings v0.10.14/go.mod h1:9ZSUq/rjlzp3uYyBN4sZmhTc3oZgDVqJ4wrUja7vj6c=
+github.com/ethereum-optimism/superchain-registry/superchain v0.0.0-20240821192748-42bd03ba8313 h1:SVSFg8ccdRBJxOdRS1pK8oIHvMufiPAQz1gkQsEPnZc=
+github.com/ethereum-optimism/superchain-registry/superchain v0.0.0-20240821192748-42bd03ba8313/go.mod h1:XaVXL9jg8BcyOeugECgIUGa9Y3DjYJj71RHmb5qon6M=
 github.com/ethereum/c-kzg-4844 v1.0.0 h1:0X1LBXxaEtYD9xsyj9B9ctQEZIpnvVDeoBx8aHEwTNA=
 github.com/ethereum/c-kzg-4844 v1.0.0/go.mod h1:VewdlzQmpT5QSrVhbBuGoCdFJkpaJlO1aQputP83wc0=
-github.com/ethereum/go-ethereum v1.14.8 h1:NgOWvXS+lauK+zFukEvi85UmmsS/OkV0N23UZ1VTIig=
-github.com/ethereum/go-ethereum v1.14.8/go.mod h1:TJhyuDq0JDppAkFXgqjwpdlQApywnu/m10kFPxh8vvs=
 github.com/ethereum/go-verkle v0.1.1-0.20240306133620-7d920df305f0 h1:KrE8I4reeVvf7C1tm8elRjj4BdscTYzz/WAbYyf/JI4=
 github.com/ethereum/go-verkle v0.1.1-0.20240306133620-7d920df305f0/go.mod h1:D9AJLVXSyZQXJQVk8oh1EwjISE+sJTn2duYIZC0dy3w=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
@@ -241,6 +245,8 @@ golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa h1:ELnwvuAXPNtPk1TJRuGkI9fDT
 golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa/go.mod h1:akd2r19cwCdwSwWeIdzYQGa/EZZyqcOdwWiwj5L5eKQ=
 golang.org/x/mod v0.2.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
 golang.org/x/mod v0.3.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
+golang.org/x/mod v0.20.0 h1:utOm6MM3R3dnawAiJgn0y+xvuYRsm1RKM/4giyfDgV0=
+golang.org/x/mod v0.20.0/go.mod h1:hTbmBsO62+eylJbnUtE2MGJUyE7QWk4xUqPFrRgJ+7c=
 golang.org/x/net v0.0.0-20180906233101-161cd47e91fd/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
 golang.org/x/net v0.0.0-20190620200207-3b0461eec859/go.mod h1:z5CRVTTTmAJ677TzLLGU+0bjPO0LkuOLi4/5GtJWs/s=
@@ -256,6 +262,7 @@ golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f/go.mod h1:RxMgew5VJxzue5/jJ
 golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+golang.org/x/sync v0.0.0-20210220032951-036812b2e83c/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.8.0 h1:3NFvSEYkUoMifnESzZl15y791HH1qU2xm6eCJU5ZPXQ=
 golang.org/x/sync v0.8.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
 golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=

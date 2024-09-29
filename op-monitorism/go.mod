@@ -2,7 +2,7 @@ module github.com/ethereum-optimism/monitorism/op-monitorism
 
 go 1.21.0
 
-replace github.com/ethereum/go-ethereum v1.13.11 => github.com/ethereum-optimism/op-geth v1.101311.0-rc.1
+replace github.com/ethereum/go-ethereum => github.com/ethereum-optimism/op-geth v1.101408.0
 
 require (
 	github.com/ethereum-optimism/optimism v1.9.1
@@ -17,6 +17,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -37,6 +38,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
+	github.com/ethereum-optimism/superchain-registry/superchain v0.0.0-20240821192748-42bd03ba8313 // indirect
 	github.com/ethereum/c-kzg-4844 v1.0.0 // indirect
 	github.com/ethereum/go-verkle v0.1.1-0.20240306133620-7d920df305f0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -48,6 +50,8 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/holiman/uint256 v1.3.1 // indirect
+	github.com/huin/goupnp v1.3.0 // indirect
+	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -73,6 +77,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa // indirect
+	golang.org/x/mod v0.20.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.24.0 // indirect
 	golang.org/x/term v0.23.0 // indirect
