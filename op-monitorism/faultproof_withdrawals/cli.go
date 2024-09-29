@@ -54,20 +54,17 @@ func CLIFlags(envVar string) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:    L1GethURLFlagName,
-			Usage:   "Node URL of L1 peer",
-			Value:   "127.0.0.1:8545",
+			Usage:   "L1 execution layer node URL",
 			EnvVars: opservice.PrefixEnvVar(envVar, "L1_GETH_URL"),
 		},
 		&cli.StringFlag{
 			Name:    L2NodeURLFlagName,
-			Usage:   "Node URL of L2 peer",
-			Value:   "127.0.0.1:9545",
+			Usage:   "L2 rollup node consensus layer (op-node) URL",
 			EnvVars: opservice.PrefixEnvVar(envVar, "L2_OP_NODE_URL"),
 		},
 		&cli.StringFlag{
 			Name:    L2GethURLFlagName,
-			Usage:   "Node URL of L2 peer",
-			Value:   "127.0.0.1:9546",
+			Usage:   "L2 OP Stack execution layer client(op-geth) URL",
 			EnvVars: opservice.PrefixEnvVar(envVar, "L2_OP_GETH_URL"),
 		},
 		&cli.Uint64Flag{

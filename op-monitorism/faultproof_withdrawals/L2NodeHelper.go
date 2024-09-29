@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/predeploys"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -58,10 +61,18 @@ func (op *L2NodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) (
 	return ret.([32]byte), nil
 }
 
-func (op *L2NodeHelper) IsValidOutputRoot(gameClaim [32]byte, l2blockNumber *big.Int) (bool, error) {
-	trustedL2OutputRoot, err := op.GetOutputRootFromTrustedL2Node(l2blockNumber)
+func (op *L2NodeHelper) GetOutputRootFromCalculation(blockNumber *big.Int) ([32]byte, error) {
+	block, err := op.l2OpNodeClient.BlockByNumber(op.ctx, blockNumber)
 	if err != nil {
-		return false, fmt.Errorf("failed to get root proof from trusted l2 node: %w", err)
+		return [32]byte{}, fmt.Errorf("failed to get block by number: %w", err)
 	}
-	return gameClaim == trustedL2OutputRoot, nil
+
+	proof := struct{ StorageHash common.Hash }{}
+	err = op.l2OpNodeClient.Client().CallContext(op.ctx, &proof, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, nil, hexutil.EncodeBig(blockNumber))
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("failed to get proof: %w", err)
+	}
+
+	outputRoot := eth.OutputRoot(&eth.OutputV0{StateRoot: eth.Bytes32(block.Root()), MessagePasserStorageRoot: eth.Bytes32(proof.StorageHash), BlockHash: block.Hash()})
+	return outputRoot, nil
 }

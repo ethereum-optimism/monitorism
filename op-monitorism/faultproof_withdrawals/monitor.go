@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"math"
-
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -18,196 +15,29 @@ const (
 	MetricsNamespace = "faultproof_two_step_monitor"
 )
 
-type State struct {
-	nextL1Height   uint64
-	latestL1Height uint64
-
-	processedProvenWithdrawalsExtension1Events uint64
-	processedGames                             uint64
-
-	isDetectingForgeries uint64
-	withdrawalsValidated uint64
-
-	nodeConnectionFailures uint64
-
-	forgeriesWithdrawalsEvents       []EnrichedWithdrawalEvent
-	invalidProposalWithdrawalsEvents []EnrichedWithdrawalEvent
-}
-
-type Metrics struct {
-	NextL1HeightGauge                                  prometheus.Gauge
-	LatestL1HeightGauge                                prometheus.Gauge
-	ProcessedProvenWithdrawalsEventsExtensions1Counter prometheus.Counter
-	ProcessedGamesCounter                              prometheus.Counter
-	IsDetectingForgeriesGauge                          prometheus.Gauge
-	WithdrawalsValidatedCounter                        prometheus.Counter
-	NodeConnectionFailuresCounter                      prometheus.Counter
-	ForgeriesWithdrawalsEventsGauge                    prometheus.Gauge
-	InvalidProposalWithdrawalsEventsGauge              prometheus.Gauge
-}
-
 type Monitor struct {
+	// context
 	log log.Logger
+	ctx context.Context
 
-	ctx            context.Context
+	// user arguments
 	l1GethClient   *ethclient.Client
 	l2OpGethClient *ethclient.Client
 	l2OpNodeClient *ethclient.Client
 	l1ChainID      *big.Int
 	l2ChainID      *big.Int
+	maxBlockRange  uint64
 
-	maxBlockRange             uint64
+	// helpers
 	faultDisputeGameHelper    FaultDisputeGameHelper
 	optimismPortal2Helper     OptimismPortal2Helper
 	l2ToL1MessagePasserHelper L2ToL1MessagePasserHelper
 	l2NodeHelper              L2NodeHelper
 	withdrawalValidator       WithdrawalValidator
 
+	// state
 	state   State
 	metrics Metrics
-
-	// Previous values for counters
-	previousProcessedProvenWithdrawalsExtension1Events uint64
-	previousProcessedGames                             uint64
-	previousWithdrawalsValidated                       uint64
-	previousNodeConnectionFailures                     uint64
-}
-
-func NewMetrics(m metrics.Factory) *Metrics {
-	ret := &Metrics{
-		NextL1HeightGauge: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "next_l1_height",
-			Help:      "Next L1 Height",
-		}),
-		LatestL1HeightGauge: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "latest_l1_height",
-			Help:      "Latest L1 Height",
-		}),
-		ProcessedProvenWithdrawalsEventsExtensions1Counter: m.NewCounter(prometheus.CounterOpts{
-			Namespace: MetricsNamespace,
-			Name:      "processed_provenwithdrawalsextension1_events_total",
-			Help:      "Total number of processed provenwithdrawalsextension1 events",
-		}),
-		ProcessedGamesCounter: m.NewCounter(prometheus.CounterOpts{
-			Namespace: MetricsNamespace,
-			Name:      "processed_games_total",
-			Help:      "Total number of processed games",
-		}),
-		IsDetectingForgeriesGauge: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "is_detecting_forgeries",
-			Help:      "Is Detecting Forgeries (0 or 1)",
-		}),
-		WithdrawalsValidatedCounter: m.NewCounter(prometheus.CounterOpts{
-			Namespace: MetricsNamespace,
-			Name:      "withdrawals_validated_total",
-			Help:      "Total number of withdrawals validated",
-		}),
-		NodeConnectionFailuresCounter: m.NewCounter(prometheus.CounterOpts{
-			Namespace: MetricsNamespace,
-			Name:      "node_connection_failures_total",
-			Help:      "Total number of node connection failures",
-		}),
-		ForgeriesWithdrawalsEventsGauge: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "forgeries_withdrawals_events_count",
-			Help:      "Number of forgeries withdrawals events",
-		}),
-		InvalidProposalWithdrawalsEventsGauge: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "invalid_proposal_withdrawals_events_count",
-			Help:      "Number of invalid proposal withdrawals events",
-		}),
-	}
-
-	return ret
-}
-
-func (m *Monitor) UpdateMetricsFromState() {
-
-	// Update Gauges
-	m.metrics.NextL1HeightGauge.Set(float64(m.state.nextL1Height))
-	m.metrics.LatestL1HeightGauge.Set(float64(m.state.latestL1Height))
-
-	m.metrics.IsDetectingForgeriesGauge.Set(float64(m.state.isDetectingForgeries))
-
-	m.metrics.ForgeriesWithdrawalsEventsGauge.Set(float64(len(m.state.forgeriesWithdrawalsEvents)))
-	m.metrics.InvalidProposalWithdrawalsEventsGauge.Set(float64(len(m.state.invalidProposalWithdrawalsEvents)))
-
-	// Update Counters by calculating deltas
-	// Processed Withdrawals
-	processedWithdrawalsDelta := m.state.processedProvenWithdrawalsExtension1Events - m.previousProcessedProvenWithdrawalsExtension1Events
-	if processedWithdrawalsDelta > 0 {
-		m.metrics.ProcessedProvenWithdrawalsEventsExtensions1Counter.Add(float64(processedWithdrawalsDelta))
-	}
-	m.previousProcessedProvenWithdrawalsExtension1Events = m.state.processedProvenWithdrawalsExtension1Events
-
-	// Processed Games
-	processedGamesDelta := m.state.processedGames - m.previousProcessedGames
-	if processedGamesDelta > 0 {
-		m.metrics.ProcessedGamesCounter.Add(float64(processedGamesDelta))
-	}
-	m.previousProcessedGames = m.state.processedGames
-
-	// Withdrawals Validated
-	withdrawalsValidatedDelta := m.state.withdrawalsValidated - m.previousWithdrawalsValidated
-	if withdrawalsValidatedDelta > 0 {
-		m.metrics.WithdrawalsValidatedCounter.Add(float64(withdrawalsValidatedDelta))
-	}
-	m.previousWithdrawalsValidated = m.state.withdrawalsValidated
-
-	// Node Connection Failures
-	nodeConnectionFailuresDelta := m.state.nodeConnectionFailures - m.previousNodeConnectionFailures
-	if nodeConnectionFailuresDelta > 0 {
-		m.metrics.NodeConnectionFailuresCounter.Add(float64(nodeConnectionFailuresDelta))
-	}
-	m.previousNodeConnectionFailures = m.state.nodeConnectionFailures
-}
-
-func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*State, error) {
-
-	if nextL1Height > latestL1Height {
-		log.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", nextL1Height, "latestL1Height", latestL1Height)
-		nextL1Height = latestL1Height
-	}
-
-	ret := State{
-		processedProvenWithdrawalsExtension1Events: 0,
-		nextL1Height:           nextL1Height,
-		latestL1Height:         latestL1Height,
-		isDetectingForgeries:   0,
-		withdrawalsValidated:   0,
-		nodeConnectionFailures: 0,
-		processedGames:         0,
-	}
-
-	return &ret, nil
-}
-
-func (s *State) LogState(log log.Logger) {
-	blockToProcess, syncPercentage := s.GetPercentages()
-
-	log.Info("State",
-		"withdrawalsValidated", fmt.Sprintf("%d", s.withdrawalsValidated),
-		"nextL1Height", fmt.Sprintf("%d", s.nextL1Height),
-		"latestL1Height", fmt.Sprintf("%d", s.latestL1Height),
-		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
-		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
-		"processedProvenWithdrawalsExtension1Events", fmt.Sprintf("%d", s.processedProvenWithdrawalsExtension1Events),
-		"processedGames", fmt.Sprintf("%d", s.processedGames),
-		"isDetectingForgeries", fmt.Sprintf("%d", s.isDetectingForgeries),
-		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
-		"forgeriesWithdrawalsEvents", fmt.Sprintf("%d", len(s.forgeriesWithdrawalsEvents)),
-		"invalidProposalWithdrawalsEvents", fmt.Sprintf("%d", len(s.invalidProposalWithdrawalsEvents)),
-	)
-}
-
-func (s *State) GetPercentages() (uint64, uint64) {
-	blockToProcess := s.latestL1Height - s.nextL1Height
-	syncPercentage := uint64(math.Floor(100 - (float64(blockToProcess) / float64(s.latestL1Height) * 100)))
-	return blockToProcess, syncPercentage
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -291,14 +121,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		state:   *state,
 		metrics: *metrics,
 	}
-	ret.Init()
 
 	return ret, nil
-}
-
-func (m *Monitor) Init() {
-	m.state.LogState(m.log)
-	m.UpdateMetricsFromState()
 }
 
 func (m *Monitor) GetLatestBlock() (uint64, error) {
@@ -339,8 +163,18 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	for _, enrichedWithdrawalEvent := range m.state.invalidProposalWithdrawalsEvents {
 
-		m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
-		addToInvalidProposalWithdrawalsEvents := m.UpdateWithdrawalState(&enrichedWithdrawalEvent)
+		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
+		if err != nil {
+			m.state.nodeConnectionFailures++
+			m.log.Error("failed to update enriched withdrawal event", "error", err)
+			return
+		}
+		addToInvalidProposalWithdrawalsEvents, err := m.UpdateWithdrawalState(&enrichedWithdrawalEvent)
+		if err != nil {
+			m.state.nodeConnectionFailures++
+			m.log.Error("failed to update withdrawal state", "error", err)
+			return
+		}
 		if addToInvalidProposalWithdrawalsEvents != nil {
 			newInvalidProposalWithdrawalsEvents = append(newInvalidProposalWithdrawalsEvents, *addToInvalidProposalWithdrawalsEvents)
 		}
@@ -361,8 +195,18 @@ func (m *Monitor) Run(ctx context.Context) {
 			m.log.Error("failed to get enriched withdrawal event", "error", err)
 			return
 		}
-		m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
-		addToInvalidProposalWithdrawalsEvents := m.UpdateWithdrawalState(enrichedWithdrawalEvent)
+		err = m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
+		if err != nil {
+			m.state.nodeConnectionFailures++
+			m.log.Error("failed to update enriched withdrawal event", "error", err)
+			return
+		}
+		addToInvalidProposalWithdrawalsEvents, err := m.UpdateWithdrawalState(enrichedWithdrawalEvent)
+		if err != nil {
+			m.state.nodeConnectionFailures++
+			m.log.Error("failed to update withdrawal state", "error", err)
+			return
+		}
 		if addToInvalidProposalWithdrawalsEvents != nil {
 			m.state.invalidProposalWithdrawalsEvents = append(m.state.invalidProposalWithdrawalsEvents, *addToInvalidProposalWithdrawalsEvents)
 		}
@@ -373,13 +217,16 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	// log state and metrics
 	m.state.LogState(m.log)
-	m.UpdateMetricsFromState()
-
+	m.metrics.UpdateMetricsFromState(&m.state)
 }
 
-func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdrawalEvent) *EnrichedWithdrawalEvent {
+func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdrawalEvent) (*EnrichedWithdrawalEvent, error) {
 
-	result := m.withdrawalValidator.ValidateWithdrawal(enrichedWithdrawalEvent)
+	result, err := m.withdrawalValidator.ValidateWithdrawal(enrichedWithdrawalEvent)
+	if err != nil {
+		m.log.Error("failed to validate withdrawal", "error", err)
+		return nil, err
+	}
 
 	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
@@ -389,7 +236,7 @@ func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdra
 	case PROOF_ON_BLACKLISTED_GAME:
 		m.log.Info("game is blacklisted,removing from invalidProposalWithdrawalsEvents list", "game", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
 		// m.state.blacklistedGames++
-		return nil
+		return nil, nil
 	case INVALID_PROOF_FORGERY_DETECTED:
 		m.log.Error("withdrawal is NOT valid, forgery detected",
 			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
@@ -403,7 +250,7 @@ func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdra
 	case INVALID_PROPOSAL_INPROGRESS:
 		m.log.Warn("game is still in progress",
 			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		return enrichedWithdrawalEvent
+		return enrichedWithdrawalEvent, nil
 	case INVALID_PROPOSAL_CORRECTLY_RESOLVED:
 		m.log.Info("withdrawal was correctly resolved",
 			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
@@ -412,41 +259,7 @@ func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdra
 		m.log.Info("withdrawal is valid", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.withdrawalsValidated++
 	}
-	return nil
-}
-
-// getDisputeGamesFromWithdrawalhash retrieves a list of DisputeGame instances associated with a given withdrawal hash.
-// It first fetches the submitted proofs data using the provided withdrawal hash, and then iterates over the data to
-// obtain the corresponding DisputeGame instances from their proxy addresses.
-//
-// Parameters:
-//   - withdrawalHash: A 32-byte array representing the hash of the withdrawal.
-//
-// Returns:
-//   - A slice of DisputeGame instances associated with the provided withdrawal hash.
-//   - An error if there is a failure in fetching the submitted proofs data or the dispute games.
-//
-// The function increments the nodeConnectionFailures counter in the state if there are any errors during the process.
-func (m *Monitor) getDisputeGamesFromWithdrawalhash(withdrawalHash [32]byte) ([]FaultDisputeGameProxy, error) {
-
-	submittedProofsData, error := m.optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhash(withdrawalHash)
-	if error != nil {
-		m.state.nodeConnectionFailures++
-		return nil, fmt.Errorf("failed to get games addresses: %w", error)
-	}
-	gameList := make([]FaultDisputeGameProxy, 0)
-	for _, submittedProofData := range submittedProofsData {
-		disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress
-		game, error := m.faultDisputeGameHelper.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)
-		if error != nil {
-			m.state.nodeConnectionFailures++
-			return nil, fmt.Errorf("failed to get games: %w", error)
-		}
-
-		gameList = append(gameList, game)
-	}
-
-	return gameList, nil
+	return nil, nil
 }
 
 func (m *Monitor) Close(_ context.Context) error {

@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-type ValidateProofWithdrawalState uint8
+type ValidateProofWithdrawalState int8
 
 const (
 	INVALID_PROOF_FORGERY_DETECTED ValidateProofWithdrawalState = iota
@@ -21,7 +21,7 @@ const (
 type EnrichedWithdrawalEvent struct {
 	Event                     *WithdrawalProvenExtension1Event
 	DisputeGame               *FaultDisputeGameProxy
-	validGameRootClaim        bool
+	expectedRootClaim         *[32]byte
 	Blacklisted               bool
 	withdrawalHashPresentOnL2 bool
 	Enriched                  bool
@@ -36,7 +36,7 @@ type WithdrawalValidator struct {
 }
 
 func (e *EnrichedWithdrawalEvent) String() string {
-	return fmt.Sprintf("Event: %v, DisputeGame: %v, validGameRootClaim: %v, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v", e.Event, e.DisputeGame, e.validGameRootClaim, e.Blacklisted, e.withdrawalHashPresentOnL2, e.Enriched)
+	return fmt.Sprintf("Event: %v, DisputeGame: %v, trustedRootClaim: %v, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v", e.Event, e.DisputeGame, e.expectedRootClaim, e.Blacklisted, e.withdrawalHashPresentOnL2, e.Enriched)
 }
 
 func (v ValidateProofWithdrawalState) String() string {
@@ -70,12 +70,12 @@ func (m *WithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *EnrichedWithd
 	}
 
 	//check if the game root claim is valid on L2 only if not confirmed already that is on L2
-	if !event.validGameRootClaim || !event.Enriched {
-		validGameRootClaim, err := m.l2NodeHelper.IsValidOutputRoot(event.DisputeGame.DisputeGameData.RootClaim, event.DisputeGame.DisputeGameData.L2blockNumber)
+	if event.expectedRootClaim != nil || !event.Enriched {
+		trustedRootClaim, err := m.l2NodeHelper.GetOutputRootFromTrustedL2Node(event.DisputeGame.DisputeGameData.L2blockNumber)
 		if err != nil {
-			return fmt.Errorf("failed to check validGameRootClaim on L2: %w", err)
+			return fmt.Errorf("failed to get trustedRootClaim from Op-node: %w", err)
 		}
-		event.validGameRootClaim = validGameRootClaim
+		event.expectedRootClaim = &trustedRootClaim
 	}
 
 	//check if the withdrawal exists on L2 only if not confirmed already that is on L2
@@ -98,41 +98,45 @@ func (m *WithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent *Withdr
 	}
 
 	enrichedWithdrawalEvent := EnrichedWithdrawalEvent{
-		Event:              withdrawalEvent,
-		DisputeGame:        &disputeGameProxy,
-		validGameRootClaim: false,
-		Blacklisted:        false,
-		Enriched:           false,
+		Event:             withdrawalEvent,
+		DisputeGame:       &disputeGameProxy,
+		expectedRootClaim: nil,
+		Blacklisted:       false,
+		Enriched:          false,
 	}
 
 	return &enrichedWithdrawalEvent, nil
 
 }
 
-func (m *WithdrawalValidator) ValidateWithdrawal(enrichedWithdrawalEvent *EnrichedWithdrawalEvent) ValidateProofWithdrawalState {
+func (m *WithdrawalValidator) ValidateWithdrawal(enrichedWithdrawalEvent *EnrichedWithdrawalEvent) (ValidateProofWithdrawalState, error) {
 
 	if enrichedWithdrawalEvent.Blacklisted {
-		return PROOF_ON_BLACKLISTED_GAME
+		return PROOF_ON_BLACKLISTED_GAME, nil
 	}
 
-	if enrichedWithdrawalEvent.validGameRootClaim {
+	if enrichedWithdrawalEvent.expectedRootClaim == nil {
+		return -1, fmt.Errorf("trustedRootClaim is nil, game not enriched")
+	}
+	validGameRootClaim := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == *enrichedWithdrawalEvent.expectedRootClaim
+	if validGameRootClaim {
 		// Assuming the l1 and l2 node are not malicious. We have a valid Game Root Claim.
 		if enrichedWithdrawalEvent.withdrawalHashPresentOnL2 {
 			// In this case all the information matches. The withdrawal is valid.
-			return VALID_PROOF
+			return VALID_PROOF, nil
 		} else {
-			return INVALID_PROOF_FORGERY_DETECTED
+			return INVALID_PROOF_FORGERY_DETECTED, nil
 		}
 	} else {
 		if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == IN_PROGRESS {
 			// The game is still in progress. We can't make a decision yet.
-			return INVALID_PROPOSAL_INPROGRESS
+			return INVALID_PROPOSAL_INPROGRESS, nil
 		} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == DEFENDER_WINS {
 			// The game is resolved and the defender won. This is a forgery.
-			return INVALID_PROPOSAL_FORGERY_DETECTED
+			return INVALID_PROPOSAL_FORGERY_DETECTED, nil
 		} else {
 			// The game is resolved and the challenger won. The withdrawal is not valid.
-			return INVALID_PROPOSAL_CORRECTLY_RESOLVED
+			return INVALID_PROPOSAL_CORRECTLY_RESOLVED, nil
 		}
 	}
 }
