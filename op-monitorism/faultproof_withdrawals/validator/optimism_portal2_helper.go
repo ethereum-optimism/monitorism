@@ -1,4 +1,4 @@
-package faultproof_withdrawals
+package validator
 
 import (
 	"context"

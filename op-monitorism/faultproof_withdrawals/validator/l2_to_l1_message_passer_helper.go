@@ -1,4 +1,4 @@
-package faultproof_withdrawals
+package validator
 
 import (
 	"context"
@@ -31,6 +31,6 @@ func NewL2ToL1MessagePasserHelper(ctx context.Context, l2Client *ethclient.Clien
 	}, nil
 }
 
-func (op *L2ToL1MessagePasserHelper) WithdrawalExistsOnL2(withdrawalHash [32]byte) (bool, error) {
-	return op.l2ToL1MessagePasser.L2ToL1MessagePasserCaller.SentMessages(nil, withdrawalHash)
+func (l2l1 *L2ToL1MessagePasserHelper) WithdrawalExistsOnL2(withdrawalHash [32]byte) (bool, error) {
+	return l2l1.l2ToL1MessagePasser.L2ToL1MessagePasserCaller.SentMessages(nil, withdrawalHash)
 }

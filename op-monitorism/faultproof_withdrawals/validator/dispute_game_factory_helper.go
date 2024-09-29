@@ -1,4 +1,4 @@
-package faultproof_withdrawals
+package validator
 
 import (
 	"context"
@@ -45,8 +45,8 @@ func NewDisputeGameFactoryHelper(ctx context.Context, l1Client *ethclient.Client
 	}, nil
 }
 
-func (op *DisputeFactoryGameHelper) GetDisputeGameCoordinatesFromGameIndex(gameIndex uint64) (*DisputeGameFactoryCoordinates, error) {
-	gameDetails, err := op.DisputeGameFactoryCaller.GameAtIndex(nil, big.NewInt(int64(gameIndex)))
+func (df *DisputeFactoryGameHelper) GetDisputeGameCoordinatesFromGameIndex(gameIndex uint64) (*DisputeGameFactoryCoordinates, error) {
+	gameDetails, err := df.DisputeGameFactoryCaller.GameAtIndex(nil, big.NewInt(int64(gameIndex)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dispute game details: %w", err)
 	}
@@ -59,58 +59,58 @@ func (op *DisputeFactoryGameHelper) GetDisputeGameCoordinatesFromGameIndex(gameI
 	}, nil
 }
 
-func (op *DisputeFactoryGameHelper) GetDisputeGameCount() (uint64, error) {
-	gameCountBigInt, err := op.DisputeGameFactoryCaller.GameCount(nil)
+func (df *DisputeFactoryGameHelper) GetDisputeGameCount() (uint64, error) {
+	gameCountBigInt, err := df.DisputeGameFactoryCaller.GameCount(nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get num dispute games: %w", err)
 	}
 	return gameCountBigInt.Uint64(), nil
 }
 
-func (op *DisputeFactoryGameHelper) GetDisputeGameIteratorFromDisputeGameFactory() (*DisputeGameFactoryIterator, error) {
+func (df *DisputeFactoryGameHelper) GetDisputeGameIteratorFromDisputeGameFactory() (*DisputeGameFactoryIterator, error) {
 
-	gameCountBigInt, err := op.DisputeGameFactoryCaller.GameCount(nil)
+	gameCountBigInt, err := df.DisputeGameFactoryCaller.GameCount(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get num dispute games: %w", err)
 	}
 	gameCount := gameCountBigInt.Uint64()
 
 	return &DisputeGameFactoryIterator{
-		DisputeGameFactoryCaller:      &op.DisputeGameFactoryCaller,
+		DisputeGameFactoryCaller:      &df.DisputeGameFactoryCaller,
 		currentIndex:                  0,
 		gameCount:                     gameCount,
 		DisputeGameFactoryCoordinates: nil,
 	}, nil
 }
 
-func (it *DisputeGameFactoryIterator) RefreshElements() error {
-	gameCountBigInt, err := it.DisputeGameFactoryCaller.GameCount(nil)
+func (dgf *DisputeGameFactoryIterator) RefreshElements() error {
+	gameCountBigInt, err := dgf.DisputeGameFactoryCaller.GameCount(nil)
 	if err != nil {
 		return fmt.Errorf("failed to get num dispute games: %w", err)
 	}
-	it.gameCount = gameCountBigInt.Uint64()
+	dgf.gameCount = gameCountBigInt.Uint64()
 	return nil
 }
 
-func (it *DisputeGameFactoryIterator) Next() bool {
-	if it.currentIndex >= it.gameCount-1 {
+func (dgf *DisputeGameFactoryIterator) Next() bool {
+	if dgf.currentIndex >= dgf.gameCount-1 {
 		return false
 	}
 
 	var currentIndex uint64 = 0
-	if it.init {
-		currentIndex = it.currentIndex + 1
+	if dgf.init {
+		currentIndex = dgf.currentIndex + 1
 	}
 
-	gameDetails, err := it.DisputeGameFactoryCaller.GameAtIndex(nil, big.NewInt(int64(currentIndex)))
+	gameDetails, err := dgf.DisputeGameFactoryCaller.GameAtIndex(nil, big.NewInt(int64(currentIndex)))
 	if err != nil {
 		return false
 	}
 
-	it.init = true
-	it.currentIndex = currentIndex
+	dgf.init = true
+	dgf.currentIndex = currentIndex
 
-	it.DisputeGameFactoryCoordinates = &DisputeGameFactoryCoordinates{
+	dgf.DisputeGameFactoryCoordinates = &DisputeGameFactoryCoordinates{
 		GameType:                  gameDetails.GameType,
 		GameIndex:                 currentIndex,
 		disputeGameProxyAddress:   gameDetails.Proxy,

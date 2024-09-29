@@ -1,4 +1,4 @@
-package faultproof_withdrawals
+package validator
 
 import (
 	"encoding/hex"
@@ -21,7 +21,7 @@ func (timestamp Timestamp) String() string {
 	return t.Format("2006-01-02 15:04:05 MST")
 }
 
-func stringToBytes32(input string) ([32]uint8, error) {
+func StringToBytes32(input string) ([32]uint8, error) {
 
 	if strings.HasPrefix(input, "0x") || strings.HasPrefix(input, "0X") {
 		input = input[2:]

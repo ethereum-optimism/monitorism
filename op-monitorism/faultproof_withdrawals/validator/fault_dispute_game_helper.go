@@ -1,4 +1,4 @@
-package faultproof_withdrawals
+package validator
 
 import (
 	"context"
@@ -18,8 +18,7 @@ type FaultDisputeGameProxy struct {
 }
 
 type DisputeGameData struct {
-	ProxyAddress common.Address
-	// game data
+	ProxyAddress  common.Address
 	RootClaim     [32]byte
 	L2blockNumber *big.Int
 	L2ChainID     *big.Int
@@ -72,7 +71,7 @@ func (gs GameStatus) String() string {
 func (d DisputeGameData) String() string {
 	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s status=%v createdAt=%v  resolvedAt=%v ]",
 		d.ProxyAddress,
-		common.BytesToHash(d.RootClaim[:]).Hex(),
+		common.BytesToHash(d.RootClaim[:]),
 		d.L2blockNumber.String(),
 		d.L2ChainID.String(),
 		d.Status,
@@ -101,11 +100,11 @@ func NewFaultDisputeGameHelper(ctx context.Context, l1Client *ethclient.Client) 
 	}, nil
 }
 
-func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (FaultDisputeGameProxy, error) {
+func (fd *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (FaultDisputeGameProxy, error) {
 
-	ret, found := op.gameCache.Get(disputeGameProxyAddress)
+	ret, found := fd.gameCache.Get(disputeGameProxyAddress)
 	if !found {
-		faultDisputeGame, err := dispute.NewFaultDisputeGame(disputeGameProxyAddress, op.l1Client)
+		faultDisputeGame, err := dispute.NewFaultDisputeGame(disputeGameProxyAddress, fd.l1Client)
 		if err != nil {
 			return FaultDisputeGameProxy{}, fmt.Errorf("failed to bind to dispute game: %w", err)
 		}
@@ -152,7 +151,7 @@ func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProx
 			FaultDisputeGame: faultDisputeGame,
 		}
 
-		op.gameCache.Add(disputeGameProxyAddress, ret)
+		fd.gameCache.Add(disputeGameProxyAddress, ret)
 
 	}
 
@@ -161,20 +160,24 @@ func (op *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProx
 
 }
 
-func (op *FaultDisputeGameProxy) RefreshState() error {
+func (fd *FaultDisputeGameProxy) RefreshState() error {
 
-	gameStatus, err := op.FaultDisputeGame.Status(nil)
+	if fd.FaultDisputeGame == nil {
+		return fmt.Errorf("dispute game is nil")
+	}
+
+	gameStatus, err := fd.FaultDisputeGame.Status(nil)
 
 	if err != nil {
 		return fmt.Errorf("failed to get game status: %w", err)
 	}
 
-	op.DisputeGameData.Status = GameStatus(gameStatus)
+	fd.DisputeGameData.Status = GameStatus(gameStatus)
 
-	resolvedAt, err := op.FaultDisputeGame.ResolvedAt(nil)
+	resolvedAt, err := fd.FaultDisputeGame.ResolvedAt(nil)
 	if err != nil {
 		return fmt.Errorf("failed to get game resolved at: %w", err)
 	}
-	op.DisputeGameData.ResolvedAt = resolvedAt
+	fd.DisputeGameData.ResolvedAt = resolvedAt
 	return nil
 }

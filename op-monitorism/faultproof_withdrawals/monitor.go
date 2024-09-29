@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -29,11 +30,7 @@ type Monitor struct {
 	maxBlockRange  uint64
 
 	// helpers
-	faultDisputeGameHelper    FaultDisputeGameHelper
-	optimismPortal2Helper     OptimismPortal2Helper
-	l2ToL1MessagePasserHelper L2ToL1MessagePasserHelper
-	l2NodeHelper              L2NodeHelper
-	withdrawalValidator       WithdrawalValidator
+	withdrawalValidator validator.ProvenWithdrawalValidator
 
 	// state
 	state   State
@@ -56,40 +53,15 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to dial l2: %w", err)
 	}
 
-	optimismPortal2Helper, err := NewOptimismPortal2Helper(ctx, l1GethClient, cfg.OptimismPortalAddress)
+	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, l1GethClient, l2OpGethClient, l2OpNodeClient, cfg.OptimismPortalAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
+		return nil, fmt.Errorf("failed to create withdrawal validator: %w", err)
 	}
-
-	faultDisputeGameHelper, err := NewFaultDisputeGameHelper(ctx, l1GethClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create dispute game helper: %w", err)
-	}
-
-	l2ToL1MessagePasserHelper, err := NewL2ToL1MessagePasserHelper(ctx, l2OpGethClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create l2 to l1 message passer helper: %w", err)
-	}
-
-	l2NodeHelper, err := NewL2NodeHelper(ctx, l2OpNodeClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create l2 node helper: %w", err)
-	}
-
-	withdrawalValidator := NewWithdrawalValidator(ctx, optimismPortal2Helper, l2NodeHelper, l2ToL1MessagePasserHelper, faultDisputeGameHelper)
 
 	latestL1Height, err := l1GethClient.BlockNumber(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query latest block number: %w", err)
 	}
-
-	state, err := NewState(log, cfg.StartingL1BlockHeight, latestL1Height)
-	// state, err := NewState(log, cfg.StartingL1BlockHeight, latestL1Height)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create state: %w", err)
-	}
-
-	metrics := NewMetrics(m)
 
 	l1ChainID, err := l1GethClient.ChainID(ctx)
 	if err != nil {
@@ -99,6 +71,14 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
 	}
+
+	state, err := NewState(log, cfg.StartingL1BlockHeight, latestL1Height)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create state: %w", err)
+	}
+
+	metrics := NewMetrics(m)
+
 	ret := &Monitor{
 		log: log,
 
@@ -110,17 +90,17 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1ChainID: l1ChainID,
 		l2ChainID: l2ChainID,
 
-		faultDisputeGameHelper:    *faultDisputeGameHelper,
-		optimismPortal2Helper:     *optimismPortal2Helper,
-		l2ToL1MessagePasserHelper: *l2ToL1MessagePasserHelper,
-		l2NodeHelper:              *l2NodeHelper,
-		withdrawalValidator:       *withdrawalValidator,
+		withdrawalValidator: *withdrawalValidator,
 
 		maxBlockRange: cfg.EventBlockRange,
 
 		state:   *state,
 		metrics: *metrics,
 	}
+
+	// log state and metrics
+	ret.state.LogState(ret.log)
+	ret.metrics.UpdateMetricsFromState(&ret.state)
 
 	return ret, nil
 }
@@ -158,58 +138,29 @@ func (m *Monitor) Run(ctx context.Context) {
 		m.log.Error("failed to get max block", "error", err)
 		return
 	}
-
-	var newInvalidProposalWithdrawalsEvents []EnrichedWithdrawalEvent = make([]EnrichedWithdrawalEvent, 0)
-
-	for _, enrichedWithdrawalEvent := range m.state.invalidProposalWithdrawalsEvents {
-
-		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
-		if err != nil {
-			m.state.nodeConnectionFailures++
-			m.log.Error("failed to update enriched withdrawal event", "error", err)
-			return
-		}
-		addToInvalidProposalWithdrawalsEvents, err := m.UpdateWithdrawalState(&enrichedWithdrawalEvent)
-		if err != nil {
-			m.state.nodeConnectionFailures++
-			m.log.Error("failed to update withdrawal state", "error", err)
-			return
-		}
-		if addToInvalidProposalWithdrawalsEvents != nil {
-			newInvalidProposalWithdrawalsEvents = append(newInvalidProposalWithdrawalsEvents, *addToInvalidProposalWithdrawalsEvents)
-		}
-	}
-
-	m.state.invalidProposalWithdrawalsEvents = newInvalidProposalWithdrawalsEvents
-
-	events, err := m.optimismPortal2Helper.GetProvenWithdrawalsExtension1Events(start, &stop)
+	// review previous invalidProposalWithdrawalsEvents
+	invalidProposalWithdrawalsEvents, err := m.ConsumeEvents(m.state.forgeriesWithdrawalsEvents)
 	if err != nil {
-		m.state.nodeConnectionFailures++
+		m.log.Error("failed to consume events", "error", err)
 		return
 	}
-
-	for event := range events {
-		enrichedWithdrawalEvent, err := m.withdrawalValidator.GetEnrichedWithdrawalEvent(&events[event])
-		if err != nil {
-			m.state.nodeConnectionFailures++
-			m.log.Error("failed to get enriched withdrawal event", "error", err)
-			return
-		}
-		err = m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
-		if err != nil {
-			m.state.nodeConnectionFailures++
-			m.log.Error("failed to update enriched withdrawal event", "error", err)
-			return
-		}
-		addToInvalidProposalWithdrawalsEvents, err := m.UpdateWithdrawalState(enrichedWithdrawalEvent)
-		if err != nil {
-			m.state.nodeConnectionFailures++
-			m.log.Error("failed to update withdrawal state", "error", err)
-			return
-		}
-		if addToInvalidProposalWithdrawalsEvents != nil {
-			m.state.invalidProposalWithdrawalsEvents = append(m.state.invalidProposalWithdrawalsEvents, *addToInvalidProposalWithdrawalsEvents)
-		}
+	// update state
+	m.state.invalidProposalWithdrawalsEvents = *invalidProposalWithdrawalsEvents
+	// get new events
+	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
+	if err != nil {
+		m.state.nodeConnectionFailures++
+		m.log.Error("failed to get enriched withdrawal events", "error", err)
+		return
+	}
+	newInvalidProposalWithdrawalsEvents, err := m.ConsumeEvents(newEvents)
+	if err != nil {
+		m.log.Error("failed to consume events", "error", err)
+		return
+	}
+	// update
+	if len(*newInvalidProposalWithdrawalsEvents) > 0 && newInvalidProposalWithdrawalsEvents != nil {
+		m.state.invalidProposalWithdrawalsEvents = append(m.state.invalidProposalWithdrawalsEvents, *newInvalidProposalWithdrawalsEvents...)
 	}
 
 	// update state
@@ -220,46 +171,65 @@ func (m *Monitor) Run(ctx context.Context) {
 	m.metrics.UpdateMetricsFromState(&m.state)
 }
 
-func (m *Monitor) UpdateWithdrawalState(enrichedWithdrawalEvent *EnrichedWithdrawalEvent) (*EnrichedWithdrawalEvent, error) {
+func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvent []validator.EnrichedProvenWithdrawalEvent) (*[]validator.EnrichedProvenWithdrawalEvent, error) {
+	var newForgeriesGameInProgressEvent []validator.EnrichedProvenWithdrawalEvent = make([]validator.EnrichedProvenWithdrawalEvent, 0)
+	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvent {
+		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
+		if err != nil {
+			m.state.nodeConnectionFailures++
+			m.log.Error("failed to update enriched withdrawal event", "error", err)
+			return nil, err
+		}
 
-	result, err := m.withdrawalValidator.ValidateWithdrawal(enrichedWithdrawalEvent)
-	if err != nil {
-		m.log.Error("failed to validate withdrawal", "error", err)
-		return nil, err
+		consumedEvent, err := m.ConsumeEvent(enrichedWithdrawalEvent)
+		if err != nil {
+			m.log.Error("failed to consume event", "error", err)
+			return nil, err
+		} else if !consumedEvent {
+			m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
+		}
+
 	}
 
+	return &newForgeriesGameInProgressEvent, nil
+}
+
+func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) (bool, error) {
+	m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent.Event)
 	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
 	}
-
-	switch result {
-	case PROOF_ON_BLACKLISTED_GAME:
-		m.log.Info("game is blacklisted,removing from invalidProposalWithdrawalsEvents list", "game", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.ProxyAddress.Hex())
-		// m.state.blacklistedGames++
-		return nil, nil
-	case INVALID_PROOF_FORGERY_DETECTED:
-		m.log.Error("withdrawal is NOT valid, forgery detected",
-			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		m.state.isDetectingForgeries++
-		m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, *enrichedWithdrawalEvent)
-	case INVALID_PROPOSAL_FORGERY_DETECTED:
-		m.log.Error("withdrawal is NOT valid, forgery detected",
-			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		m.state.isDetectingForgeries++
-		m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, *enrichedWithdrawalEvent)
-	case INVALID_PROPOSAL_INPROGRESS:
-		m.log.Warn("game is still in progress",
-			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		return enrichedWithdrawalEvent, nil
-	case INVALID_PROPOSAL_CORRECTLY_RESOLVED:
-		m.log.Info("withdrawal was correctly resolved",
-			"enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		m.state.withdrawalsValidated++
-	case VALID_PROOF:
-		m.log.Info("withdrawal is valid", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(&enrichedWithdrawalEvent)
+	if err != nil {
+		m.state.nodeConnectionFailures++
+		m.log.Error("failed to check if forgery detected", "error", err)
+		return false, err
+	}
+	if !valid {
+		if !enrichedWithdrawalEvent.Blacklisted {
+			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
+				m.log.Error("withdrawal is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.state.withdrawalsValidated++
+			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
+				m.log.Error("withdrawal is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.state.isDetectingForgeries++
+				// add to forgeries
+				m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
+			} else {
+				m.log.Error("withdrawal is NOT valid, game is still in progress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				// add to events to be re-processed
+				return false, nil
+			}
+		} else {
+			m.log.Warn("withdrawal is NOT valid, but game is blacklisted", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+			m.state.withdrawalsValidated++
+		}
+	} else {
+		m.log.Info("Valid withdrawal", "valid", valid, "blacklisted", enrichedWithdrawalEvent.Blacklisted, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.withdrawalsValidated++
 	}
-	return nil, nil
+	m.state.processedProvenWithdrawalsExtension1Events++
+	return true, nil
 }
 
 func (m *Monitor) Close(_ context.Context) error {

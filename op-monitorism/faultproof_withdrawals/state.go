@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -14,15 +15,14 @@ type State struct {
 	latestL1Height uint64
 
 	processedProvenWithdrawalsExtension1Events uint64
-	processedGames                             uint64
 
 	isDetectingForgeries uint64
 	withdrawalsValidated uint64
 
 	nodeConnectionFailures uint64
 
-	forgeriesWithdrawalsEvents       []EnrichedWithdrawalEvent
-	invalidProposalWithdrawalsEvents []EnrichedWithdrawalEvent
+	forgeriesWithdrawalsEvents       []validator.EnrichedProvenWithdrawalEvent
+	invalidProposalWithdrawalsEvents []validator.EnrichedProvenWithdrawalEvent
 }
 
 func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*State, error) {
@@ -39,7 +39,6 @@ func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*Stat
 		isDetectingForgeries:   0,
 		withdrawalsValidated:   0,
 		nodeConnectionFailures: 0,
-		processedGames:         0,
 	}
 
 	return &ret, nil
@@ -55,7 +54,6 @@ func (s *State) LogState(log log.Logger) {
 		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
 		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
 		"processedProvenWithdrawalsExtension1Events", fmt.Sprintf("%d", s.processedProvenWithdrawalsExtension1Events),
-		"processedGames", fmt.Sprintf("%d", s.processedGames),
 		"isDetectingForgeries", fmt.Sprintf("%d", s.isDetectingForgeries),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
 		"forgeriesWithdrawalsEvents", fmt.Sprintf("%d", len(s.forgeriesWithdrawalsEvents)),
@@ -73,7 +71,6 @@ type Metrics struct {
 	NextL1HeightGauge                                  prometheus.Gauge
 	LatestL1HeightGauge                                prometheus.Gauge
 	ProcessedProvenWithdrawalsEventsExtensions1Counter prometheus.Counter
-	ProcessedGamesCounter                              prometheus.Counter
 	IsDetectingForgeriesGauge                          prometheus.Gauge
 	WithdrawalsValidatedCounter                        prometheus.Counter
 	NodeConnectionFailuresCounter                      prometheus.Counter
@@ -82,7 +79,6 @@ type Metrics struct {
 
 	// Previous values for counters
 	previousProcessedProvenWithdrawalsExtension1Events uint64
-	previousProcessedGames                             uint64
 	previousWithdrawalsValidated                       uint64
 	previousNodeConnectionFailures                     uint64
 }
@@ -103,11 +99,6 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Namespace: MetricsNamespace,
 			Name:      "processed_provenwithdrawalsextension1_events_total",
 			Help:      "Total number of processed provenwithdrawalsextension1 events",
-		}),
-		ProcessedGamesCounter: m.NewCounter(prometheus.CounterOpts{
-			Namespace: MetricsNamespace,
-			Name:      "processed_games_total",
-			Help:      "Total number of processed games",
 		}),
 		IsDetectingForgeriesGauge: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
@@ -157,13 +148,6 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 		m.ProcessedProvenWithdrawalsEventsExtensions1Counter.Add(float64(processedWithdrawalsDelta))
 	}
 	m.previousProcessedProvenWithdrawalsExtension1Events = state.processedProvenWithdrawalsExtension1Events
-
-	// Processed Games
-	processedGamesDelta := state.processedGames - m.previousProcessedGames
-	if processedGamesDelta > 0 {
-		m.ProcessedGamesCounter.Add(float64(processedGamesDelta))
-	}
-	m.previousProcessedGames = state.processedGames
 
 	// Withdrawals Validated
 	withdrawalsValidatedDelta := state.withdrawalsValidated - m.previousWithdrawalsValidated

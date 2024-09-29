@@ -1,4 +1,4 @@
-package faultproof_withdrawals
+package validator
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 )
 
-type L2NodeHelper struct {
+type OpNodeHelper struct {
 	//objects
 	l2OpNodeClient    *ethclient.Client
 	rpc_l2Client      *rpc.Client
@@ -24,14 +24,14 @@ type L2NodeHelper struct {
 
 const outputRootCacheSize = 1000
 
-func NewL2NodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client) (*L2NodeHelper, error) {
+func NewOpNodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client) (*OpNodeHelper, error) {
 	l2OutputRootCache, err := lru.New(outputRootCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache: %w", err)
 	}
 	rpc_l2Client := l2OpNodeClient.Client()
 
-	return &L2NodeHelper{
+	return &OpNodeHelper{
 		l2OpNodeClient:    l2OpNodeClient,
 		rpc_l2Client:      rpc_l2Client,
 		ctx:               ctx,
@@ -39,19 +39,19 @@ func NewL2NodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client) (*L2
 	}, nil
 }
 
-func (op *L2NodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) ([32]byte, error) {
+func (on *OpNodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) ([32]byte, error) {
 
-	ret, found := op.l2OutputRootCache.Get(l2blockNumber)
+	ret, found := on.l2OutputRootCache.Get(l2blockNumber)
 	if !found {
 
 		var result OutputResponse
 		l2blockNumberHex := hexutil.EncodeBig(l2blockNumber)
 
-		err := op.rpc_l2Client.CallContext(op.ctx, &result, "optimism_outputAtBlock", l2blockNumberHex)
+		err := on.rpc_l2Client.CallContext(on.ctx, &result, "optimism_outputAtBlock", l2blockNumberHex)
 		if err != nil {
 			return [32]byte{}, fmt.Errorf("failed to get output at block for game block:%v : %w", l2blockNumberHex, err)
 		}
-		trustedRootProof, err := stringToBytes32(result.OutputRoot)
+		trustedRootProof, err := StringToBytes32(result.OutputRoot)
 		if err != nil {
 			return [32]byte{}, fmt.Errorf("failed to convert output root to bytes32: %w", err)
 		}
@@ -61,14 +61,14 @@ func (op *L2NodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) (
 	return ret.([32]byte), nil
 }
 
-func (op *L2NodeHelper) GetOutputRootFromCalculation(blockNumber *big.Int) ([32]byte, error) {
-	block, err := op.l2OpNodeClient.BlockByNumber(op.ctx, blockNumber)
+func (on *OpNodeHelper) GetOutputRootFromCalculation(blockNumber *big.Int) ([32]byte, error) {
+	block, err := on.l2OpNodeClient.BlockByNumber(on.ctx, blockNumber)
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("failed to get block by number: %w", err)
 	}
 
 	proof := struct{ StorageHash common.Hash }{}
-	err = op.l2OpNodeClient.Client().CallContext(op.ctx, &proof, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, nil, hexutil.EncodeBig(blockNumber))
+	err = on.l2OpNodeClient.Client().CallContext(on.ctx, &proof, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, nil, hexutil.EncodeBig(blockNumber))
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("failed to get proof: %w", err)
 	}
