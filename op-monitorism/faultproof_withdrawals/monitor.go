@@ -148,7 +148,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 
 	// review previous invalidProposalWithdrawalsEvents
-	invalidProposalWithdrawalsEvents, err := m.ConsumeEvents(m.state.forgeriesWithdrawalsEvents)
+	invalidProposalWithdrawalsEvents, err := m.ConsumeEvents(m.state.invalidProposalWithdrawalsEvents)
 	if err != nil {
 		m.log.Error("failed to consume events", "error", err)
 		return
