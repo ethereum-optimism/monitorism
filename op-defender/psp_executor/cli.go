@@ -15,16 +15,18 @@ const (
 	SafeAddressFlagName             = "safe.address"
 	PathFlagName                    = "path"
 	ChainIDFlagName                 = "chainid"
+	BlockDurationFlagName           = "blockduration"
 )
 
 type CLIConfig struct {
 	NodeURL                 string
 	PortAPI                 string
 	Path                    string
+	BlockDuration           uint64
 	privatekeyflag          string
 	SuperChainConfigAddress common.Address
 	SafeAddress             common.Address
-	chainID                 uint64
+	ChainID                 uint64
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -35,7 +37,8 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		privatekeyflag:          ctx.String(PrivateKeyFlagName),
 		SuperChainConfigAddress: common.HexToAddress(ctx.String(SuperChainConfigAddressFlagName)),
 		SafeAddress:             common.HexToAddress(ctx.String(SafeAddressFlagName)),
-		chainID:                 ctx.Uint64(ChainIDFlagName),
+		ChainID:                 ctx.Uint64(ChainIDFlagName),
+		BlockDuration:           ctx.Uint64(BlockDurationFlagName),
 	}
 
 	return cfg, nil
@@ -79,6 +82,13 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Usage:    "Absolute path to the JSON file containing the PSPs",
 			EnvVars:  opservice.PrefixEnvVar(envPrefix, "PATH_TO_PSPS"),
 			Required: true,
+		},
+		&cli.Uint64Flag{
+			Name:     BlockDurationFlagName,
+			Usage:    "Block duration of the current chain that op-defender is running on",
+			Value:    12,
+			EnvVars:  opservice.PrefixEnvVar(envPrefix, "BLOCK_DURATION"),
+			Required: false,
 		},
 		&cli.Uint64Flag{
 			Name:     ChainIDFlagName,

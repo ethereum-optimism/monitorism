@@ -1,4 +1,5 @@
 - [Monitorism](#monitorism)
+  - [Docker Images](#docker-images)
   - [Monitors Components](#monitors-components)
     - [Global Events Monitor](#global-events-monitor)
     - [Liveness Expiration Monitor](#liveness-expiration-monitor)
@@ -19,6 +20,27 @@
 _Monitorism_ is a tooling suite that supports monitoring and active remediation actions for the OP Stack chain.
 
 The suite is composed of two main components: `op-monitorism` and `op-defender`, that can be used together or separately and see below for more details.
+
+## Docker images
+
+### Op-Monitorism
+Op-Monitorism Docker images are published with each release and build, ensuring you have access to the latest features and fixes.
+
+The latest release version for linux/amd64 can be found in the [release notes](https://github.com/ethereum-optimism/monitorism/releases/tag/op-monitorism%2Fv0.0.4)
+
+To pull the latest Docker image, run:
+```bash
+docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:v0.0.4@sha256:be9aebdd44b5ef595986301d162d805f3cc6982291c37164000dc6671158b9bf
+``` 
+Note: The --platform flag is necessary for Mac computers with ARM chips to ensure compatibility with the linux/amd64 architecture.
+
+
+To build the Docker image locally, execute the following command:
+```bash
+docker build -t op-monitorism ./op-monitorism
+```
+Use "-t op-monitorism" to tag the image with the name op-monitorism for easier reference.
+
 
 ## Monitors Components
 

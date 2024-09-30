@@ -184,7 +184,7 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	// Continue
 
-	m.log.Info("validated ouput", "index", m.currOutputIndex, "output_root", outputRoot.String(), "finalization_time", time.Unix(int64(block.Time()+m.faultProofWindow), 0).String())
+	m.log.Info("validated output", "index", m.currOutputIndex, "output_root", outputRoot.String(), "finalization_time", time.Unix(int64(block.Time()+m.faultProofWindow), 0).String())
 	m.highestOutputIndex.WithLabelValues("checked").Set(float64(m.currOutputIndex))
 
 	m.currOutputIndex++

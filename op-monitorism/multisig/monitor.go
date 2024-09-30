@@ -47,7 +47,7 @@ type Monitor struct {
 	optimismPortal        *bindings.OptimismPortalCaller
 	nickname              string
 
-	onePassToken string
+	//onePassToken string
 	onePassVault *string
 	safeAddress  *common.Address
 
