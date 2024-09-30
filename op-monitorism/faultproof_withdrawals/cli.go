@@ -77,7 +77,7 @@ func CLIFlags(envVar string) []cli.Flag {
 			Name:     StartingL1BlockHeightFlagName,
 			Usage:    "Starting height to scan for events",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
-			Required: true,
+			Required: false,
 		},
 		&cli.StringFlag{
 			Name:     OptimismPortalAddressFlagName,

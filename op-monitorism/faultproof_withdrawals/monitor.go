@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -76,11 +77,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
 	}
 
-	state, err := NewState(log, cfg.StartingL1BlockHeight, latestL1Height)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create state: %w", err)
-	}
-
 	metrics := NewMetrics(m)
 
 	ret := &Monitor{
@@ -98,15 +94,92 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 		maxBlockRange: cfg.EventBlockRange,
 
-		state:   *state,
+		state:   State{},
 		metrics: *metrics,
 	}
+
+	startingL1BlockHeight := cfg.StartingL1BlockHeight
+	if startingL1BlockHeight == 0 {
+		// get the block number closest to the timestamp from two weeks ago
+		latestL1HeightBigInt := new(big.Int).SetUint64(latestL1Height)
+		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get block at approximate time: %w", err)
+		}
+		startingL1BlockHeight = startingL1BlockHeightBigInt.Uint64()
+	}
+
+	state, err := NewState(log, startingL1BlockHeight, latestL1Height)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create state: %w", err)
+	}
+	ret.state = *state
 
 	// log state and metrics
 	ret.state.LogState(ret.log)
 	ret.metrics.UpdateMetricsFromState(&ret.state)
 
 	return ret, nil
+}
+
+// getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
+func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int) (*big.Int, error) {
+
+	m.log.Info("finding block at approximate time of two weeks back in time from ...", "time", time.Now().Unix(), "latestBlockNumber", latestBlockNumber)
+	// Calculate the total seconds in two weeks
+	secondsInTwoWeeks := big.NewInt(14 * 24 * 60 * 60) // 14 days
+	targetTime := big.NewInt(time.Now().Unix())
+	targetTime.Sub(targetTime, secondsInTwoWeeks)
+
+	// Initialize the search range
+	left := big.NewInt(0)
+	right := new(big.Int).Set(latestBlockNumber)
+
+	var mid *big.Int
+	acceptablediff := big.NewInt(60 * 60) //60 minutes
+
+	// Perform binary search
+	for left.Cmp(right) <= 0 {
+		//interrupt in case of context cancellation
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled")
+		default:
+		}
+
+		// Calculate the midpoint
+		mid = new(big.Int).Add(left, right)
+		mid.Div(mid, big.NewInt(2))
+
+		// Get the block at mid
+		block, err := client.BlockByNumber(context.Background(), mid)
+		if err != nil {
+			return nil, err
+		}
+
+		// Check the block's timestamp
+		blockTime := big.NewInt(int64(block.Time()))
+
+		//calculate the difference between the block time and the target time
+		diff := new(big.Int).Sub(blockTime, targetTime)
+
+		// If block time is less than or equal to target time, check if we need to search to the right
+		if blockTime.Cmp(targetTime) <= 0 {
+			left.Set(mid) // Move left boundary up to mid
+		} else {
+			right.Sub(mid, big.NewInt(1)) // Move right boundary down
+		}
+		if new(big.Int).Abs(diff).Cmp(acceptablediff) <= 0 {
+			//if the difference is less than or equal to 1 hour, we can consider this block as the block closest to the target time
+			break
+		}
+
+	}
+
+	// log the block number closest to the target time and the time
+	m.log.Info("block number closest to target time", "block", left, "time", time.Unix(targetTime.Int64(), 0))
+	// After exiting the loop, left should be the block number closest to the target time
+	return left, nil
 }
 
 // GetLatestBlock retrieves the latest block number from the L1 Geth client.
@@ -160,8 +233,14 @@ func (m *Monitor) Run(ctx context.Context) {
 	// get new events
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
 	if err != nil {
-		m.state.nodeConnectionFailures++
-		m.log.Error("failed to get enriched withdrawal events", "error", err)
+		if stop-start <= 1 {
+			//in this case it happens when the range is too small, we can ignore the error as it is normal for the Iterator to not be ready yet
+			m.log.Info("failed to get enriched withdrawal events, should not be an issue as start and stop blocks are too close", "error", err)
+
+		} else {
+			m.state.nodeConnectionFailures++
+			m.log.Error("failed to get enriched withdrawal events", "error", err)
+		}
 		return
 	}
 	newInvalidProposalWithdrawalsEvents, err := m.ConsumeEvents(newEvents)
@@ -226,31 +305,31 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 		m.state.numberOfInvalidWithdrawals++
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
-				m.log.Warn("withdrawal is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.log.Warn("WITHDRAWAL: is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				m.state.withdrawalsValidated++
 				eventConsumed = true
 			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
-				m.log.Error("withdrawal is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.log.Error("WITHDRAWAL: is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				m.state.numberOfDetectedForgery++
 				// add to forgeries
 				m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
 				eventConsumed = true
 			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.IN_PROGRESS {
-				m.log.Warn("withdrawal is NOT valid, game is still in progress.", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.log.Warn("WITHDRAWAL: is NOT valid, game is still in progress.", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				// add to events to be re-processed
 				eventConsumed = false
 			} else {
-				m.log.Error("withdrawal is NOT valid, game status is unknown. UNKNOWN STATE SHOULD NEVER HAPPEN", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.log.Error("WITHDRAWAL: is NOT valid, game status is unknown. UNKNOWN STATE SHOULD NEVER HAPPEN", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				eventConsumed = false
 			}
 
 		} else {
-			m.log.Warn("withdrawal is NOT valid, but game is blacklisted", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+			m.log.Warn("WITHDRAWAL: is NOT valid, but game is blacklisted", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 			m.state.withdrawalsValidated++
 			eventConsumed = true
 		}
 	} else {
-		m.log.Info("Valid withdrawal", "valid", valid, "blacklisted", enrichedWithdrawalEvent.Blacklisted, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		m.log.Info("WITHDRAWAL: is valid", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.withdrawalsValidated++
 		eventConsumed = true
 	}
