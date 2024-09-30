@@ -5,6 +5,9 @@ faultproof_withdrawals has the following purpose:
 - Detect Forgeries: The service identifies and reports any invalid withdrawals or potential forgeries.
 
 # Prometheus Metrics
+TODO
+
+## Enable Metrics
 This service will optionally expose a [prometeus metrics](https://prometheus.io/docs/concepts/metric_types/).
 
 In order to start the metrics service make sure to either export the variables or setup the right cli args
@@ -22,23 +25,26 @@ or
 cd ../
 go run ./cmd/monitorism faultproof_withdrawals --metrics.enabled --metrics.port 7300
 ```
+## Available Metrics and Meaning
+
 
 # Cli options
 
 ```bash 
+go run ./cmd/monitorism faultproof_withdrawals --help
 NAME:
-   Monitorism faultproof_withdrawals - Monitors proven withdrawals on L1 against L2, for FaultProof compatible chains
+   Monitorism faultproof_withdrawals - Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.
 
 USAGE:
    Monitorism faultproof_withdrawals [command options]
 
 DESCRIPTION:
-   Monitors proven withdrawals on L1 against L2, for FaultProof compatible chains
+   Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.
 
 OPTIONS:
-   --l1.geth.url value             Node URL of L1 peer (default: "127.0.0.1:8545") [$FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL]
-   --l2.node.url value             Node URL of L2 peer (default: "127.0.0.1:9545") [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL]
-   --l2.geth.url value             Node URL of L2 peer (default: "127.0.0.1:9546") [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL]
+   --l1.geth.url value             L1 execution layer node URL [$FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL]
+   --l2.node.url value             L2 rollup node consensus layer (op-node) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL]
+   --l2.geth.url value             L2 OP Stack execution layer client(op-geth) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL]
    --event.block.range value       Max block range when scanning for events (default: 1000) [$FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE]
    --start.block.height value      Starting height to scan for events (default: 0) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT]
    --optimismportal.address value  Address of the OptimismPortal contract [$FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL]
@@ -52,3 +58,26 @@ OPTIONS:
    --loop.interval.msec value      Loop interval of the monitor in milliseconds (default: 60000) [$MONITORISM_LOOP_INTERVAL_MSEC]
    --help, -h                      show help
    ```
+
+## Example run on sepolia op chain
+
+```bash
+L1_GETH_URL="https://..."
+L2_OP_NODE_URL="https://..."
+L2_OP_GETH_URL="https://..."
+
+export MONITORISM_LOOP_INTERVAL_MSEC=100
+export MONITORISM_METRICS_PORT=7300
+export MONITORISM_METRICS_ENABLED=true
+export FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL="$L1_GETH_URL"
+export FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL="$L2_OP_NODE_URL"
+export FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL="$L2_OP_GETH_URL"
+export FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL="0x16Fc5058F25648194471939df75CF27A2fdC48BC"
+export FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT=5914813
+export FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE=1000
+
+
+go run ./cmd/monitorism faultproof_withdrawals
+```
+
+Metrics will be avialable at [http://localhost:7300](http://localhost:7300)
