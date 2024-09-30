@@ -205,31 +205,38 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 		m.log.Error("failed to check if forgery detected", "error", err)
 		return false, err
 	}
+	var event_consumed bool = false
+
 	if !valid {
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
 				m.log.Error("withdrawal is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				m.state.withdrawalsValidated++
+				event_consumed = true
 			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
 				m.log.Error("withdrawal is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				m.state.isDetectingForgeries++
 				// add to forgeries
 				m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
+				event_consumed = true
 			} else {
 				m.log.Error("withdrawal is NOT valid, game is still in progress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				// add to events to be re-processed
-				return false, nil
+				event_consumed = false
 			}
 		} else {
 			m.log.Warn("withdrawal is NOT valid, but game is blacklisted", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 			m.state.withdrawalsValidated++
+			event_consumed = true
 		}
 	} else {
 		m.log.Info("Valid withdrawal", "valid", valid, "blacklisted", enrichedWithdrawalEvent.Blacklisted, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.withdrawalsValidated++
+		event_consumed = true
 	}
 	m.state.processedProvenWithdrawalsExtension1Events++
-	return true, nil
+	m.metrics.UpdateMetricsFromState(&m.state)
+	return event_consumed, nil
 }
 
 func (m *Monitor) Close(_ context.Context) error {
