@@ -223,22 +223,27 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 	eventConsumed := false
 
 	if !valid {
+		m.state.invalidWithdrawals++
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
-				m.log.Error("withdrawal is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.log.Warn("withdrawal is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				m.state.withdrawalsValidated++
 				eventConsumed = true
 			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
 				m.log.Error("withdrawal is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-				m.state.isDetectingForgeries++
+				m.state.numberOfDetectedForgery++
 				// add to forgeries
 				m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
 				eventConsumed = true
-			} else {
-				m.log.Error("withdrawal is NOT valid, game is still in progress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.IN_PROGRESS {
+				m.log.Warn("withdrawal is NOT valid, game is still in progress.", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				// add to events to be re-processed
 				eventConsumed = false
+			} else {
+				m.log.Error("withdrawal is NOT valid, game status is unknown. UNKNOWN STATE SHOULD NEVER HAPPEN", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				eventConsumed = false
 			}
+
 		} else {
 			m.log.Warn("withdrawal is NOT valid, but game is blacklisted", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 			m.state.withdrawalsValidated++

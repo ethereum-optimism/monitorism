@@ -16,8 +16,9 @@ type State struct {
 
 	processedProvenWithdrawalsExtension1Events uint64
 
-	isDetectingForgeries uint64
-	withdrawalsValidated uint64
+	numberOfDetectedForgery    uint64
+	numberOfInvalidWithdrawals uint64
+	withdrawalsValidated       uint64
 
 	nodeConnectionFailures uint64
 
@@ -34,11 +35,12 @@ func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*Stat
 
 	ret := State{
 		processedProvenWithdrawalsExtension1Events: 0,
-		nextL1Height:           nextL1Height,
-		latestL1Height:         latestL1Height,
-		isDetectingForgeries:   0,
-		withdrawalsValidated:   0,
-		nodeConnectionFailures: 0,
+		nextL1Height:               nextL1Height,
+		latestL1Height:             latestL1Height,
+		numberOfDetectedForgery:    0,
+		withdrawalsValidated:       0,
+		nodeConnectionFailures:     0,
+		numberOfInvalidWithdrawals: 0,
 	}
 
 	return &ret, nil
@@ -54,7 +56,8 @@ func (s *State) LogState(log log.Logger) {
 		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
 		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
 		"processedProvenWithdrawalsExtension1Events", fmt.Sprintf("%d", s.processedProvenWithdrawalsExtension1Events),
-		"isDetectingForgeries", fmt.Sprintf("%d", s.isDetectingForgeries),
+		"numberOfDetectedForgery", fmt.Sprintf("%d", s.numberOfDetectedForgery),
+		"numberOfInvalidWithdrawals", fmt.Sprintf("%d", s.numberOfInvalidWithdrawals),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
 		"forgeriesWithdrawalsEvents", fmt.Sprintf("%d", len(s.forgeriesWithdrawalsEvents)),
 		"invalidProposalWithdrawalsEvents", fmt.Sprintf("%d", len(s.invalidProposalWithdrawalsEvents)),
@@ -71,7 +74,8 @@ type Metrics struct {
 	NextL1HeightGauge                                  prometheus.Gauge
 	LatestL1HeightGauge                                prometheus.Gauge
 	ProcessedProvenWithdrawalsEventsExtensions1Counter prometheus.Counter
-	IsDetectingForgeriesGauge                          prometheus.Gauge
+	NumberOfDetectedForgeryGauge                       prometheus.Gauge
+	NumberOfInvalidWithdrawalsGauge                    prometheus.Gauge
 	WithdrawalsValidatedCounter                        prometheus.Counter
 	NodeConnectionFailuresCounter                      prometheus.Counter
 	ForgeriesWithdrawalsEventsGauge                    prometheus.Gauge
@@ -100,10 +104,15 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Name:      "processed_provenwithdrawalsextension1_events_total",
 			Help:      "Total number of processed provenwithdrawalsextension1 events",
 		}),
-		IsDetectingForgeriesGauge: m.NewGauge(prometheus.GaugeOpts{
+		NumberOfDetectedForgeryGauge: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "is_detecting_forgeries",
-			Help:      "Is Detecting Forgeries (0 or 1)",
+			Name:      "number_of_detected_forgeries",
+			Help:      "Number of detected forgeries",
+		}),
+		NumberOfInvalidWithdrawalsGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "number_of_invalid_withdrawals",
+			Help:      "Number of invalid withdrawals",
 		}),
 		WithdrawalsValidatedCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
@@ -136,8 +145,8 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.NextL1HeightGauge.Set(float64(state.nextL1Height))
 	m.LatestL1HeightGauge.Set(float64(state.latestL1Height))
 
-	m.IsDetectingForgeriesGauge.Set(float64(state.isDetectingForgeries))
-
+	m.NumberOfDetectedForgeryGauge.Set(float64(state.numberOfDetectedForgery))
+	m.NumberOfInvalidWithdrawalsGauge.Set(float64(state.numberOfInvalidWithdrawals))
 	m.ForgeriesWithdrawalsEventsGauge.Set(float64(len(state.forgeriesWithdrawalsEvents)))
 	m.InvalidProposalWithdrawalsEventsGauge.Set(float64(len(state.invalidProposalWithdrawalsEvents)))
 
