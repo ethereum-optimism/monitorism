@@ -220,7 +220,7 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 		m.log.Error("failed to check if forgery detected", "error", err)
 		return false, err
 	}
-	var eventConsumed bool = false
+	eventConsumed := false
 
 	if !valid {
 		if !enrichedWithdrawalEvent.Blacklisted {
