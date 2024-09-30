@@ -94,8 +94,8 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 			},
 			{
 				Name:        "faultproof_withdrawals",
-				Usage:       "Monitors proven withdrawals on L1 against L2, for FaultProof compatible chains",
-				Description: "Monitors proven withdrawals on L1 against L2, for FaultProof compatible chains",
+				Usage:       "Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.",
+				Description: "Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.",
 				Flags:       append(faultproof_withdrawals.CLIFlags("FAULTPROOF_WITHDRAWAL_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(FaultproofWithdrawalsMain),
 			},
