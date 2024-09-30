@@ -16,6 +16,7 @@ const (
 	MetricsNamespace = "faultproof_two_step_monitor"
 )
 
+// Monitor monitors the state and events related to withdrawal forgery.
 type Monitor struct {
 	// context
 	log log.Logger
@@ -37,6 +38,9 @@ type Monitor struct {
 	metrics Metrics
 }
 
+// NewMonitor creates a new Monitor instance with the provided configuration.
+// It establishes connections to the specified L1 and L2 Geth clients, initializes
+// the withdrawal validator, and sets up the initial state and metrics.
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	log.Info("creating withdrawals monitor...")
 
@@ -105,6 +109,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	return ret, nil
 }
 
+// GetLatestBlock retrieves the latest block number from the L1 Geth client.
+// It updates the state with the latest L1 height.
 func (m *Monitor) GetLatestBlock() (uint64, error) {
 	latestL1Height, err := m.l1GethClient.BlockNumber(m.ctx)
 	if err != nil {
@@ -114,6 +120,8 @@ func (m *Monitor) GetLatestBlock() (uint64, error) {
 	return latestL1Height, nil
 }
 
+// GetMaxBlock calculates the maximum block number to be processed.
+// It considers the next L1 height and the defined max block range.
 func (m *Monitor) GetMaxBlock() (uint64, error) {
 	latestL1Height, err := m.GetLatestBlock()
 	if err != nil {
@@ -125,11 +133,11 @@ func (m *Monitor) GetMaxBlock() (uint64, error) {
 		stop = latestL1Height
 	}
 	return stop, nil
-
 }
 
+// Run executes the main monitoring loop.
+// It retrieves new events, processes them, and updates the state accordingly.
 func (m *Monitor) Run(ctx context.Context) {
-
 	start := m.state.nextL1Height
 
 	stop, err := m.GetMaxBlock()
@@ -138,14 +146,17 @@ func (m *Monitor) Run(ctx context.Context) {
 		m.log.Error("failed to get max block", "error", err)
 		return
 	}
+
 	// review previous invalidProposalWithdrawalsEvents
 	invalidProposalWithdrawalsEvents, err := m.ConsumeEvents(m.state.forgeriesWithdrawalsEvents)
 	if err != nil {
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
+
 	// update state
 	m.state.invalidProposalWithdrawalsEvents = *invalidProposalWithdrawalsEvents
+
 	// get new events
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
 	if err != nil {
@@ -158,7 +169,8 @@ func (m *Monitor) Run(ctx context.Context) {
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
-	// update
+
+	// update state
 	if len(*newInvalidProposalWithdrawalsEvents) > 0 && newInvalidProposalWithdrawalsEvents != nil {
 		m.state.invalidProposalWithdrawalsEvents = append(m.state.invalidProposalWithdrawalsEvents, *newInvalidProposalWithdrawalsEvents...)
 	}
@@ -171,6 +183,8 @@ func (m *Monitor) Run(ctx context.Context) {
 	m.metrics.UpdateMetricsFromState(&m.state)
 }
 
+// ConsumeEvents processes a slice of enriched withdrawal events and updates their states.
+// It returns any events detected during the consumption that requires to be re-analysed again at a later stage (when the event referenced DisputeGame completes).
 func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvent []validator.EnrichedProvenWithdrawalEvent) (*[]validator.EnrichedProvenWithdrawalEvent, error) {
 	var newForgeriesGameInProgressEvent []validator.EnrichedProvenWithdrawalEvent = make([]validator.EnrichedProvenWithdrawalEvent, 0)
 	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvent {
@@ -188,12 +202,13 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvent []validator.EnrichedProv
 		} else if !consumedEvent {
 			m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
 		}
-
 	}
 
 	return &newForgeriesGameInProgressEvent, nil
 }
 
+// ConsumeEvent processes a single enriched withdrawal event.
+// It logs the event details and checks for any forgery detection.
 func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) (bool, error) {
 	m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent.Event)
 	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
@@ -205,40 +220,41 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 		m.log.Error("failed to check if forgery detected", "error", err)
 		return false, err
 	}
-	var event_consumed bool = false
+	var eventConsumed bool = false
 
 	if !valid {
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
 				m.log.Error("withdrawal is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				m.state.withdrawalsValidated++
-				event_consumed = true
+				eventConsumed = true
 			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
 				m.log.Error("withdrawal is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				m.state.isDetectingForgeries++
 				// add to forgeries
 				m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
-				event_consumed = true
+				eventConsumed = true
 			} else {
 				m.log.Error("withdrawal is NOT valid, game is still in progress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 				// add to events to be re-processed
-				event_consumed = false
+				eventConsumed = false
 			}
 		} else {
 			m.log.Warn("withdrawal is NOT valid, but game is blacklisted", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 			m.state.withdrawalsValidated++
-			event_consumed = true
+			eventConsumed = true
 		}
 	} else {
 		m.log.Info("Valid withdrawal", "valid", valid, "blacklisted", enrichedWithdrawalEvent.Blacklisted, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		m.state.withdrawalsValidated++
-		event_consumed = true
+		eventConsumed = true
 	}
 	m.state.processedProvenWithdrawalsExtension1Events++
 	m.metrics.UpdateMetricsFromState(&m.state)
-	return event_consumed, nil
+	return eventConsumed, nil
 }
 
+// Close gracefully shuts down the Monitor by closing the Geth clients.
 func (m *Monitor) Close(_ context.Context) error {
 	m.l1GethClient.Close()
 	m.l2OpGethClient.Close()
