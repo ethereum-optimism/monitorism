@@ -200,7 +200,7 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvent []validator.EnrichedProv
 			m.log.Error("failed to consume event", "error", err)
 			return nil, err
 		} else if !consumedEvent {
-			m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
+			newForgeriesGameInProgressEvent = append(newForgeriesGameInProgressEvent, enrichedWithdrawalEvent)
 		}
 	}
 
