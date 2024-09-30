@@ -14,16 +14,19 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 )
 
+// OpNodeHelper assists in interacting with the op-node
 type OpNodeHelper struct {
-	//objects
-	l2OpNodeClient    *ethclient.Client
-	rpc_l2Client      *rpc.Client
-	ctx               context.Context
-	l2OutputRootCache *lru.Cache
+	// objects
+	l2OpNodeClient    *ethclient.Client // The op-node (consensus) client.
+	rpc_l2Client      *rpc.Client       // The RPC client for the L2 node.
+	ctx               context.Context   // Context for managing cancellation and timeouts.
+	l2OutputRootCache *lru.Cache        // Cache for storing L2 output roots.
 }
 
-const outputRootCacheSize = 1000
+const outputRootCacheSize = 1000 // Size of the output root cache.
 
+// NewOpNodeHelper initializes a new OpNodeHelper.
+// It creates a cache for storing output roots and binds to the L2 node client.
 func NewOpNodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client) (*OpNodeHelper, error) {
 	l2OutputRootCache, err := lru.New(outputRootCacheSize)
 	if err != nil {
@@ -39,11 +42,11 @@ func NewOpNodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client) (*Op
 	}, nil
 }
 
+// GetOutputRootFromTrustedL2Node retrieves the output root for a given L2 block number from a trusted L2 node.
+// It returns the output root as a bytes32 array.
 func (on *OpNodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) ([32]byte, error) {
-
 	ret, found := on.l2OutputRootCache.Get(l2blockNumber)
 	if !found {
-
 		var result OutputResponse
 		l2blockNumberHex := hexutil.EncodeBig(l2blockNumber)
 
@@ -61,6 +64,8 @@ func (on *OpNodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) (
 	return ret.([32]byte), nil
 }
 
+// GetOutputRootFromCalculation retrieves the output root by calculating it from the given block number.
+// It returns the calculated output root as a bytes32 array.
 func (on *OpNodeHelper) GetOutputRootFromCalculation(blockNumber *big.Int) ([32]byte, error) {
 	block, err := on.l2OpNodeClient.BlockByNumber(on.ctx, blockNumber)
 	if err != nil {
