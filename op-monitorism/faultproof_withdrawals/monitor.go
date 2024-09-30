@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	MetricsNamespace = "faultproof_two_step_monitor"
+	MetricsNamespace = "faultproof_withdrawals"
 )
 
 // Monitor monitors the state and events related to withdrawal forgery.
