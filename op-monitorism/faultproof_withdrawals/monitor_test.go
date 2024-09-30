@@ -2,6 +2,7 @@ package faultproof_withdrawals
 
 import (
 	"context"
+	"io"
 	"math/big"
 	"os"
 	"strconv"
@@ -54,7 +55,9 @@ func NewTestMonitor() *Monitor {
 		OptimismPortalAddress: common.HexToAddress(os.Getenv("FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL")),
 	}
 
-	log := oplog.NewLogger(oplog.AppOut(nil), oplog.DefaultCLIConfig())
+	clicfg := oplog.DefaultCLIConfig()
+	output_writer := io.Discard // discard log output during tests to avoid pollution of the standard output
+	log := oplog.NewLogger(output_writer, clicfg)
 
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := NewMonitor(ctx, log, opmetrics.With(metricsRegistry), cfg)
