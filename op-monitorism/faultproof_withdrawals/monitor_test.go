@@ -86,7 +86,7 @@ func TestSingleRun(t *testing.T) {
 	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
+	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
@@ -151,7 +151,7 @@ func TestConsumeEventValid_DEFENDER_WINS(t *testing.T) {
 	require.True(t, consumedEvent)
 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
+	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
@@ -199,7 +199,7 @@ func TestConsumeEventValid_CHALLENGER_WINS(t *testing.T) {
 	require.True(t, consumedEvent)
 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
+	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
@@ -247,7 +247,7 @@ func TestConsumeEventValid_Blacklisted(t *testing.T) {
 	require.True(t, consumedEvent)
 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
+	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
@@ -294,7 +294,7 @@ func TestConsumeEventForgery1(t *testing.T) {
 	require.True(t, consumedEvent)
 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(0))
 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(1))
+	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(1))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 1)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
@@ -342,7 +342,7 @@ func TestConsumeEventForgery2(t *testing.T) {
 	require.True(t, consumedEvent)
 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(0))
 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(1))
+	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(1))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 1)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }

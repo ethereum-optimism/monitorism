@@ -223,7 +223,7 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 	eventConsumed := false
 
 	if !valid {
-		m.state.invalidWithdrawals++
+		m.state.numberOfInvalidWithdrawals++
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
 				m.log.Warn("withdrawal is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
