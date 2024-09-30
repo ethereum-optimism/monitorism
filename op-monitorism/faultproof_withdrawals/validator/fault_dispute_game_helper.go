@@ -12,49 +12,48 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 )
 
+// FaultDisputeGameProxy represents a proxy for the fault dispute game.
 type FaultDisputeGameProxy struct {
-	FaultDisputeGame *dispute.FaultDisputeGame
-	DisputeGameData  *DisputeGameData
+	FaultDisputeGame *dispute.FaultDisputeGame // The underlying fault dispute game.
+	DisputeGameData  *DisputeGameData          // Data related to the dispute game.
 }
 
+// DisputeGameData holds the details of a dispute game.
 type DisputeGameData struct {
-	ProxyAddress  common.Address
-	RootClaim     [32]byte
-	L2blockNumber *big.Int
-	L2ChainID     *big.Int
-	Status        GameStatus
-	CreatedAt     uint64
-	ResolvedAt    uint64
+	ProxyAddress  common.Address // The address of the dispute game proxy.
+	RootClaim     [32]byte       // The root claim associated with the dispute game.
+	L2blockNumber *big.Int       // The L2 block number related to the game.
+	L2ChainID     *big.Int       // The L2 chain ID associated with the game.
+	Status        GameStatus     // The current status of the game.
+	CreatedAt     uint64         // Timestamp when the game was created.
+	ResolvedAt    uint64         // Timestamp when the game was resolved.
 }
 
+// FaultDisputeGameHelper assists in interacting with fault dispute games.
 type FaultDisputeGameHelper struct {
-	//objects
-	l1Client  *ethclient.Client
-	ctx       context.Context
-	gameCache *lru.Cache
+	// objects
+	l1Client  *ethclient.Client // The L1 Ethereum client.
+	ctx       context.Context   // Context for managing cancellation and timeouts.
+	gameCache *lru.Cache        // Cache for storing game proxies.
 }
 
+// OutputResponse represents the response structure for output-related data.
 type OutputResponse struct {
-	Version    string `json:"version"`
-	OutputRoot string `json:"outputRoot"`
+	Version    string `json:"version"`    // The version of the output.
+	OutputRoot string `json:"outputRoot"` // The output root associated with the response.
 }
 
-// Define the GameStatus type
+// GameStatus represents the status of a dispute game.
 type GameStatus uint8
 
-// Define constants for the GameStatus using iota
+// Define constants for the GameStatus using iota.
 const (
-	// The game is currently in progress, and has not been resolved.
-	IN_PROGRESS GameStatus = iota
-
-	// The game has concluded, and the `rootClaim` was challenged successfully.
-	CHALLENGER_WINS
-
-	// The game has concluded, and the `rootClaim` could not be contested.
-	DEFENDER_WINS
+	IN_PROGRESS     GameStatus = iota // The game is currently in progress and has not been resolved.
+	CHALLENGER_WINS                   // The game has concluded, and the root claim was challenged successfully.
+	DEFENDER_WINS                     // The game has concluded, and the root claim could not be contested.
 )
 
-// Implement the Stringer interface for pretty printing
+// String implements the Stringer interface for pretty printing the GameStatus.
 func (gs GameStatus) String() string {
 	switch gs {
 	case IN_PROGRESS:
@@ -68,6 +67,7 @@ func (gs GameStatus) String() string {
 	}
 }
 
+// String provides a string representation of DisputeGameData.
 func (d DisputeGameData) String() string {
 	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s status=%v createdAt=%v  resolvedAt=%v ]",
 		d.ProxyAddress,
@@ -80,14 +80,16 @@ func (d DisputeGameData) String() string {
 	)
 }
 
+// String provides a string representation of the FaultDisputeGameProxy.
 func (p *FaultDisputeGameProxy) String() string {
 	return fmt.Sprintf("FaultDisputeGameProxy[ DisputeGameData=%v ]", p.DisputeGameData)
 }
 
 const gameCacheSize = 1000
 
+// NewFaultDisputeGameHelper initializes a new FaultDisputeGameHelper.
+// It creates a cache for storing game proxies and returns the helper instance.
 func NewFaultDisputeGameHelper(ctx context.Context, l1Client *ethclient.Client) (*FaultDisputeGameHelper, error) {
-
 	gameCache, err := lru.New(gameCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache: %w", err)
@@ -100,8 +102,9 @@ func NewFaultDisputeGameHelper(ctx context.Context, l1Client *ethclient.Client) 
 	}, nil
 }
 
+// GetDisputeGameProxyFromAddress retrieves the FaultDisputeGameProxy from the specified address.
+// It fetches the game details and caches the result for future use.
 func (fd *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (FaultDisputeGameProxy, error) {
-
 	ret, found := fd.gameCache.Get(disputeGameProxyAddress)
 	if !found {
 		faultDisputeGame, err := dispute.NewFaultDisputeGame(disputeGameProxyAddress, fd.l1Client)
@@ -152,22 +155,19 @@ func (fd *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProx
 		}
 
 		fd.gameCache.Add(disputeGameProxyAddress, ret)
-
 	}
 
-	// return ret.(*FaultDisputeGameProxy), nil
 	return *(ret.(*FaultDisputeGameProxy)), nil
-
 }
 
+// RefreshState updates the state of the FaultDisputeGameProxy.
+// It retrieves the current status and resolved timestamp of the game.
 func (fd *FaultDisputeGameProxy) RefreshState() error {
-
 	if fd.FaultDisputeGame == nil {
 		return fmt.Errorf("dispute game is nil")
 	}
 
 	gameStatus, err := fd.FaultDisputeGame.Status(nil)
-
 	if err != nil {
 		return fmt.Errorf("failed to get game status: %w", err)
 	}
