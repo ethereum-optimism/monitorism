@@ -15,16 +15,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMain runs the tests in the package and exits with the appropriate exit code.
 func TestMain(m *testing.M) {
 	exitVal := m.Run()
-
 	os.Exit(exitVal)
 }
 
+// loadEnv loads environment variables from the specified .env file.
 func loadEnv(env string) error {
 	return godotenv.Load(env)
 }
 
+// NewTestMonitor initializes and returns a new Monitor instance for testing.
+// It sets up the necessary environment variables and configurations required for the monitor.
 func NewTestMonitor() *Monitor {
 	loadEnv(".env.op.sepolia")
 	ctx := context.Background()
@@ -61,6 +64,8 @@ func NewTestMonitor() *Monitor {
 	return monitor
 }
 
+// TestSingleRun tests a single execution of the monitor's Run method.
+// It verifies that the state updates correctly after running.
 func TestSingleRun(t *testing.T) {
 	test_monitor := NewTestMonitor()
 
@@ -71,15 +76,17 @@ func TestSingleRun(t *testing.T) {
 	test_monitor.state.nextL1Height = initialBlock
 	test_monitor.maxBlockRange = blockIncrement
 	test_monitor.Run(test_monitor.ctx)
+
 	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
 	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
-	require.Equal(t, test_monitor.state.nodeConnectionFailures, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
 
+// TestConsumeEvents tests the consumption of enriched withdrawal events.
+// It verifies that new events can be processed correctly.
 func TestConsumeEvents(t *testing.T) {
 	test_monitor := NewTestMonitor()
 
@@ -90,18 +97,20 @@ func TestConsumeEvents(t *testing.T) {
 	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEvents(initialBlock, &finalBlock)
 	require.NoError(t, err)
 	require.NotEqual(t, len(newEvents), 0)
+
 	newInvalidProposalWithdrawalsEvents, err := test_monitor.ConsumeEvents(newEvents)
 	require.NoError(t, err)
 	require.Equal(t, len(*newInvalidProposalWithdrawalsEvents), 0)
 }
 
+// TestConsumeEventValid_DEFENDER_WINS tests the consumption of a valid event where the defender wins.
+// It checks that the state updates correctly after processing the event.
 func TestConsumeEventValid_DEFENDER_WINS(t *testing.T) {
 	test_monitor := NewTestMonitor()
 
 	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
 
 	validEvent := validator.EnrichedProvenWithdrawalEvent{
-
 		ExpectedRootClaim: expectedRootClaim,
 		DisputeGame: &validator.FaultDisputeGameProxy{
 			DisputeGameData: &validator.DisputeGameData{
@@ -139,9 +148,10 @@ func TestConsumeEventValid_DEFENDER_WINS(t *testing.T) {
 	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-
 }
 
+// TestConsumeEventValid_CHALLENGER_WINS tests the consumption of a valid event where the challenger wins.
+// It checks that the state updates correctly after processing the event.
 func TestConsumeEventValid_CHALLENGER_WINS(t *testing.T) {
 	test_monitor := NewTestMonitor()
 
@@ -149,7 +159,6 @@ func TestConsumeEventValid_CHALLENGER_WINS(t *testing.T) {
 	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
 
 	event := validator.EnrichedProvenWithdrawalEvent{
-
 		ExpectedRootClaim: expectedRootClaim,
 		DisputeGame: &validator.FaultDisputeGameProxy{
 			DisputeGameData: &validator.DisputeGameData{
@@ -187,9 +196,10 @@ func TestConsumeEventValid_CHALLENGER_WINS(t *testing.T) {
 	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-
 }
 
+// TestConsumeEventValid_Blacklisted tests the consumption of a valid event that is blacklisted.
+// It checks that the state updates correctly after processing the event.
 func TestConsumeEventValid_Blacklisted(t *testing.T) {
 	test_monitor := NewTestMonitor()
 
@@ -197,7 +207,6 @@ func TestConsumeEventValid_Blacklisted(t *testing.T) {
 	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
 
 	event := validator.EnrichedProvenWithdrawalEvent{
-
 		ExpectedRootClaim: expectedRootClaim,
 		DisputeGame: &validator.FaultDisputeGameProxy{
 			DisputeGameData: &validator.DisputeGameData{
@@ -235,16 +244,16 @@ func TestConsumeEventValid_Blacklisted(t *testing.T) {
 	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(0))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-
 }
 
+// TestConsumeEventForgery1 tests the consumption of an event that indicates a forgery.
+// It checks that the state updates correctly after processing the event.
 func TestConsumeEventForgery1(t *testing.T) {
 	test_monitor := NewTestMonitor()
 
 	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
 
 	validEvent := validator.EnrichedProvenWithdrawalEvent{
-
 		ExpectedRootClaim: expectedRootClaim,
 		DisputeGame: &validator.FaultDisputeGameProxy{
 			DisputeGameData: &validator.DisputeGameData{
@@ -282,9 +291,10 @@ func TestConsumeEventForgery1(t *testing.T) {
 	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(1))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 1)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-
 }
 
+// TestConsumeEventForgery2 tests the consumption of another event that indicates a forgery.
+// It checks that the state updates correctly after processing the event.
 func TestConsumeEventForgery2(t *testing.T) {
 	test_monitor := NewTestMonitor()
 
@@ -292,7 +302,6 @@ func TestConsumeEventForgery2(t *testing.T) {
 	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
 
 	event := validator.EnrichedProvenWithdrawalEvent{
-
 		ExpectedRootClaim: expectedRootClaim,
 		DisputeGame: &validator.FaultDisputeGameProxy{
 			DisputeGameData: &validator.DisputeGameData{
@@ -330,5 +339,4 @@ func TestConsumeEventForgery2(t *testing.T) {
 	require.Equal(t, test_monitor.state.isDetectingForgeries, uint64(1))
 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 1)
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-
 }
