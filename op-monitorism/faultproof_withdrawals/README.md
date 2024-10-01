@@ -4,9 +4,6 @@ faultproof_withdrawals has the following purpose:
 - Validate Withdrawals: It verifies the validity of these withdrawals by checking the corresponding state on L2.
 - Detect Forgeries: The service identifies and reports any invalid withdrawals or potential forgeries.
 
-# Prometheus Metrics
-TODO
-
 ## Enable Metrics
 This service will optionally expose a [prometeus metrics](https://prometheus.io/docs/concepts/metric_types/).
 

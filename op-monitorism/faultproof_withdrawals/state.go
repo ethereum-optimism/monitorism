@@ -6,13 +6,15 @@ import (
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type State struct {
-	nextL1Height   uint64
-	latestL1Height uint64
+	nextL1Height    uint64
+	latestL1Height  uint64
+	initialL1Height uint64
 
 	processedProvenWithdrawalsExtension1Events uint64
 
@@ -41,6 +43,7 @@ func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*Stat
 		withdrawalsValidated:       0,
 		nodeConnectionFailures:     0,
 		numberOfInvalidWithdrawals: 0,
+		initialL1Height:            nextL1Height,
 	}
 
 	return &ret, nil
@@ -51,6 +54,7 @@ func (s *State) LogState(log log.Logger) {
 
 	log.Info("STATE:",
 		"withdrawalsValidated", fmt.Sprintf("%d", s.withdrawalsValidated),
+		"initialL1Height", fmt.Sprintf("%d", s.initialL1Height),
 		"nextL1Height", fmt.Sprintf("%d", s.nextL1Height),
 		"latestL1Height", fmt.Sprintf("%d", s.latestL1Height),
 		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
@@ -71,6 +75,7 @@ func (s *State) GetPercentages() (uint64, uint64) {
 }
 
 type Metrics struct {
+	InitialL1HeightGauge                               prometheus.Gauge
 	NextL1HeightGauge                                  prometheus.Gauge
 	LatestL1HeightGauge                                prometheus.Gauge
 	ProcessedProvenWithdrawalsEventsExtensions1Counter prometheus.Counter
@@ -80,6 +85,8 @@ type Metrics struct {
 	NodeConnectionFailuresCounter                      prometheus.Counter
 	ForgeriesWithdrawalsEventsGauge                    prometheus.Gauge
 	InvalidProposalWithdrawalsEventsGauge              prometheus.Gauge
+	ForgeriesWithdrawalsEventsGaugeVec                 *prometheus.GaugeVec
+	InvalidProposalWithdrawalsEventsGaugeVec           *prometheus.GaugeVec
 
 	// Previous values for counters
 	previousProcessedProvenWithdrawalsExtension1Events uint64
@@ -89,6 +96,11 @@ type Metrics struct {
 
 func NewMetrics(m metrics.Factory) *Metrics {
 	ret := &Metrics{
+		InitialL1HeightGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "initial_l1_height",
+			Help:      "Initial L1 Height",
+		}),
 		NextL1HeightGauge: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "next_l1_height",
@@ -134,6 +146,22 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Name:      "invalid_proposal_withdrawals_events_count",
 			Help:      "Number of invalid proposal withdrawals events",
 		}),
+		ForgeriesWithdrawalsEventsGaugeVec: m.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: MetricsNamespace,
+				Name:      "forgeries_withdrawals_events_info",
+				Help:      "Information about forgeries withdrawals events.",
+			},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash", "event_index"},
+		),
+		InvalidProposalWithdrawalsEventsGaugeVec: m.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: MetricsNamespace,
+				Name:      "invalid_proposal_withdrawals_events_info",
+				Help:      "Information about invalid proposal withdrawals events.",
+			},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash", "event_index"},
+		),
 	}
 
 	return ret
@@ -142,6 +170,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 func (m *Metrics) UpdateMetricsFromState(state *State) {
 
 	// Update Gauges
+	m.InitialL1HeightGauge.Set(float64(state.initialL1Height))
 	m.NextL1HeightGauge.Set(float64(state.nextL1Height))
 	m.LatestL1HeightGauge.Set(float64(state.latestL1Height))
 
@@ -171,4 +200,47 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 		m.NodeConnectionFailuresCounter.Add(float64(nodeConnectionFailuresDelta))
 	}
 	m.previousNodeConnectionFailures = state.nodeConnectionFailures
+
+	// Clear the previous values
+
+	// Update metrics for forgeries withdrawals events
+	for index, event := range state.forgeriesWithdrawalsEvents {
+		withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
+		proofSubmitter := event.Event.ProofSubmitter.String()
+		status := event.DisputeGame.DisputeGameData.Status.String()
+
+		m.ForgeriesWithdrawalsEventsGaugeVec.WithLabelValues(
+			withdrawalHash,
+			proofSubmitter,
+			status,
+			fmt.Sprintf("%v", event.Blacklisted),
+			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
+			fmt.Sprintf("%v", event.Enriched),
+			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+			event.Event.Raw.TxHash.String(),
+			fmt.Sprintf("%v", index),
+		).Set(1) // Set a value  for existence
+	}
+
+	// Clear the previous values
+	m.InvalidProposalWithdrawalsEventsGaugeVec.Reset()
+
+	// Update metrics for invalid proposal withdrawals events
+	for index, event := range state.invalidProposalWithdrawalsEvents {
+		withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
+		proofSubmitter := event.Event.ProofSubmitter.String()
+		status := event.DisputeGame.DisputeGameData.Status.String()
+
+		m.InvalidProposalWithdrawalsEventsGaugeVec.WithLabelValues(
+			withdrawalHash,
+			proofSubmitter,
+			status,
+			fmt.Sprintf("%v", event.Blacklisted),
+			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
+			fmt.Sprintf("%v", event.Enriched),
+			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+			event.Event.Raw.TxHash.String(),
+			fmt.Sprintf("%v", index),
+		).Set(1) // Set a value  for existence
+	}
 }
