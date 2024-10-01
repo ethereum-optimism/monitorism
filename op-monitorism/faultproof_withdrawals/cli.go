@@ -78,7 +78,7 @@ func CLIFlags(envVar string) []cli.Flag {
 		},
 		&cli.Uint64Flag{
 			Name:     StartingL1BlockHeightFlagName,
-			Usage:    "Starting height to scan for events. This will take precendence if set.",
+			Usage:    "Starting height to scan for events. This will take precedence if set.",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
 			Required: false,
 		},
