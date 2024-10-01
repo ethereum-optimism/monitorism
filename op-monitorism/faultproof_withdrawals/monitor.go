@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	MetricsNamespace = "faultproof_withdrawals"
+	MetricsNamespace                 = "faultproof_withdrawals"
+	DefaultHoursInThePastToStartFrom = 14 * 24 //14 days
 )
 
 // Monitor monitors the state and events related to withdrawal forgery.
@@ -98,15 +99,25 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		metrics: *metrics,
 	}
 
+	// is starting block is set it takes precedence
 	startingL1BlockHeight := cfg.StartingL1BlockHeight
+	hoursInThePastToStartFrom := cfg.HoursInThePastToStartFrom
+
+	// In this case StartingL1BlockHeight is not set
 	if startingL1BlockHeight == 0 {
+		// in this case is not set how many hours in the past to start from, we use default value that is 14 days.
+		if hoursInThePastToStartFrom == 0 {
+			hoursInThePastToStartFrom = DefaultHoursInThePastToStartFrom
+		}
+
 		// get the block number closest to the timestamp from two weeks ago
 		latestL1HeightBigInt := new(big.Int).SetUint64(latestL1Height)
-		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt)
+		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get block at approximate time: %w", err)
 		}
 		startingL1BlockHeight = startingL1BlockHeightBigInt.Uint64()
+
 	}
 
 	state, err := NewState(log, startingL1BlockHeight, latestL1Height)
@@ -123,13 +134,16 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 }
 
 // getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
-func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int) (*big.Int, error) {
+func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int) (*big.Int, error) {
 
-	m.log.Info("finding block at approximate time of two weeks back in time from ...", "time", time.Now().Unix(), "latestBlockNumber", latestBlockNumber)
+	secondsInThePast := hoursInThePast.Mul(hoursInThePast, big.NewInt(60*60))
+	m.log.Info("Looking for a block at approximate time of hours back",
+		"secondsInThePast", fmt.Sprintf("%v", secondsInThePast),
+		"time", fmt.Sprintf("%v", time.Now().Format("2006-01-02 15:04:05 MST")),
+		"latestBlockNumber", fmt.Sprintf("%v", latestBlockNumber))
 	// Calculate the total seconds in two weeks
-	secondsInTwoWeeks := big.NewInt(14 * 24 * 60 * 60) // 14 days
 	targetTime := big.NewInt(time.Now().Unix())
-	targetTime.Sub(targetTime, secondsInTwoWeeks)
+	targetTime.Sub(targetTime, secondsInThePast)
 
 	// Initialize the search range
 	left := big.NewInt(0)
@@ -177,7 +191,7 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 	}
 
 	// log the block number closest to the target time and the time
-	m.log.Info("block number closest to target time", "block", left, "time", time.Unix(targetTime.Int64(), 0))
+	m.log.Info("block number closest to target time", "block", fmt.Sprintf("%v", left), "time", time.Unix(targetTime.Int64(), 0))
 	// After exiting the loop, left should be the block number closest to the target time
 	return left, nil
 }

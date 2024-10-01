@@ -49,7 +49,7 @@ func NewState(log log.Logger, nextL1Height uint64, latestL1Height uint64) (*Stat
 func (s *State) LogState(log log.Logger) {
 	blockToProcess, syncPercentage := s.GetPercentages()
 
-	log.Info("State",
+	log.Info("STATE:",
 		"withdrawalsValidated", fmt.Sprintf("%d", s.withdrawalsValidated),
 		"nextL1Height", fmt.Sprintf("%d", s.nextL1Height),
 		"latestL1Height", fmt.Sprintf("%d", s.latestL1Height),

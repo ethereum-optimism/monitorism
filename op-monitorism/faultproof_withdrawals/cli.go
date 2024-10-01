@@ -15,8 +15,9 @@ const (
 	L2NodeURLFlagName = "l2.node.url"
 	L2GethURLFlagName = "l2.geth.url"
 
-	EventBlockRangeFlagName       = "event.block.range"
-	StartingL1BlockHeightFlagName = "start.block.height"
+	EventBlockRangeFlagName           = "event.block.range"
+	StartingL1BlockHeightFlagName     = "start.block.height"
+	HoursInThePastToStartFromFlagName = "start.block.hours.ago"
 
 	OptimismPortalAddressFlagName = "optimismportal.address"
 )
@@ -26,19 +27,21 @@ type CLIConfig struct {
 	L2OpGethURL string
 	L2OpNodeURL string
 
-	EventBlockRange       uint64
-	StartingL1BlockHeight uint64
+	EventBlockRange           uint64
+	StartingL1BlockHeight     uint64
+	HoursInThePastToStartFrom uint64
 
 	OptimismPortalAddress common.Address
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		L1GethURL:             ctx.String(L1GethURLFlagName),
-		L2OpGethURL:           ctx.String(L2GethURLFlagName),
-		L2OpNodeURL:           ctx.String(L2NodeURLFlagName),
-		EventBlockRange:       ctx.Uint64(EventBlockRangeFlagName),
-		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
+		L1GethURL:                 ctx.String(L1GethURLFlagName),
+		L2OpGethURL:               ctx.String(L2GethURLFlagName),
+		L2OpNodeURL:               ctx.String(L2NodeURLFlagName),
+		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
+		StartingL1BlockHeight:     ctx.Uint64(StartingL1BlockHeightFlagName),
+		HoursInThePastToStartFrom: ctx.Uint64(HoursInThePastToStartFromFlagName),
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
@@ -75,8 +78,14 @@ func CLIFlags(envVar string) []cli.Flag {
 		},
 		&cli.Uint64Flag{
 			Name:     StartingL1BlockHeightFlagName,
-			Usage:    "Starting height to scan for events",
+			Usage:    "Starting height to scan for events. This will take precendence if set.",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
+			Required: false,
+		},
+		&cli.Uint64Flag{
+			Name:     HoursInThePastToStartFromFlagName,
+			Usage:    "How many hours in the past to start to check for forgery. Default will be 336 (14 days) days if not set. The real block to start from will be found within the hour precision.",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "START_HOURS_IN_THE_PAST"),
 			Required: false,
 		},
 		&cli.StringFlag{
