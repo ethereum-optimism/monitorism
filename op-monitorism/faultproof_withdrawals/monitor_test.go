@@ -43,13 +43,18 @@ func NewTestMonitor() *Monitor {
 	if err != nil {
 		panic(err)
 	}
+	StartingL1BlockHeightStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT")
+	StartingL1BlockHeight, err := strconv.ParseInt(StartingL1BlockHeightStr, 10, 64)
+	if err != nil {
+		panic(err)
+	}
 
 	cfg := CLIConfig{
 		L1GethURL:             L1GethURL,
 		L2OpGethURL:           L2OpGethURL,
 		L2OpNodeURL:           L2OpNodeURL,
 		EventBlockRange:       EventBlockRange,
-		StartingL1BlockHeight: 6789100,
+		StartingL1BlockHeight: StartingL1BlockHeight,
 		OptimismPortalAddress: common.HexToAddress(os.Getenv("FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL")),
 	}
 
