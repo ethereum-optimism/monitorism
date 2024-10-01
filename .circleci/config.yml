@@ -193,11 +193,14 @@ jobs:
               else
                 export GIT_VERSION=$(echo "$full_release_tag" | tail -n 1)
               fi
+              if [ "<<parameters.release>>" == "true" ]; then
+                export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS,latest"
+              else
+                export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS"
+              fi
               
-              export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS"
               echo "Setting IMAGE_TAGS=$IMAGE_TAGS"
             fi
-
 
 
             # Create, start (bootstrap) and use a *named* docker builder
