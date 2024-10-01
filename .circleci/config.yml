@@ -266,7 +266,7 @@ workflows:
           type: approval
           filters:
             tags:
-              only: (^op-monitorism\/v.*$|^op-defender\/v.*$)
+              only: /(^op-monitorism\/v.*$|^op-defender\/v.*$|^op-test\/v.*$)/
             branches:
               ignore: /.*/
       - docker-build:
