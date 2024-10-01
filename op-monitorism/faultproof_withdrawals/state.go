@@ -201,8 +201,6 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	}
 	m.previousNodeConnectionFailures = state.nodeConnectionFailures
 
-	// Clear the previous values
-
 	// Update metrics for forgeries withdrawals events
 	for index, event := range state.forgeriesWithdrawalsEvents {
 		withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
