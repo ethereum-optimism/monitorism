@@ -245,12 +245,14 @@ func (m *Monitor) Run(ctx context.Context) {
 	m.state.invalidProposalWithdrawalsEvents = *invalidProposalWithdrawalsEvents
 
 	// get new events
+
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
 	if err != nil {
-		if stop-start <= 1 {
+		if start >= stop {
+			m.log.Info("no new events to process", "start", start, "stop", stop)
+		} else if stop-start <= 1 {
 			//in this case it happens when the range is too small, we can ignore the error as it is normal for the Iterator to not be ready yet
 			m.log.Info("failed to get enriched withdrawal events, should not be an issue as start and stop blocks are too close", "error", err)
-
 		} else {
 			m.state.nodeConnectionFailures++
 			m.log.Error("failed to get enriched withdrawal events", "error", err)
