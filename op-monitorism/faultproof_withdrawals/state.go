@@ -70,7 +70,12 @@ func (s *State) LogState(log log.Logger) {
 
 func (s *State) GetPercentages() (uint64, uint64) {
 	blockToProcess := s.latestL1Height - s.nextL1Height
-	syncPercentage := uint64(math.Floor(100 - (float64(blockToProcess) / float64(s.latestL1Height) * 100)))
+	divisor := float64(s.latestL1Height) * 100
+	//checking to avoid division by 0
+	if divisor == 0 {
+		return 0, 0
+	}
+	syncPercentage := uint64(math.Floor(100 - (float64(blockToProcess) / divisor)))
 	return blockToProcess, syncPercentage
 }
 
