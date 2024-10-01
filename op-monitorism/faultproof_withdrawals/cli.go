@@ -28,7 +28,7 @@ type CLIConfig struct {
 	L2OpNodeURL string
 
 	EventBlockRange           uint64
-	StartingL1BlockHeight     uint64
+	StartingL1BlockHeight     int64
 	HoursInThePastToStartFrom uint64
 
 	OptimismPortalAddress common.Address
@@ -40,7 +40,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		L2OpGethURL:               ctx.String(L2GethURLFlagName),
 		L2OpNodeURL:               ctx.String(L2NodeURLFlagName),
 		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
-		StartingL1BlockHeight:     ctx.Uint64(StartingL1BlockHeightFlagName),
+		StartingL1BlockHeight:     ctx.Int64(StartingL1BlockHeightFlagName),
 		HoursInThePastToStartFrom: ctx.Uint64(HoursInThePastToStartFromFlagName),
 	}
 
@@ -76,11 +76,12 @@ func CLIFlags(envVar string) []cli.Flag {
 			Value:   1000,
 			EnvVars: opservice.PrefixEnvVar(envVar, "EVENT_BLOCK_RANGE"),
 		},
-		&cli.Uint64Flag{
+		&cli.Int64Flag{
 			Name:     StartingL1BlockHeightFlagName,
 			Usage:    "Starting height to scan for events. This will take precedence if set.",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
 			Required: false,
+			Value:    -1,
 		},
 		&cli.Uint64Flag{
 			Name:     HoursInThePastToStartFromFlagName,

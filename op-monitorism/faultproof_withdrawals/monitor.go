@@ -100,11 +100,12 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 
 	// is starting block is set it takes precedence
-	startingL1BlockHeight := cfg.StartingL1BlockHeight
+
+	var startingL1BlockHeight uint64
 	hoursInThePastToStartFrom := cfg.HoursInThePastToStartFrom
 
 	// In this case StartingL1BlockHeight is not set
-	if startingL1BlockHeight == 0 {
+	if cfg.StartingL1BlockHeight == -1 {
 		// in this case is not set how many hours in the past to start from, we use default value that is 14 days.
 		if hoursInThePastToStartFrom == 0 {
 			hoursInThePastToStartFrom = DefaultHoursInThePastToStartFrom
@@ -118,6 +119,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		}
 		startingL1BlockHeight = startingL1BlockHeightBigInt.Uint64()
 
+	} else {
+		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
 	}
 
 	state, err := NewState(log, startingL1BlockHeight, latestL1Height)
