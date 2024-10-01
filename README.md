@@ -9,6 +9,7 @@
     - [Multisig Monitor](#multisig-monitor)
     - [Drippie Monitor](#drippie-monitor)
     - [Secrets Monitor](#secrets-monitor)
+    - [Faultproof Withdrawals](#secrets-monitor)
   - [Defender Components](#defender-components)
     - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
   - [CLI &amp; Docs](#cli--docs)
@@ -122,6 +123,18 @@ The secrets monitor takes a Drippie contract as a parameter and monitors for any
 | `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/secrets/README.md) |
 | ----------------------- | --------------------------------------------------------------------------------------------------- |
 
+### Faultproof Withdrawal
+
+The Faultproof Withdrawal component monitors ProvenWithdrawals events on the [OptimismPortal](https://github.com/ethereum-optimism/superchain-registry/blob/d454618b6cf885417aa8cc8c760bd9ed0429c131/superchain/configs/mainnet/op.toml#L50) contract and performs checks to detect any violations of invariant conditions on the chain. If a violation is detected, it logs the issue and sets a Prometheus metric for the event.
+
+This component is designed to work exclusively with chains that are already utilizing the [Fault Proofs system](https://docs.optimism.io/stack/protocol/fault-proofs/explainer).
+This is a new version of the deprecated [chain-mon faultproof-wd-mon](https://github.com/ethereum-optimism/optimism/tree/chain-mon/v1.2.1/packages/chain-mon/src/faultproof-wd-mon).
+For detailed information on how the component works and the algorithms used, please refer to the component README.
+
+| `op-monitorism/faultproof-withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof-withdrawals/README.md) |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+
+
 ## Defender Components
 
 The _defenders_ are active security service allowing to provide automated defense for the OP Stack.
@@ -150,11 +163,17 @@ The cli has the ability to spin up a monitor for varying activities, each emmitt
 
 ```
 COMMANDS:
-   multisig     Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password
-   fault        Monitors output roots posted on L1 against L2
-   withdrawals  Monitors proven withdrawals on L1 against L2
-   balances     Monitors account balances
-   secrets      Monitors secrets revealed in the CheckSecrets dripcheck
+   multisig                Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password
+   fault                   Monitors output roots posted on L1 against L2
+   withdrawals             Monitors proven withdrawals on L1 against L2
+   balances                Monitors account balances
+   drippie                 Monitors Drippie contract
+   secrets                 Monitors secrets revealed in the CheckSecrets dripcheck
+   global_events           Monitors global events with YAML configuration
+   liveness_expiration     Monitor the liveness expiration on Gnosis Safe.
+   faultproof_withdrawals  Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.
+   version                 Show version
+   help, h                 Shows a list of commands or help for one command
 ```
 
 Each monitor has some common configuration, configurable both via cli or env with defaults.
