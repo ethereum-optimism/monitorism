@@ -326,7 +326,7 @@ workflows:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
-          platforms: "linux/amd64"
+          platforms: "linux/amd64,linux/arm64"
           publish: true
           context:
             - oplabs-gcr
