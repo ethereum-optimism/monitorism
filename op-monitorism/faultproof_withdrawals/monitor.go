@@ -228,6 +228,10 @@ func (m *Monitor) GetMaxBlock() (uint64, error) {
 // Run executes the main monitoring loop.
 // It retrieves new events, processes them, and updates the state accordingly.
 func (m *Monitor) Run(ctx context.Context) {
+	// Defer the update function
+	defer m.metrics.UpdateMetricsFromState(&m.state)
+	defer m.state.LogState(m.log)
+
 	start := m.state.nextL1Height
 
 	stop, err := m.GetMaxBlock()
@@ -240,6 +244,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	// review previous invalidProposalWithdrawalsEvents
 	invalidProposalWithdrawalsEvents, err := m.ConsumeEvents(m.state.invalidProposalWithdrawalsEvents)
 	if err != nil {
+		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
@@ -248,7 +253,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	m.state.invalidProposalWithdrawalsEvents = *invalidProposalWithdrawalsEvents
 
 	// get new events
-
+	m.log.Info("getting enriched withdrawal events", "start", start, "stop", stop)
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
 	if err != nil {
 		if start >= stop {
@@ -264,6 +269,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 	newInvalidProposalWithdrawalsEvents, err := m.ConsumeEvents(newEvents)
 	if err != nil {
+		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
@@ -276,9 +282,6 @@ func (m *Monitor) Run(ctx context.Context) {
 	// update state
 	m.state.nextL1Height = stop
 
-	// log state and metrics
-	m.state.LogState(m.log)
-	m.metrics.UpdateMetricsFromState(&m.state)
 }
 
 // ConsumeEvents processes a slice of enriched withdrawal events and updates their states.
@@ -286,9 +289,9 @@ func (m *Monitor) Run(ctx context.Context) {
 func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvent []validator.EnrichedProvenWithdrawalEvent) (*[]validator.EnrichedProvenWithdrawalEvent, error) {
 	var newForgeriesGameInProgressEvent []validator.EnrichedProvenWithdrawalEvent = make([]validator.EnrichedProvenWithdrawalEvent, 0)
 	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvent {
+		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
 		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
 		if err != nil {
-			m.state.nodeConnectionFailures++
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
 			return nil, err
 		}
@@ -308,13 +311,11 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvent []validator.EnrichedProv
 // ConsumeEvent processes a single enriched withdrawal event.
 // It logs the event details and checks for any forgery detection.
 func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) (bool, error) {
-	m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent.Event)
 	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
 	}
 	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(&enrichedWithdrawalEvent)
 	if err != nil {
-		m.state.nodeConnectionFailures++
 		m.log.Error("failed to check if forgery detected", "error", err)
 		return false, err
 	}

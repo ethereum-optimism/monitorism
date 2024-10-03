@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
@@ -25,7 +26,7 @@ const (
 type EnrichedProvenWithdrawalEvent struct {
 	Event                     *WithdrawalProvenExtension1Event // The original withdrawal event.
 	DisputeGame               *FaultDisputeGameProxy           // Associated dispute game.
-	ExpectedRootClaim         [32]byte                         // Expected root claim for validation.
+	ExpectedRootClaim         eth.Bytes32                      // Expected root claim for validation.
 	Blacklisted               bool                             // Indicates if the game is blacklisted.
 	WithdrawalHashPresentOnL2 bool                             // Indicates if the withdrawal hash is present on L2.
 	Enriched                  bool                             // Indicates if the event is enriched.
@@ -45,7 +46,7 @@ func (e *EnrichedProvenWithdrawalEvent) String() string {
 	return fmt.Sprintf("Event: %v, DisputeGame: %v, ExpectedRootClaim: %s, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v",
 		e.Event,
 		e.DisputeGame,
-		common.BytesToHash(e.ExpectedRootClaim[:]),
+		eth.Bytes32(e.ExpectedRootClaim),
 		e.Blacklisted,
 		e.WithdrawalHashPresentOnL2,
 		e.Enriched)
@@ -143,7 +144,7 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 	enrichedWithdrawalEvent := EnrichedProvenWithdrawalEvent{
 		Event:             withdrawalEvent,
 		DisputeGame:       &disputeGameProxy,
-		ExpectedRootClaim: [32]byte{},
+		ExpectedRootClaim: eth.Bytes32{},
 		Blacklisted:       false,
 		Enriched:          false,
 	}
@@ -153,7 +154,7 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 
 // getDisputeGamesFromWithdrawalhashAndProofSubmitter retrieves a DisputeGame object
 // based on the provided withdrawal hash and proof submitter address.
-func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (FaultDisputeGameProxy, error) {
+func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash eth.Bytes32, proofSubmitter common.Address) (FaultDisputeGameProxy, error) {
 	submittedProofData, err := wv.optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
 	if err != nil {
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games addresses: %w", err)
@@ -197,7 +198,8 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, 
 // IsWithdrawalEventValid checks if the enriched withdrawal event is valid.
 // It returns true if the event is valid, otherwise returns false.
 func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEvent *EnrichedProvenWithdrawalEvent) (bool, error) {
-	if enrichedWithdrawalEvent.ExpectedRootClaim == [32]byte{} {
+	var emptyBytes32 eth.Bytes32
+	if enrichedWithdrawalEvent.ExpectedRootClaim == emptyBytes32 {
 		return false, fmt.Errorf("trustedRootClaim is nil, game not enriched")
 	}
 	validGameRootClaim := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == enrichedWithdrawalEvent.ExpectedRootClaim

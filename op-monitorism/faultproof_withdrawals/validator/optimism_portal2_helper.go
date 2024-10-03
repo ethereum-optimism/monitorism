@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -14,22 +15,22 @@ import (
 // SubmittedProofData holds data about a submitted proof.
 type SubmittedProofData struct {
 	proofSubmitterAddress     common.Address // Address of the proof submitter.
-	withdrawalHash            [32]byte       // Hash of the withdrawal.
+	withdrawalHash            eth.Bytes32    // Hash of the withdrawal.
 	disputeGameProxyAddress   common.Address // Address of the dispute game proxy.
 	disputeGameProxyTimestamp uint64         // Timestamp of the dispute game proxy.
 }
 
 // WithdrawalProvenExtension1Event represents an event for a proven withdrawal.
 type WithdrawalProvenExtension1Event struct {
-	WithdrawalHash [32]byte       // Hash of the withdrawal.
+	WithdrawalHash eth.Bytes32    // Hash of the withdrawal.
 	ProofSubmitter common.Address // Address of the proof submitter.
 	Raw            Raw            // Raw event data.
 }
 
 // WithdrawalProvenEvent represents a withdrawal proven event.
 type WithdrawalProvenEvent struct {
-	WithdrawalHash [32]byte // Hash of the withdrawal.
-	Raw            Raw      // Raw event data.
+	WithdrawalHash eth.Bytes32 // Hash of the withdrawal.
+	Raw            Raw         // Raw event data.
 }
 
 // OptimismPortal2Helper assists in interacting with the Optimism Portal 2.
@@ -42,7 +43,7 @@ type OptimismPortal2Helper struct {
 
 // String provides a string representation of WithdrawalProvenExtension1Event.
 func (e *WithdrawalProvenExtension1Event) String() string {
-	return fmt.Sprintf("WithdrawalHash: %x, ProofSubmitter: %v, Raw: %v", e.WithdrawalHash, e.ProofSubmitter, e.Raw)
+	return fmt.Sprintf("WithdrawalHash: %s, ProofSubmitter: %v, Raw: %v", e.WithdrawalHash, e.ProofSubmitter, e.Raw)
 }
 
 // String provides a string representation of WithdrawalProvenEvent.
@@ -164,7 +165,7 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1Events(start uint
 
 // GetSubmittedProofsDataFromWithdrawalhash retrieves submitted proof data associated with the given withdrawal hash.
 // It returns a slice of SubmittedProofData along with any error encountered.
-func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhash(withdrawalHash [32]byte) ([]SubmittedProofData, error) {
+func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhash(withdrawalHash eth.Bytes32) ([]SubmittedProofData, error) {
 	numProofSubmitters, err := op.optimismPortal2.NumProofSubmitters(nil, withdrawalHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get num proof submitters for withdrawal hash:%x error:%w", withdrawalHash, err)
@@ -196,7 +197,7 @@ func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhash(withdr
 // GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress retrieves submitted proof data
 // for the specified withdrawal hash and proof submitter address.
 // It returns a pointer to SubmittedProofData along with any error encountered.
-func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
+func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash eth.Bytes32, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
 	gameProxyStruct, err := op.optimismPortal2.ProvenWithdrawals(nil, withdrawalHash, proofSubmitterAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x error:%w", withdrawalHash, proofSubmitterAddress, err)

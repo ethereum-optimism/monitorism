@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 type State struct {
@@ -97,6 +98,76 @@ type Metrics struct {
 	previousProcessedProvenWithdrawalsExtension1Events uint64
 	previousWithdrawalsValidated                       uint64
 	previousNodeConnectionFailures                     uint64
+}
+
+func (m *Metrics) String() string {
+	initialL1HeightGaugeValue, _ := GetGaugeValue(m.InitialL1HeightGauge)
+	nextL1HeightGaugeValue, _ := GetGaugeValue(m.NextL1HeightGauge)
+	latestL1HeightGaugeValue, _ := GetGaugeValue(m.LatestL1HeightGauge)
+	processedProvenWithdrawalsEventsExtensions1CounterValue, _ := GetCounterValue(m.ProcessedProvenWithdrawalsEventsExtensions1Counter)
+	numberOfDetectedForgeryGaugeValue, _ := GetGaugeValue(m.NumberOfDetectedForgeryGauge)
+	numberOfInvalidWithdrawalsGaugeValue, _ := GetGaugeValue(m.NumberOfInvalidWithdrawalsGauge)
+	withdrawalsValidatedCounterValue, _ := GetCounterValue(m.WithdrawalsValidatedCounter)
+	nodeConnectionFailuresCounterValue, _ := GetCounterValue(m.NodeConnectionFailuresCounter)
+	forgeriesWithdrawalsEventsGaugeValue, _ := GetGaugeValue(m.ForgeriesWithdrawalsEventsGauge)
+	invalidProposalWithdrawalsEventsGaugeValue, _ := GetGaugeValue(m.InvalidProposalWithdrawalsEventsGauge)
+
+	forgeriesWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.ForgeriesWithdrawalsEventsGaugeVec, prometheus.Labels{})
+	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.InvalidProposalWithdrawalsEventsGaugeVec, prometheus.Labels{})
+
+	return fmt.Sprintf(
+		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\nProcessedProvenWithdrawalsEventsExtensions1Counter: %d\nNumberOfDetectedForgeryGauge: %d\nNumberOfInvalidWithdrawalsGauge: %d\nWithdrawalsValidatedCounter: %d\nNodeConnectionFailuresCounter: %d\nForgeriesWithdrawalsEventsGauge: %d\nInvalidProposalWithdrawalsEventsGauge: %d\nForgeriesWithdrawalsEventsGaugeVec: %d\nInvalidProposalWithdrawalsEventsGaugeVec: %d\npreviousProcessedProvenWithdrawalsExtension1Events: %d\npreviousWithdrawalsValidated: %d\npreviousNodeConnectionFailures: %d",
+		uint64(initialL1HeightGaugeValue),
+		uint64(nextL1HeightGaugeValue),
+		uint64(latestL1HeightGaugeValue),
+		uint64(processedProvenWithdrawalsEventsExtensions1CounterValue),
+		uint64(numberOfDetectedForgeryGaugeValue),
+		uint64(numberOfInvalidWithdrawalsGaugeValue),
+		uint64(withdrawalsValidatedCounterValue),
+		uint64(nodeConnectionFailuresCounterValue),
+		uint64(forgeriesWithdrawalsEventsGaugeValue),
+		uint64(invalidProposalWithdrawalsEventsGaugeValue),
+		uint64(forgeriesWithdrawalsEventsGaugeVecValue),
+		uint64(invalidProposalWithdrawalsEventsGaugeVecValue),
+		m.previousProcessedProvenWithdrawalsExtension1Events,
+		m.previousWithdrawalsValidated,
+		m.previousNodeConnectionFailures,
+	)
+}
+
+// Generic function to get the value of any prometheus.Counter
+func GetCounterValue(counter prometheus.Counter) (float64, error) {
+	metric := &dto.Metric{}
+	err := counter.Write(metric)
+	if err != nil {
+		return 0, err
+	}
+	return metric.GetCounter().GetValue(), nil
+}
+
+// Generic function to get the value of any prometheus.Gauge
+func GetGaugeValue(gauge prometheus.Gauge) (float64, error) {
+	metric := &dto.Metric{}
+	err := gauge.Write(metric)
+	if err != nil {
+		return 0, err
+	}
+	return metric.GetGauge().GetValue(), nil
+}
+
+// Function to get the value of a specific Gauge within a GaugeVec
+func GetGaugeVecValue(gaugeVec *prometheus.GaugeVec, labels prometheus.Labels) (float64, error) {
+	gauge, err := gaugeVec.GetMetricWith(labels)
+	if err != nil {
+		return 0, err
+	}
+
+	metric := &dto.Metric{}
+	err = gauge.Write(metric)
+	if err != nil {
+		return 0, err
+	}
+	return metric.GetGauge().GetValue(), nil
 }
 
 func NewMetrics(m metrics.Factory) *Metrics {

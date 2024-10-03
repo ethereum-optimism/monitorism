@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/dispute"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -21,7 +22,7 @@ type FaultDisputeGameProxy struct {
 // DisputeGameData holds the details of a dispute game.
 type DisputeGameData struct {
 	ProxyAddress  common.Address // The address of the dispute game proxy.
-	RootClaim     [32]byte       // The root claim associated with the dispute game.
+	RootClaim     eth.Bytes32    // The root claim associated with the dispute game.
 	L2blockNumber *big.Int       // The L2 block number related to the game.
 	L2ChainID     *big.Int       // The L2 chain ID associated with the game.
 	Status        GameStatus     // The current status of the game.
@@ -69,7 +70,7 @@ func (gs GameStatus) String() string {
 
 // String provides a string representation of DisputeGameData.
 func (d DisputeGameData) String() string {
-	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s status=%v createdAt=%v  resolvedAt=%v ]",
+	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress: %v rootClaim: %s l2blockNumber: %s l2ChainID: %s status: %v createdAt: %v resolvedAt: %v ]",
 		d.ProxyAddress,
 		common.BytesToHash(d.RootClaim[:]),
 		d.L2blockNumber.String(),

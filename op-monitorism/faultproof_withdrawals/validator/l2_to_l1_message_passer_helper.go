@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l2"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
@@ -34,6 +35,6 @@ func NewL2ToL1MessagePasserHelper(ctx context.Context, l2Client *ethclient.Clien
 
 // WithdrawalExistsOnL2 checks if a withdrawal message with the given hash exists on L2.
 // It returns true if the message exists, otherwise returns false along with any error encountered.
-func (l2l1 *L2ToL1MessagePasserHelper) WithdrawalExistsOnL2(withdrawalHash [32]byte) (bool, error) {
+func (l2l1 *L2ToL1MessagePasserHelper) WithdrawalExistsOnL2(withdrawalHash eth.Bytes32) (bool, error) {
 	return l2l1.l2ToL1MessagePasser.L2ToL1MessagePasserCaller.SentMessages(nil, withdrawalHash)
 }
