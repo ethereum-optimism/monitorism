@@ -68,4 +68,4 @@ The reviewer's job is to check that the PR:
 #### Merge Criteria
 
 1. All CI checks MUST pass.
-1. At least one code owner must approve.
+1. At least one code owner must approve..
