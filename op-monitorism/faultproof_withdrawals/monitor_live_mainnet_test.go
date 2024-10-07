@@ -2,12 +2,16 @@ package faultproof_withdrawals
 
 import (
 	"context"
+	"fmt"
+	"math/big"
 	"os"
 	"strconv"
+	"testing"
 
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 )
 
 // NewTestMonitoMainnet initializes and returns a new Monitor instance for testing.
@@ -53,25 +57,25 @@ func NewTestMonitoMainnet() *Monitor {
 
 // TestSingleRuMainnet tests a single execution of the monitor's Run method.
 // It verifies that the state updates correctly after running.
-// func TestSingleRuMainnet(t *testing.T) {
-// 	test_monitor := NewTestMonitoMainnet()
+func TestSingleRuMainnet(t *testing.T) {
+	test_monitor := NewTestMonitoMainnet()
 
-// 	initialBlock := uint64(20872390) // this block is known to have events with errors
-// 	blockIncrement := uint64(1000)
-// 	// finalBlock := initialBlock + blockIncrement
+	initialBlock := uint64(20872390) // this block is known to have events with errors
+	blockIncrement := uint64(1000)
+	// finalBlock := initialBlock + blockIncrement
 
-// 	test_monitor.state.nextL1Height = initialBlock
-// 	test_monitor.maxBlockRange = blockIncrement
-// 	test_monitor.Run(test_monitor.ctx)
-// 	fmt.Printf("State: %+v\n", test_monitor.state)
+	test_monitor.state.nextL1Height = initialBlock
+	test_monitor.maxBlockRange = blockIncrement
+	test_monitor.Run(test_monitor.ctx)
+	fmt.Printf("State: %+v\n", test_monitor.state)
 
-// 	// require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-// 	// require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-// 	// require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-// 	// require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-// 	// require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-// 	// require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-// }
+	// require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
+	// require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
+	// require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
+	// require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
+	// require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
+	// require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+}
 
 // TestSingleRuMainnet tests a single execution of the monitor's Run method.
 // It verifies that the state updates correctly after running.
@@ -142,40 +146,43 @@ func NewTestMonitoMainnet() *Monitor {
 // 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 // }
 
-// func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
-// 	test_monitor := NewTestMonitoMainnet()
+func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
+	test_monitor := NewTestMonitoMainnet()
 
-// 	// On mainnet for OP OptimismPortal, the block number 20873192 is known to have only 1 event
-// 	start := uint64(20873192)
-// 	stop := uint64(20873193)
-// 	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
-// 	require.NoError(t, err)
-// 	require.Equal(t, len(newEvents), 1)
+	// On mainnet for OP OptimismPortal, the block number 20873192 is known to have only 1 event
+	start := uint64(20873192)
+	stop := uint64(20873193)
+	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
+	require.NoError(t, err)
+	require.Equal(t, len(newEvents), 1)
 
-// 	event := newEvents[0]
-// 	require.NotNil(t, event)
+	event := newEvents[0]
+	require.NotNil(t, event)
 
-// 	// Expected event:
-// 	//{WithdrawalHash: 0x45fd4bbcf3386b1fdf75929345b9243c05cd7431a707e84c293b710d40220ebd, ProofSubmitter: 0x394400571C825Da37ca4D6780417DFB514141b1f}
-// 	require.Equal(t, event.Event.WithdrawalHash, eth.Bytes32(common.HexToHash("0x45fd4bbcf3386b1fdf75929345b9243c05cd7431a707e84c293b710d40220ebd")))
-// 	require.Equal(t, event.Event.ProofSubmitter, common.HexToAddress("0x394400571C825Da37ca4D6780417DFB514141b1f"))
+	// Expected event:
+	//{WithdrawalHash: 0x45fd4bbcf3386b1fdf75929345b9243c05cd7431a707e84c293b710d40220ebd, ProofSubmitter: 0x394400571C825Da37ca4D6780417DFB514141b1f}
+	require.Equal(t, event.Event.WithdrawalHash, [32]byte(common.HexToHash("0x45fd4bbcf3386b1fdf75929345b9243c05cd7431a707e84c293b710d40220ebd")))
+	require.Equal(t, event.Event.ProofSubmitter, common.HexToAddress("0x394400571C825Da37ca4D6780417DFB514141b1f"))
 
-// 	//Expected DisputeGameData:
-// 	// Game address: 0x52cE243d552369b11D6445Cd187F6393d3B42D4a
-// 	require.Equal(t, event.DisputeGame.DisputeGameData.ProxyAddress, common.HexToAddress("0x52cE243d552369b11D6445Cd187F6393d3B42D4a"))
+	//Expected DisputeGameData:
+	// Game address: 0x52cE243d552369b11D6445Cd187F6393d3B42D4a
+	require.Equal(t, event.DisputeGame.DisputeGameData.ProxyAddress, common.HexToAddress("0x52cE243d552369b11D6445Cd187F6393d3B42D4a"))
 
-// 	// Expected Game root claim
-// 	// 0xbc1c5ba13b936c6c23b7c51d425f25a8c9444771e851b6790f817a6002a14a33
-// 	require.Equal(t, event.DisputeGame.DisputeGameData.RootClaim, eth.Bytes32(common.HexToHash("0xbc1c5ba13b936c6c23b7c51d425f25a8c9444771e851b6790f817a6002a14a33")))
+	// Expected Game root claim
+	// 0xbc1c5ba13b936c6c23b7c51d425f25a8c9444771e851b6790f817a6002a14a33
+	require.Equal(t, event.DisputeGame.DisputeGameData.RootClaim, [32]byte(common.HexToHash("0xbc1c5ba13b936c6c23b7c51d425f25a8c9444771e851b6790f817a6002a14a33")))
 
-// 	// Expected L2 block number 1276288764
-// 	require.Equal(t, event.DisputeGame.DisputeGameData.L2blockNumber, big.NewInt(1276288764))
+	// Expected L2 block number 1276288764
+	require.Equal(t, event.DisputeGame.DisputeGameData.L2blockNumber, big.NewInt(1276288764))
 
-// 	isValid, err := test_monitor.withdrawalValidator.IsWithdrawalEventValid(&event)
-// 	require.Error(t, err, "trustedRootClaim is nil, game not enriched")
-// 	fmt.Printf("isValid: %+v\n", isValid)
-// 	fmt.Printf("event: %+v\n", event)
-// 	err = test_monitor.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&event)
-// 	require.NoError(t, err)
+	isValid, err := test_monitor.withdrawalValidator.IsWithdrawalEventValid(&event)
+	require.Error(t, err, "trustedRootClaim is nil, game not enriched")
+	fmt.Printf("isValid: %+v\n", isValid)
+	fmt.Printf("event: %+v\n", event)
+	err = test_monitor.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&event)
+	fmt.Printf("event: %+v\n", event)
+	fmt.Printf("err: %+v\n", err)
 
-// }
+	// require.NoError(t, err)
+
+}

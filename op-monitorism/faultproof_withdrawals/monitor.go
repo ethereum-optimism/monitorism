@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -130,7 +131,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	ret.state = *state
 
 	// log state and metrics
-	ret.state.LogState(ret.log)
+	ret.state.LogState()
 	ret.metrics.UpdateMetricsFromState(&ret.state)
 
 	return ret, nil
@@ -230,7 +231,7 @@ func (m *Monitor) GetMaxBlock() (uint64, error) {
 func (m *Monitor) Run(ctx context.Context) {
 	// Defer the update function
 	defer m.metrics.UpdateMetricsFromState(&m.state)
-	defer m.state.LogState(m.log)
+	defer m.state.LogState()
 
 	start := m.state.nextL1Height
 
@@ -242,19 +243,16 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 
 	// review previous invalidProposalWithdrawalsEvents
-	invalidProposalWithdrawalsEvents, err := m.ConsumeEvents(m.state.invalidProposalWithdrawalsEvents)
+	err = m.ConsumeEvents(m.state.potentialAttackOnInProgressGames)
 	if err != nil {
 		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
 
-	// update state
-	m.state.invalidProposalWithdrawalsEvents = *invalidProposalWithdrawalsEvents
-
 	// get new events
-	m.log.Info("getting enriched withdrawal events", "start", start, "stop", stop)
-	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
+	m.log.Info("getting enriched withdrawal events", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
+	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(start, &stop)
 	if err != nil {
 		if start >= stop {
 			m.log.Info("no new events to process", "start", start, "stop", stop)
@@ -267,16 +265,12 @@ func (m *Monitor) Run(ctx context.Context) {
 		}
 		return
 	}
-	newInvalidProposalWithdrawalsEvents, err := m.ConsumeEvents(newEvents)
+
+	err = m.ConsumeEvents(newEvents)
 	if err != nil {
 		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
-	}
-
-	// update state
-	if len(*newInvalidProposalWithdrawalsEvents) > 0 && newInvalidProposalWithdrawalsEvents != nil {
-		m.state.invalidProposalWithdrawalsEvents = append(m.state.invalidProposalWithdrawalsEvents, *newInvalidProposalWithdrawalsEvents...)
 	}
 
 	// update state
@@ -286,76 +280,60 @@ func (m *Monitor) Run(ctx context.Context) {
 
 // ConsumeEvents processes a slice of enriched withdrawal events and updates their states.
 // It returns any events detected during the consumption that requires to be re-analysed again at a later stage (when the event referenced DisputeGame completes).
-func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvent []validator.EnrichedProvenWithdrawalEvent) (*[]validator.EnrichedProvenWithdrawalEvent, error) {
-	var newForgeriesGameInProgressEvent []validator.EnrichedProvenWithdrawalEvent = make([]validator.EnrichedProvenWithdrawalEvent, 0)
-	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvent {
+func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]validator.EnrichedProvenWithdrawalEvent) error {
+	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvents {
 		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
 		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
 		if err != nil {
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
-			return nil, err
+			return err
 		}
 
-		consumedEvent, err := m.ConsumeEvent(enrichedWithdrawalEvent)
+		err = m.ConsumeEvent(enrichedWithdrawalEvent)
 		if err != nil {
 			m.log.Error("failed to consume event", "error", err)
-			return nil, err
-		} else if !consumedEvent {
-			newForgeriesGameInProgressEvent = append(newForgeriesGameInProgressEvent, enrichedWithdrawalEvent)
+			return err
 		}
 	}
 
-	return &newForgeriesGameInProgressEvent, nil
+	return nil
 }
 
 // ConsumeEvent processes a single enriched withdrawal event.
 // It logs the event details and checks for any forgery detection.
-func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) (bool, error) {
+func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) error {
 	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
 	}
 	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(&enrichedWithdrawalEvent)
 	if err != nil {
 		m.log.Error("failed to check if forgery detected", "error", err)
-		return false, err
+		return err
 	}
-	eventConsumed := false
 
 	if !valid {
-		m.state.numberOfInvalidWithdrawals++
+		m.state.numberOfPotentialAttackOnInProgressGames++
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
-				m.log.Warn("WITHDRAWAL: is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-				m.state.withdrawalsValidated++
-				eventConsumed = true
+				m.state.IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent)
 			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
-				m.log.Error("WITHDRAWAL: is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-				m.state.numberOfDetectedForgery++
-				// add to forgeries
-				m.state.forgeriesWithdrawalsEvents = append(m.state.forgeriesWithdrawalsEvents, enrichedWithdrawalEvent)
-				eventConsumed = true
+				m.state.IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent)
 			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.IN_PROGRESS {
-				m.log.Warn("WITHDRAWAL: is NOT valid, game is still in progress.", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+				m.state.IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent)
 				// add to events to be re-processed
-				eventConsumed = false
 			} else {
 				m.log.Error("WITHDRAWAL: is NOT valid, game status is unknown. UNKNOWN STATE SHOULD NEVER HAPPEN", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-				eventConsumed = false
 			}
 
 		} else {
-			m.log.Warn("WITHDRAWAL: is NOT valid, but game is blacklisted", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-			m.state.withdrawalsValidated++
-			eventConsumed = true
+			m.state.IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent)
 		}
 	} else {
-		m.log.Info("WITHDRAWAL: is valid", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		m.state.withdrawalsValidated++
-		eventConsumed = true
+		m.state.IncrementWithdrawalsValidated(enrichedWithdrawalEvent)
 	}
 	m.state.processedProvenWithdrawalsExtension1Events++
 	m.metrics.UpdateMetricsFromState(&m.state)
-	return eventConsumed, nil
+	return nil
 }
 
 // Close gracefully shuts down the Monitor by closing the Geth clients.
