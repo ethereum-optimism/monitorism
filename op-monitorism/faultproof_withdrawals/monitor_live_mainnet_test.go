@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NewTestMonitoMainnet initializes and returns a new Monitor instance for testing.
+// NewTestMonitorMainnet initializes and returns a new Monitor instance for testing.
 // It sets up the necessary environment variables and configurations required for the monitor.
-func NewTestMonitoMainnet() *Monitor {
+func NewTestMonitorMainnet() *Monitor {
 	loadEnv(".env.op.mainnet")
 	ctx := context.Background()
 	L1GethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL")
@@ -61,7 +61,7 @@ func NewTestMonitoMainnet() *Monitor {
 // TestSingleRuMainnet tests a single execution of the monitor's Run method.
 // It verifies that the state updates correctly after running.
 func TestSingleRuMainnet(t *testing.T) {
-	test_monitor := NewTestMonitoMainnet()
+	test_monitor := NewTestMonitorMainnet()
 
 	initialBlock := uint64(20872390) // this block is known to have events with errors
 	blockIncrement := uint64(1000)
@@ -83,7 +83,7 @@ func TestSingleRuMainnet(t *testing.T) {
 // TestSingleRuMainnet tests a single execution of the monitor's Run method.
 // It verifies that the state updates correctly after running.
 func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
-	test_monitor := NewTestMonitoMainnet()
+	test_monitor := NewTestMonitorMainnet()
 
 	maxCycle := 1
 	initialBlock := uint64(20872390) // this block is known to have events with errors
@@ -120,7 +120,7 @@ func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
 // ************
 
 func TestRunSingleBlocksMainnet(t *testing.T) {
-	test_monitor := NewTestMonitoMainnet()
+	test_monitor := NewTestMonitorMainnet()
 
 	maxCycle := 1
 	initialBlock := uint64(20873192) // this block is known to have events with errors
@@ -150,7 +150,7 @@ func TestRunSingleBlocksMainnet(t *testing.T) {
 }
 
 func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
-	test_monitor := NewTestMonitoMainnet()
+	test_monitor := NewTestMonitorMainnet()
 
 	// On mainnet for OP OptimismPortal, the block number 20873192 is known to have only 1 event
 	start := uint64(20873192)
