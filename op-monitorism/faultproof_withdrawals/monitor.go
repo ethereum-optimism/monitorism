@@ -124,7 +124,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
 	}
 
-	state, err := NewState(log, startingL1BlockHeight, latestL1Height)
+	state, err := NewState(log, startingL1BlockHeight, latestL1Height, ret.withdrawalValidator.GetLatestL2Height())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create state: %w", err)
 	}
@@ -284,6 +284,8 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]validat
 	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvents {
 		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
 		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
+		//upgrade state to the latest L2 height	after the event is processed
+		m.state.latestL2Height = m.withdrawalValidator.GetLatestL2Height()
 		if err != nil {
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
 			return err

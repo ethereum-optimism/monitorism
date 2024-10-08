@@ -249,3 +249,7 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 		return false, nil
 	}
 }
+
+func (wv *ProvenWithdrawalValidator) GetLatestL2Height() uint64 {
+	return wv.l2NodeHelper.LatestKnownL2BlockNumber
+}

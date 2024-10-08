@@ -22,6 +22,7 @@ type State struct {
 	nextL1Height    uint64
 	latestL1Height  uint64
 	initialL1Height uint64
+	latestL2Height  uint64
 
 	eventsProcessed      uint64
 	withdrawalsProcessed uint64
@@ -45,7 +46,7 @@ type State struct {
 	numberOFSuspiciousEventsOnChallengerWinsGames uint64
 }
 
-func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64) (*State, error) {
+func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64) (*State, error) {
 
 	if nextL1Height > latestL1Height {
 		logger.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", nextL1Height, "latestL1Height", latestL1Height)
@@ -76,6 +77,7 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64) (*S
 		nextL1Height:    nextL1Height,
 		latestL1Height:  latestL1Height,
 		initialL1Height: nextL1Height,
+		latestL2Height:  latestL2Height,
 		logger:          logger,
 	}
 
@@ -91,6 +93,7 @@ func (s *State) LogState() {
 		"initialL1Height", fmt.Sprintf("%d", s.initialL1Height),
 		"nextL1Height", fmt.Sprintf("%d", s.nextL1Height),
 		"latestL1Height", fmt.Sprintf("%d", s.latestL1Height),
+		"latestL2Height", fmt.Sprintf("%d", s.latestL2Height),
 		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
 		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
 
@@ -104,19 +107,19 @@ func (s *State) LogState() {
 }
 
 func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
-	s.logger.Info("STATE WITHDRAWAL: valid", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.withdrawalsProcessed++
 }
 
 func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.potentialAttackOnDefenderWinsGames[key] = enrichedWithdrawalEvent
 	s.numberOfPotentialAttackOnDefenderWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 	}
 
@@ -127,9 +130,9 @@ func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEven
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 	// check if key already exists
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	} else {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		s.numberOfPotentialAttackOnInProgressGames++
 	}
 
@@ -141,12 +144,12 @@ func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEven
 func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
 	s.numberOFSuspiciousEventsOnChallengerWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 		s.numberOfPotentialAttackOnInProgressGames--
 	}
@@ -170,6 +173,7 @@ type Metrics struct {
 	InitialL1HeightGauge prometheus.Gauge
 	NextL1HeightGauge    prometheus.Gauge
 	LatestL1HeightGauge  prometheus.Gauge
+	LatestL2HeightGauge  prometheus.Gauge
 
 	EventsProcessedCounter      prometheus.Counter
 	WithdrawalsProcessedCounter prometheus.Counter
@@ -194,6 +198,7 @@ func (m *Metrics) String() string {
 	initialL1HeightGaugeValue, _ := GetGaugeValue(m.InitialL1HeightGauge)
 	nextL1HeightGaugeValue, _ := GetGaugeValue(m.NextL1HeightGauge)
 	latestL1HeightGaugeValue, _ := GetGaugeValue(m.LatestL1HeightGauge)
+	latestL2HeightGaugeValue, _ := GetGaugeValue(m.LatestL2HeightGauge)
 
 	withdrawalsProcessedCounterValue, _ := GetCounterValue(m.WithdrawalsProcessedCounter)
 	eventsProcessedCounterValue, _ := GetCounterValue(m.EventsProcessedCounter)
@@ -207,10 +212,11 @@ func (m *Metrics) String() string {
 	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnInProgressGamesGaugeVec, prometheus.Labels{})
 
 	return fmt.Sprintf(
-		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\neventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
+		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
 		uint64(initialL1HeightGaugeValue),
 		uint64(nextL1HeightGaugeValue),
 		uint64(latestL1HeightGaugeValue),
+		uint64(latestL2HeightGaugeValue),
 		uint64(eventsProcessedCounterValue),
 		uint64(withdrawalsProcessedCounterValue),
 		uint64(nodeConnectionFailuresCounterValue),
@@ -275,6 +281,11 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Namespace: MetricsNamespace,
 			Name:      "latest_l1_height",
 			Help:      "Latest L1 Height",
+		}),
+		LatestL2HeightGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "latest_l2_height",
+			Help:      "Latest L2 Height",
 		}),
 		EventsProcessedCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
@@ -341,6 +352,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.InitialL1HeightGauge.Set(float64(state.initialL1Height))
 	m.NextL1HeightGauge.Set(float64(state.nextL1Height))
 	m.LatestL1HeightGauge.Set(float64(state.latestL1Height))
+	m.LatestL2HeightGauge.Set(float64(state.latestL2Height))
 
 	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfPotentialAttackOnDefenderWinsGames))
 	m.PotentialAttackOnInProgressGamesGauge.Set(float64(state.numberOfPotentialAttackOnInProgressGames))
