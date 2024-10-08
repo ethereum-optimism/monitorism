@@ -138,7 +138,6 @@ func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEven
 
 	// eventually update the map with the new enrichedWithdrawalEvent
 	s.potentialAttackOnInProgressGames[key] = enrichedWithdrawalEvent
-	panic("Not implemented")
 }
 
 func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
