@@ -29,7 +29,7 @@ An incident will be declared upon receiving an alert. The metrics described belo
 | **Network** | **Severity Level** | **Impact**                      | **Reaction**                                             | **Actions**                                                                                                                                       |
 |-------------|--------------------|---------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
 | Mainnet     | SEV1               | Fund loss                       | Immediate action required                                | - Page Faultproof (FP) team<br>- Follow critical incident procedures                                                                               |
-| Sepolia     | SEV3               | Fund loss (assumed 3.5 days)    | Assess acceptability of loss on Sepolia<br>Investigate the specific withdrawal | **Initial Actions:**<br>- Page FP team<br><br>**After Coordinating with FP Team:**<br>1. Blacklist the game (FP)<br>2. Execute presigned pause (Security)<br>3. Revert to permissioned game (FP) |
+| Sepolia     | SEV3               | Fund loss                       | Assess acceptability of loss on Sepolia<br>Investigate the specific withdrawal | **Initial Actions:**<br>- Page FP team<br><br>**After Coordinating with FP Team:**<br>1. Blacklist the game (FP)<br>2. Execute presigned pause (Security)<br>3. Revert to permissioned game (FP) |
 
 ##### Alert Description
 An event is considered a forgery if any of the following conditions apply:
@@ -39,15 +39,6 @@ An event is considered a forgery if any of the following conditions apply:
 There are exceptions to the rule above. The event is still considered valid if:
 1. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) belongs to a FaultDisputeGame that is [blacklisted](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/optimism_portal2_helper.go#L75), or to a FaultDisputeGame for which the game is in state [CHALLENGER_WIN](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L326).
 2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) belongs to a FaultDisputeGame that has the status [IN_PROGRESS](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L336). We use the [faultproof_withdrawals_invalid_proposal_withdrawals_events_count](#faultproof_withdrawals_invalid_proposal_withdrawals_events_count) metric to track this event.
-
-#### Investigation
-To investigate this alert, we need to delineate the possible causes that generate it. This alert will trigger when a forgery is detected.
-
-The investigation has two parts:
-1. Investigation to triage if the event is a true positive.
-2. Investigation to act.
-
-TODO: Detail the following steps.
 
 ### faultproof-withdrawal-forgery-detection-stalled
 
@@ -59,13 +50,6 @@ TODO: Detail the following steps.
 ##### Alert Description
 This alert monitors the number of withdrawal events that are considered normal in a chain. If the number of withdrawal events goes below a specified threshold, we trigger this alert.
 
-#### Investigation
-The investigation has two parts:
-1. Investigation to triage if the event is a true positive.
-2. Investigation to act.
-
-TODO: Detail the following steps.
-
 ### faultproof-withdrawal-forgery-detection-error-unhandled
 
 | **Network** | **Severity Level** | **Impact**                                          | **Cause**                               | **Actions**                                                                                     |
@@ -75,14 +59,6 @@ TODO: Detail the following steps.
 
 ##### Alert Description
 This alert will be triggered when the number of connection errors goes above a specified threshold. Errors should always be very limited or absent in the monitoring. When present, it often means there is an issue with communication between the monitor and the trusted nodes used for monitoring.
-
-#### Investigation
-
-The investigation has two parts:
-1. Investigation to triage if the event is a true positive.
-2. Investigation to act.
-
-TODO: Detail the following steps.
 
 ---
 ## Metrics and Alerts Conditions
