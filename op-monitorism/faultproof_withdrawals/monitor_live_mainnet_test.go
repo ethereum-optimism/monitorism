@@ -27,14 +27,11 @@ func NewTestMonitorMainnet() *Monitor {
 	L2OpGethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL")
 	EventBlockRangeStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE")
 	EventBlockRange, err := strconv.ParseUint(EventBlockRangeStr, 10, 64)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
+
 	StartingL1BlockHeightStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT")
 	StartingL1BlockHeight, err := strconv.ParseInt(StartingL1BlockHeightStr, 10, 64)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(err)
 
 	cfg := CLIConfig{
 		L1GethURL:             L1GethURL,
