@@ -46,12 +46,14 @@ func NewOpNodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client, l2Op
 	}
 
 	//ignoring the return value as it is already stored in the struct by the method
-	_, err = ret.GetLatestKnownL2BlockNumber()
+	latestBlockNumber, err := ret.GetLatestKnownL2BlockNumber()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get latest known L2 block number: %w", err)
 	}
 
+	ret.LatestKnownL2BlockNumber = latestBlockNumber
 	return &ret, nil
+
 }
 
 // get latest known L2 block number
