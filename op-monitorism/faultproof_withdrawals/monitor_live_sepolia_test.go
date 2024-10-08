@@ -13,13 +13,14 @@ import (
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
 
 // NewTestMonitorSepolia initializes and returns a new Monitor instance for testing.
 // It sets up the necessary environment variables and configurations required for the monitor.
 func NewTestMonitorSepolia() *Monitor {
-	envmap, err := loadEnv(".env.op.sepolia")
+	envmap, err := godotenv.Read(".env.op.sepolia")
 	if err != nil {
 		panic("error")
 	}

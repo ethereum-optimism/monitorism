@@ -100,7 +100,7 @@ func (s *State) LogState() {
 		"eventsProcessed", fmt.Sprintf("%d", s.eventsProcessed),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
 
-		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
+		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfPotentialAttacksOnDefenderWinsGames),
 		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
 		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
 	)

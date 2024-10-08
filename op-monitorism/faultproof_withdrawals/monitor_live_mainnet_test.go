@@ -12,13 +12,14 @@ import (
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
 
 // NewTestMonitorMainnet initializes and returns a new Monitor instance for testing.
 // It sets up the necessary environment variables and configurations required for the monitor.
 func NewTestMonitorMainnet() *Monitor {
-	envmap, err := loadEnv(".env.op.mainnet")
+	envmap, err := godotenv.Read(".env.op.mainnet")
 	if err != nil {
 		panic("error")
 	}
