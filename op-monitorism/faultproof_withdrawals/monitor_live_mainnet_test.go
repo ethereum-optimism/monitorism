@@ -69,12 +69,12 @@ func TestSingleRuMainnet(t *testing.T) {
 	test_monitor.Run(test_monitor.ctx)
 	fmt.Printf("State: %+v\n", test_monitor.state)
 
-	// require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-	// require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	// require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	// require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	// require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	// require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
+	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
+	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
+	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
+	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
+	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
 
 // TestSingleRuMainnet tests a single execution of the monitor's Run method.
@@ -82,7 +82,7 @@ func TestSingleRuMainnet(t *testing.T) {
 func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
 	test_monitor := NewTestMonitorMainnet()
 
-	maxCycle := 1
+	maxCycle := 30
 	initialBlock := uint64(20872390) // this block is known to have events with errors
 	blockIncrement := uint64(1000)
 	// finalBlock := initialBlock + blockIncrement
@@ -101,20 +101,7 @@ func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
 		fmt.Println("###########")
 
 	}
-	// require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-	// require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	// require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	// require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	// require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	// require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
-
-// Cycle: 1
-// t=2024-10-03T12:52:11+0200 lvl=info msg="processing withdrawal event" event="WithdrawalHash: 0x307834356664346262636633333836623166646637353932393334356239323433633035636437343331613730376538346332393362373130643430323230656264, ProofSubmitter: 0x394400571C825Da37ca4D6780417DFB514141b1f, Raw: {BlockNumber: 20873192, TxHash: 0x10b4e130eca6ad9466e35ce04a76e7e273456109820c6581993596882c4cdaee}"
-// t=2024-10-03T12:52:11+0200 lvl=warn msg="WITHDRAWAL: is NOT valid, game is still in progress." enrichedWithdrawalEvent="{Event:WithdrawalHash: 0x307834356664346262636633333836623166646637353932393334356239323433633035636437343331613730376538346332393362373130643430323230656264, ProofSubmitter: 0x394400571C825Da37ca4D6780417DFB514141b1f, Raw: {BlockNumber: 20873192, TxHash: 0x10b4e130eca6ad9466e35ce04a76e7e273456109820c6581993596882c4cdaee} DisputeGame:FaultDisputeGameProxy[ DisputeGameData=DisputeGame[ disputeGameProxyAddress: 0x680ACF0B7B97F10A6AF0e291c03717e4e532E511 rootClaim: 0xe1e1cba54480c557f68e3781f90ac52fa023ffcbd56c69665e861567367c08a9 l2blockNumber: 126104291 l2ChainID: 10 status: IN_PROGRESS createdAt: 2024-10-01 20:49:47 CEST resolvedAt: 1970-01-01 01:00:00 CET ] ] ExpectedRootClaim:0xe1e1cba54480c557f68e3781f90ac52fa023ffcbd56c69665e861567367c08a9 Blacklisted:false WithdrawalHashPresentOnL2:false Enriched:true}"
-// t=2024-10-03T12:52:11+0200 lvl=error msg="failed to update enriched withdrawal event" error="failed to get trustedRootClaim from Op-node: failed to get output at block for game block:0x4c129efc : failed to get L2 block ref with sync status: failed to determine L2BlockRef of height 1276288764, could not get payload: not found"
-// t=2024-10-03T12:52:11+0200 lvl=error msg="failed to consume events" error="failed to get trustedRootClaim from Op-node: failed to get output at block for game block:0x4c129efc : failed to get L2 block ref with sync status: failed to determine L2BlockRef of height 1276288764, could not get payload: not found"
-// ************
 
 func TestRunSingleBlocksMainnet(t *testing.T) {
 	test_monitor := NewTestMonitorMainnet()
