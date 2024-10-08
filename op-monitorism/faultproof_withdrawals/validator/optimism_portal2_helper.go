@@ -47,7 +47,7 @@ func (e WithdrawalProvenExtension1Event) String() string {
 
 // String provides a string representation of WithdrawalProvenEvent.
 func (e WithdrawalProvenEvent) String() string {
-	return fmt.Sprintf("WithdrawalHash: %x, Raw: %v", common.BytesToHash(e.WithdrawalHash[:]), e.Raw)
+	return fmt.Sprintf("WithdrawalHash: %s, Raw: %v", common.BytesToHash(e.WithdrawalHash[:]), e.Raw)
 }
 
 // String provides a string representation of SubmittedProofData.
