@@ -69,7 +69,7 @@ func TestSingleRunSepolia(t *testing.T) {
 
 	test_monitor.state.nextL1Height = initialBlock
 	test_monitor.maxBlockRange = blockIncrement
-	test_monitor.Run(test_monitor.ctx)
+	test_monitor.Run(context.Background())
 
 	require.Equal(t, finalBlock, test_monitor.state.nextL1Height)
 	require.Equal(t, uint64(1), test_monitor.state.withdrawalsValidated)
@@ -137,11 +137,11 @@ func TestConsumeEventValid_DEFENDER_WINS_Sepolia(t *testing.T) {
 	consumedEvent, err := test_monitor.ConsumeEvent(validEvent)
 	require.NoError(t, err)
 	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsValidated)
+	require.Equal(t, uint64(1), test_monitor.state.processedProvenWithdrawalsExtension1Events)
+	require.Equal(t, uint64(0), test_monitor.state.numberOfDetectedForgery)
+	require.Equal(t, 0, len(test_monitor.state.forgeriesWithdrawalsEvents))
+	require.Equal(t, 0, len(test_monitor.state.invalidProposalWithdrawalsEvents))
 }
 
 // TestConsumeEventValid_CHALLENGER_WINS_Sepolia tests the consumption of a valid event where the challenger wins.
@@ -185,11 +185,11 @@ func TestConsumeEventValid_CHALLENGER_WINS_Sepolia(t *testing.T) {
 	consumedEvent, err := test_monitor.ConsumeEvent(event)
 	require.NoError(t, err)
 	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsValidated)
+	require.Equal(t, uint64(1), test_monitor.state.processedProvenWithdrawalsExtension1Events)
+	require.Equal(t, uint64(0), test_monitor.state.numberOfDetectedForgery)
+	require.Equal(t, 0, len(test_monitor.state.forgeriesWithdrawalsEvents))
+	require.Equal(t, 0, len(test_monitor.state.invalidProposalWithdrawalsEvents))
 }
 
 // TestConsumeEventValid_BlacklistedSepolia tests the consumption of a valid event that is blacklisted.
@@ -233,11 +233,11 @@ func TestConsumeEventValid_BlacklistedSepolia(t *testing.T) {
 	consumedEvent, err := test_monitor.ConsumeEvent(event)
 	require.NoError(t, err)
 	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsValidated)
+	require.Equal(t, uint64(1), test_monitor.state.processedProvenWithdrawalsExtension1Events)
+	require.Equal(t, uint64(0), test_monitor.state.numberOfDetectedForgery)
+	require.Equal(t, 0, len(test_monitor.state.forgeriesWithdrawalsEvents))
+	require.Equal(t, 0, len(test_monitor.state.invalidProposalWithdrawalsEvents))
 }
 
 // TestConsumeEventForgery1Sepolia tests the consumption of an event that indicates a forgery.
@@ -280,11 +280,11 @@ func TestConsumeEventForgery1Sepolia(t *testing.T) {
 	consumedEvent, err := test_monitor.ConsumeEvent(validEvent)
 	require.NoError(t, err)
 	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(0))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(1))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 1)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(0), test_monitor.state.withdrawalsValidated)
+	require.Equal(t, uint64(1), test_monitor.state.processedProvenWithdrawalsExtension1Events)
+	require.Equal(t, uint64(1), test_monitor.state.numberOfDetectedForgery)
+	require.Equal(t, 1, len(test_monitor.state.forgeriesWithdrawalsEvents))
+	require.Equal(t, 0, len(test_monitor.state.invalidProposalWithdrawalsEvents))
 }
 
 // TestConsumeEventForgery2Sepolia tests the consumption of another event that indicates a forgery.

@@ -41,7 +41,7 @@ type ProvenWithdrawalValidator struct {
 }
 
 // String provides a string representation of EnrichedProvenWithdrawalEvent.
-func (e EnrichedProvenWithdrawalEvent) String() string {
+func (e *EnrichedProvenWithdrawalEvent) String() string {
 	return fmt.Sprintf("Event: %v, DisputeGame: %v, ExpectedRootClaim: %s, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v",
 		e.Event,
 		e.DisputeGame,
@@ -206,7 +206,7 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, 
 // GetEnrichedWithdrawalsEvents retrieves enriched withdrawal events within the specified block range.
 // It returns a slice of EnrichedProvenWithdrawalEvent along with any error encountered.
 func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint64, end *uint64) (map[common.Hash]EnrichedProvenWithdrawalEvent, error) {
-	iterator, err := wv.optimismPortal2Helper.GetProvenWithdrawalsExtension1EventsIterartor(start, end)
+	iterator, err := wv.optimismPortal2Helper.GetProvenWithdrawalsExtension1EventsIterator(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
 	}
@@ -228,8 +228,8 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint6
 			return nil, fmt.Errorf("failed to get enriched withdrawal event: %w", err)
 		}
 
-		key := &enrichedWithdrawalEvent.Event.Raw.TxHash
-		enrichedProvenWithdrawalEvents[*key] = *enrichedWithdrawalEvent
+		key := enrichedWithdrawalEvent.Event.Raw.TxHash
+		enrichedProvenWithdrawalEvents[key] = *enrichedWithdrawalEvent
 	}
 
 	return enrichedProvenWithdrawalEvents, nil

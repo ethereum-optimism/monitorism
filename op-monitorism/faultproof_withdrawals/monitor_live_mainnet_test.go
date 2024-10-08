@@ -55,9 +55,9 @@ func NewTestMonitorMainnet() *Monitor {
 	return monitor
 }
 
-// TestSingleRuMainnet tests a single execution of the monitor's Run method.
+// TestSingleRunMainnet tests a single execution of the monitor's Run method.
 // It verifies that the state updates correctly after running.
-func TestSingleRuMainnet(t *testing.T) {
+func TestSingleRunMainnet(t *testing.T) {
 	test_monitor := NewTestMonitorMainnet()
 
 	initialBlock := uint64(20872390) // this block is known to have events with errors
@@ -163,7 +163,7 @@ func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
 	require.Equal(t, event.DisputeGame.DisputeGameData.L2blockNumber, big.NewInt(1276288764))
 
 	isValid, err := test_monitor.withdrawalValidator.IsWithdrawalEventValid(&event)
-	require.Error(t, err, "trustedRootClaim is nil, game not enriched")
+	require.EqualError(t, err, "trustedRootClaim is nil, game not enriched")
 	fmt.Printf("isValid: %+v\n", isValid)
 	fmt.Printf("event: %+v\n", event)
 	err = test_monitor.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&event)
