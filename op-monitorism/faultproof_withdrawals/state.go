@@ -32,8 +32,8 @@ type State struct {
 	// possible attacks detected
 
 	// Forgeries detected on games that are already resolved
-	potentialAttackOnDefenderWinsGames         map[common.Hash]validator.EnrichedProvenWithdrawalEvent
-	numberOfPotentialAttackOnDefenderWinsGames uint64
+	potentialAttackOnDefenderWinsGames          map[common.Hash]validator.EnrichedProvenWithdrawalEvent
+	numberOfPotentialAttacksOnDefenderWinsGames uint64
 
 	// Forgeries detected on games that are still in progress
 	// Because games are still in progress and Faulproof system should make them invalid
@@ -54,8 +54,8 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 	}
 
 	ret := State{
-		potentialAttackOnDefenderWinsGames:         make(map[common.Hash]validator.EnrichedProvenWithdrawalEvent),
-		numberOfPotentialAttackOnDefenderWinsGames: 0,
+		potentialAttackOnDefenderWinsGames:          make(map[common.Hash]validator.EnrichedProvenWithdrawalEvent),
+		numberOfPotentialAttacksOnDefenderWinsGames: 0,
 		suspiciousEventsOnChallengerWinsGames: func() *lru.Cache {
 			cache, err := lru.New(suspiciousEventsOnChallengerWinsGamesCacheSize)
 			if err != nil {
@@ -116,7 +116,7 @@ func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEv
 
 	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.potentialAttackOnDefenderWinsGames[key] = enrichedWithdrawalEvent
-	s.numberOfPotentialAttackOnDefenderWinsGames++
+	s.numberOfPotentialAttacksOnDefenderWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
 		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
@@ -353,7 +353,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.LatestL1HeightGauge.Set(float64(state.latestL1Height))
 	m.LatestL2HeightGauge.Set(float64(state.latestL2Height))
 
-	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfPotentialAttackOnDefenderWinsGames))
+	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfPotentialAttacksOnDefenderWinsGames))
 	m.PotentialAttackOnInProgressGamesGauge.Set(float64(state.numberOfPotentialAttackOnInProgressGames))
 	m.SuspiciousEventsOnChallengerWinsGamesGauge.Set(float64(state.numberOfSuspiciousEventsOnChallengerWinsGames))
 

@@ -6,6 +6,7 @@ package faultproof_withdrawals
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"strconv"
@@ -43,8 +44,7 @@ func NewTestMonitorMainnet() *Monitor {
 	}
 
 	clicfg := oplog.DefaultCLIConfig()
-	// output_writer := io.Discard // discard log output during tests to avoid pollution of the standard output
-	output_writer := os.Stdout
+	output_writer := io.Discard // discard log output during tests to avoid pollution of the standard output
 	log := oplog.NewLogger(output_writer, clicfg)
 
 	metricsRegistry := opmetrics.NewRegistry()
