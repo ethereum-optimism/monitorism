@@ -40,6 +40,36 @@ There are exceptions to the rule above. The event is still considered valid if:
 1. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) belongs to a FaultDisputeGame that is [blacklisted](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/optimism_portal2_helper.go#L75), or to a FaultDisputeGame for which the game is in state [CHALLENGER_WIN](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L326).
 2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) belongs to a FaultDisputeGame that has the status [IN_PROGRESS](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L336). We use the [faultproof_withdrawals_invalid_proposal_withdrawals_events_count](#faultproof_withdrawals_invalid_proposal_withdrawals_events_count) metric to track this event.
 
+### faultproof-potential-withdrawal-forgery-detected
+
+| **Network** | **Severity Level** | **Impact**                      | **Reaction**                                             | **Actions**                                                                                                                                       |
+|-------------|--------------------|---------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| Mainnet     | SEV3               | No immediate impact                       | Investigate the attack, monitor how the attack is proceeding to make sure to be ready to react quickly in case of success                               |  if new type of attack, write a report and eventually create a feature request for improving monitorism monitoring capabilities                                                                            |
+| Sepolia     | SEV3               | No immediate impact                       | Investigate the attack, monitor how the attack is proceeding to make sure to be ready to react quickly in case of success                              | if new type of attack, write a report and eventually create a feature request for improving monitorism monitoring capabilities |
+
+##### Alert Description
+An event is considered a potential forgery if any of the following conditions apply:
+1. The withdrawalHash is not present on L2. We check this by querying [L2ToL1MessagePasser](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2CrossDomainMessenger.sol).
+2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) does not match what we see on [L2 block rootState](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/op_node_helper.go#L47).
+
+and
+1. Dispute Game status is INPROGRESS
+
+### faultproof-suspicious-withdrawal-forgery-detected
+
+| **Network** | **Severity Level** | **Impact**                      | **Reaction**                                             | **Actions**                                                                                                                                       |
+|-------------|--------------------|---------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| Mainnet     | SEV5               | No immediate impact                       | Investigate the attack, if not investigated already                               |  if new type of attack, write a report and eventually create a feature request for improving monitorism monitoring capabilities                                                                            |
+| Sepolia     | SEV5               | No immediate impact                       | Investigate the attack, if not investigated already                              | if new type of attack, write a report and eventually create a feature request for improving monitorism monitoring capabilities |
+
+##### Alert Description
+An event is considered a potential forgery if any of the following conditions apply:
+1. The withdrawalHash is not present on L2. We check this by querying [L2ToL1MessagePasser](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2CrossDomainMessenger.sol).
+2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) does not match what we see on [L2 block rootState](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/op_node_helper.go#L47).
+
+and
+1. Dispute Game status is CHALLENGER_WIN
+
 ### faultproof-withdrawal-forgery-detection-stalled
 
 | **Network** | **Severity Level** | **Impact**                                          | **Cause**                             | **Actions**                                                  |
@@ -63,30 +93,30 @@ This alert will be triggered when the number of connection errors goes above a s
 ---
 ## Metrics and Alerts Conditions
 
-### `faultproof_withdrawals_number_of_detected_forgeries`
+### `faultproof_withdrawals_potential_attack_on_defender_wins_games_count`
 
-- **Description:** Number of detected forgeries in the system.
+- **Description:** Number of attacks detected in which the defender wins. In this case the faultproof system failed and an attacker was able to forge a withdrawals.
 - **Alert:**
   - **Condition:** If the value exceeds **0**.
   - **Action:** Immediately investigate potential security breaches. Review transaction validation mechanisms.
   - **Alert Name:** [faultproof-withdrawal-forgery-detected](#faultproof-withdrawal-forgery-detected)
 
-### `faultproof_withdrawals_forgeries_withdrawals_events_count`
+### `faultproof_withdrawals_potential_attack_on_in_progress_games_count`
 
-- **Description:** Tracks the number of forgery withdrawal events.
+- **Description:** This is an attack in which the dispute game is still in progress. This is not yet a problem as the faultproof should be able to challenge this game and end with CHALLENGER_WIN. In the latter case this will not be an issue.
 - **Alert:**
   - **Condition:** If the value exceeds **0**.
-  - **Action:** Immediately investigate to determine the cause of the forgery events. Check the integrity of the withdrawal processing logic and system for potential security breaches.
-  - **Alert Name:** [faultproof-withdrawal-forgery-detected](#faultproof-withdrawal-forgery-detected)
+  - **Action:** In this case we need to keep an eye on this event. This is not yet a problem, and may not become a problem, but we may want to investigate who is attempting an attack.
+  - **Alert Name:** [faultproof-potential-withdrawal-forgery-detected](#faultproof-withdrawal-forgery-detected)
 
-### `faultproof_withdrawals_withdrawals_validated_total`
+### `faultproof_withdrawals_suspicious_events_on_challenger_wins_games_count`
 
-- **Description:** Total number of withdrawals validated successfully.
+- **Description:** This is the total number of suspicious withdrawals. In normal circumstances this metrics will be increased of 1 and faultproof_withdrawals_potential_attack_on_in_progress_games_count will be decreased of one.
 - **Type:** Counter
 - **Alert:**
   - **Condition:** If the value is not increasing as expected.
-  - **Action:** Investigate potential issues in the validation process. Ensure that the system is processing withdrawals correctly.
-  - **Alert Name:** [faultproof-withdrawal-forgery-detection-stalled](#faultproof-withdrawal-forgery-detection-stalled)
+  - **Action:** There are no immediate actions here. These informations can be useful for doing threat hunting and for measuring how many attack attempt have being detected since the block we have started to monitor from.
+  - **Alert Name:** [faultproof-suspicious-withdrawal-forgery-detected](#faultproof-withdrawal-forgery-detection-stalled)
 
 ### `faultproof_withdrawals_node_connection_failures_total`
 
