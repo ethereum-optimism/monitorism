@@ -331,7 +331,7 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 	} else {
 		m.state.IncrementWithdrawalsValidated(enrichedWithdrawalEvent)
 	}
-	m.state.processedProvenWithdrawalsExtension1Events++
+	m.state.eventsProcessed++
 	m.metrics.UpdateMetricsFromState(&m.state)
 	return nil
 }

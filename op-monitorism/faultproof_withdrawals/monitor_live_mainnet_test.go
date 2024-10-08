@@ -116,35 +116,35 @@ func TestSingleRuMainnet(t *testing.T) {
 // t=2024-10-03T12:52:11+0200 lvl=error msg="failed to consume events" error="failed to get trustedRootClaim from Op-node: failed to get output at block for game block:0x4c129efc : failed to get L2 block ref with sync status: failed to determine L2BlockRef of height 1276288764, could not get payload: not found"
 // ************
 
-// func TestRunSingleBlocksMainnet(t *testing.T) {
-// 	test_monitor := NewTestMonitoMainnet()
+func TestRunSingleBlocksMainnet(t *testing.T) {
+	test_monitor := NewTestMonitoMainnet()
 
-// 	maxCycle := 1
-// 	initialBlock := uint64(20873192) // this block is known to have events with errors
-// 	blockIncrement := uint64(1)
-// 	finalBlock := initialBlock + blockIncrement
+	maxCycle := 1
+	initialBlock := uint64(20873192) // this block is known to have events with errors
+	blockIncrement := uint64(1)
+	finalBlock := initialBlock + blockIncrement
 
-// 	test_monitor.state.nextL1Height = initialBlock
-// 	test_monitor.maxBlockRange = blockIncrement
+	test_monitor.state.nextL1Height = initialBlock
+	test_monitor.maxBlockRange = blockIncrement
 
-// 	for cycle := 1; cycle <= maxCycle; cycle++ {
-// 		fmt.Println("-----------")
-// 		fmt.Printf("Cycle: %d\n", cycle)
+	for cycle := 1; cycle <= maxCycle; cycle++ {
+		fmt.Println("-----------")
+		fmt.Printf("Cycle: %d\n", cycle)
 
-// 		test_monitor.Run(test_monitor.ctx)
-// 		fmt.Println("************")
-// 		fmt.Printf("State: %v\n", test_monitor.state)
-// 		fmt.Printf("Metrics: %v\n", &test_monitor.metrics)
-// 		fmt.Println("###########")
-// 	}
+		test_monitor.Run(test_monitor.ctx)
+		fmt.Println("************")
+		fmt.Printf("State: %v\n", test_monitor.state)
+		fmt.Printf("Metrics: %v\n", &test_monitor.metrics)
+		fmt.Println("###########")
+	}
 
-// 	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-// 	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-// 	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-// 	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-// 	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-// 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-// }
+	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
+	require.Equal(t, test_monitor.state.withdrawalsProcessed, uint64(1))
+	require.Equal(t, test_monitor.state.eventsProcessed, uint64(1))
+	require.Equal(t, test_monitor.state.numberOfPotentialAttackOnDefenderWinsGames, uint64(0))
+	require.Equal(t, len(test_monitor.state.potentialAttackOnDefenderWinsGames), 0)
+	require.Equal(t, len(test_monitor.state.potentialAttackOnInProgressGames), 0)
+}
 
 func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
 	test_monitor := NewTestMonitoMainnet()
@@ -183,6 +183,6 @@ func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
 	fmt.Printf("event: %+v\n", event)
 	fmt.Printf("err: %+v\n", err)
 
-	// require.NoError(t, err)
+	require.NoError(t, err)
 
 }

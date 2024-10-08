@@ -23,9 +23,8 @@ type State struct {
 	latestL1Height  uint64
 	initialL1Height uint64
 
-	processedProvenWithdrawalsExtension1Events uint64
-
-	withdrawalsValidated uint64
+	eventsProcessed      uint64
+	withdrawalsProcessed uint64
 
 	nodeConnectionFailures uint64
 
@@ -69,9 +68,9 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64) (*S
 		potentialAttackOnInProgressGames:         make(map[common.Hash]validator.EnrichedProvenWithdrawalEvent),
 		numberOfPotentialAttackOnInProgressGames: 0,
 
-		processedProvenWithdrawalsExtension1Events: 0,
+		eventsProcessed: 0,
 
-		withdrawalsValidated:   0,
+		withdrawalsProcessed:   0,
 		nodeConnectionFailures: 0,
 
 		nextL1Height:    nextL1Height,
@@ -87,7 +86,7 @@ func (s *State) LogState() {
 	blockToProcess, syncPercentage := s.GetPercentages()
 
 	s.logger.Info("STATE:",
-		"withdrawalsValidated", fmt.Sprintf("%d", s.withdrawalsValidated),
+		"withdrawalsProcessed", fmt.Sprintf("%d", s.withdrawalsProcessed),
 
 		"initialL1Height", fmt.Sprintf("%d", s.initialL1Height),
 		"nextL1Height", fmt.Sprintf("%d", s.nextL1Height),
@@ -95,7 +94,7 @@ func (s *State) LogState() {
 		"blockToProcess", fmt.Sprintf("%d", blockToProcess),
 		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
 
-		"processedProvenWithdrawalsExtension1Events", fmt.Sprintf("%d", s.processedProvenWithdrawalsExtension1Events),
+		"eventsProcessed", fmt.Sprintf("%d", s.eventsProcessed),
 		"numberOfDetectedForgery", fmt.Sprintf("%d", s.numberOfPotentialAttackOnDefenderWinsGames),
 		"numberOfInvalidWithdrawals", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
@@ -108,7 +107,7 @@ func (s *State) LogState() {
 
 func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
 	s.logger.Info("STATE WITHDRAWAL: valid", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-	s.withdrawalsValidated++
+	s.withdrawalsProcessed++
 }
 
 func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
@@ -122,6 +121,8 @@ func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEv
 		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 	}
+
+	s.withdrawalsProcessed++
 }
 
 func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
@@ -144,13 +145,14 @@ func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawa
 	s.logger.Error("STATE WITHDRAWAL:is NOT valid, is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
 	s.numberOFSuspiciousEventsOnChallengerWinsGames++
-	fmt.Printf("---------- Added key: %v\n", key)
-	fmt.Printf("---------- keys: %v\n", s.suspiciousEventsOnChallengerWinsGames.Keys())
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
 		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 	}
+
+	s.withdrawalsProcessed++
+
 }
 
 func (s *State) GetPercentages() (uint64, uint64) {
@@ -165,38 +167,42 @@ func (s *State) GetPercentages() (uint64, uint64) {
 }
 
 type Metrics struct {
-	InitialL1HeightGauge                               prometheus.Gauge
-	NextL1HeightGauge                                  prometheus.Gauge
-	LatestL1HeightGauge                                prometheus.Gauge
-	ProcessedProvenWithdrawalsEventsExtensions1Counter prometheus.Counter
-	NumberOfDetectedForgeryGauge                       prometheus.Gauge
-	NumberOfInvalidWithdrawalsGauge                    prometheus.Gauge
-	WithdrawalsValidatedCounter                        prometheus.Counter
-	NodeConnectionFailuresCounter                      prometheus.Counter
-	PotentialAttackOnDefenderWinsGamesGauge            prometheus.Gauge
-	PotentialAttackOnInProgressGamesGauge              prometheus.Gauge
-	SuspiciousEventsOnChallengerWinsGamesGauge         prometheus.Gauge
-	PotentialAttackOnDefenderWinsGamesGaugeVec         *prometheus.GaugeVec
-	PotentialAttackOnInProgressGamesGaugeVec           *prometheus.GaugeVec
-	SuspiciousEventsOnChallengerWinsGamesGaugeVec      *prometheus.GaugeVec
+	InitialL1HeightGauge                          prometheus.Gauge
+	NextL1HeightGauge                             prometheus.Gauge
+	LatestL1HeightGauge                           prometheus.Gauge
+	EventsProcessedCounter                        prometheus.Counter
+	NumberOfDetectedForgeryGauge                  prometheus.Gauge
+	NumberOfInvalidWithdrawalsGauge               prometheus.Gauge
+	WithdrawalsProcessedCounter                   prometheus.Counter
+	NodeConnectionFailuresCounter                 prometheus.Counter
+	PotentialAttackOnDefenderWinsGamesGauge       prometheus.Gauge
+	PotentialAttackOnInProgressGamesGauge         prometheus.Gauge
+	SuspiciousEventsOnChallengerWinsGamesGauge    prometheus.Gauge
+	PotentialAttackOnDefenderWinsGamesGaugeVec    *prometheus.GaugeVec
+	PotentialAttackOnInProgressGamesGaugeVec      *prometheus.GaugeVec
+	SuspiciousEventsOnChallengerWinsGamesGaugeVec *prometheus.GaugeVec
 
 	// Previous values for counters
-	previousProcessedProvenWithdrawalsExtension1Events uint64
-	previousWithdrawalsValidated                       uint64
-	previousNodeConnectionFailures                     uint64
+	previousEventsProcessed        uint64
+	previousWithdrawalsProcessed   uint64
+	previousNodeConnectionFailures uint64
 }
 
 func (m *Metrics) String() string {
 	initialL1HeightGaugeValue, _ := GetGaugeValue(m.InitialL1HeightGauge)
 	nextL1HeightGaugeValue, _ := GetGaugeValue(m.NextL1HeightGauge)
 	latestL1HeightGaugeValue, _ := GetGaugeValue(m.LatestL1HeightGauge)
-	processedProvenWithdrawalsEventsExtensions1CounterValue, _ := GetCounterValue(m.ProcessedProvenWithdrawalsEventsExtensions1Counter)
+
+	withdrawalsProcessedCounterValue, _ := GetCounterValue(m.WithdrawalsProcessedCounter)
+	eventsProcessedCounterValue, _ := GetCounterValue(m.EventsProcessedCounter)
+
 	numberOfDetectedForgeryGaugeValue, _ := GetGaugeValue(m.NumberOfDetectedForgeryGauge)
 	numberOfInvalidWithdrawalsGaugeValue, _ := GetGaugeValue(m.NumberOfInvalidWithdrawalsGauge)
-	withdrawalsValidatedCounterValue, _ := GetCounterValue(m.WithdrawalsValidatedCounter)
+
 	nodeConnectionFailuresCounterValue, _ := GetCounterValue(m.NodeConnectionFailuresCounter)
-	forgeriesWithdrawalsEventsGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnDefenderWinsGamesGauge)
-	invalidProposalWithdrawalsEventsGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnInProgressGamesGauge)
+
+	potentialAttackOnDefenderWinsGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnDefenderWinsGamesGauge)
+	potentialAttackOnInProgressGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnInProgressGamesGauge)
 
 	forgeriesWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnDefenderWinsGamesGaugeVec, prometheus.Labels{})
 	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnInProgressGamesGaugeVec, prometheus.Labels{})
@@ -206,17 +212,17 @@ func (m *Metrics) String() string {
 		uint64(initialL1HeightGaugeValue),
 		uint64(nextL1HeightGaugeValue),
 		uint64(latestL1HeightGaugeValue),
-		uint64(processedProvenWithdrawalsEventsExtensions1CounterValue),
+		uint64(eventsProcessedCounterValue),
 		uint64(numberOfDetectedForgeryGaugeValue),
 		uint64(numberOfInvalidWithdrawalsGaugeValue),
-		uint64(withdrawalsValidatedCounterValue),
+		uint64(withdrawalsProcessedCounterValue),
 		uint64(nodeConnectionFailuresCounterValue),
-		uint64(forgeriesWithdrawalsEventsGaugeValue),
-		uint64(invalidProposalWithdrawalsEventsGaugeValue),
+		uint64(potentialAttackOnDefenderWinsGamesGaugeValue),
+		uint64(potentialAttackOnInProgressGamesGaugeValue),
 		uint64(forgeriesWithdrawalsEventsGaugeVecValue),
 		uint64(invalidProposalWithdrawalsEventsGaugeVecValue),
-		m.previousProcessedProvenWithdrawalsExtension1Events,
-		m.previousWithdrawalsValidated,
+		m.previousEventsProcessed,
+		m.previousWithdrawalsProcessed,
 		m.previousNodeConnectionFailures,
 	)
 }
@@ -273,7 +279,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Name:      "latest_l1_height",
 			Help:      "Latest L1 Height",
 		}),
-		ProcessedProvenWithdrawalsEventsExtensions1Counter: m.NewCounter(prometheus.CounterOpts{
+		EventsProcessedCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "processed_provenwithdrawalsextension1_events_total",
 			Help:      "Total number of processed provenwithdrawalsextension1 events",
@@ -288,7 +294,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Name:      "number_of_invalid_withdrawals",
 			Help:      "Number of invalid withdrawals",
 		}),
-		WithdrawalsValidatedCounter: m.NewCounter(prometheus.CounterOpts{
+		WithdrawalsProcessedCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "withdrawals_validated_total",
 			Help:      "Total number of withdrawals validated",
@@ -357,18 +363,18 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 
 	// Update Counters by calculating deltas
 	// Processed Withdrawals
-	processedWithdrawalsDelta := state.processedProvenWithdrawalsExtension1Events - m.previousProcessedProvenWithdrawalsExtension1Events
-	if processedWithdrawalsDelta > 0 {
-		m.ProcessedProvenWithdrawalsEventsExtensions1Counter.Add(float64(processedWithdrawalsDelta))
+	eventsProcessedDelta := state.eventsProcessed - m.previousEventsProcessed
+	if eventsProcessedDelta > 0 {
+		m.EventsProcessedCounter.Add(float64(eventsProcessedDelta))
 	}
-	m.previousProcessedProvenWithdrawalsExtension1Events = state.processedProvenWithdrawalsExtension1Events
+	m.previousEventsProcessed = state.eventsProcessed
 
 	// Withdrawals Validated
-	withdrawalsValidatedDelta := state.withdrawalsValidated - m.previousWithdrawalsValidated
-	if withdrawalsValidatedDelta > 0 {
-		m.WithdrawalsValidatedCounter.Add(float64(withdrawalsValidatedDelta))
+	withdrawalsProcessedDelta := state.withdrawalsProcessed - m.previousWithdrawalsProcessed
+	if withdrawalsProcessedDelta > 0 {
+		m.WithdrawalsProcessedCounter.Add(float64(withdrawalsProcessedDelta))
 	}
-	m.previousWithdrawalsValidated = state.withdrawalsValidated
+	m.previousWithdrawalsProcessed = state.withdrawalsProcessed
 
 	// Node Connection Failures
 	nodeConnectionFailuresDelta := state.nodeConnectionFailures - m.previousNodeConnectionFailures
