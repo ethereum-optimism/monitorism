@@ -5,6 +5,7 @@ package faultproof_withdrawals
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/big"
 	"os"
@@ -29,12 +30,12 @@ func NewTestMonitorSepolia() *Monitor {
 	EventBlockRangeStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE")
 	EventBlockRange, err := strconv.ParseUint(EventBlockRangeStr, 10, 64)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to parse EventBlockRange: %w", err)
 	}
 	StartingL1BlockHeightStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT")
 	StartingL1BlockHeight, err := strconv.ParseInt(StartingL1BlockHeightStr, 10, 64)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to parse StartingL1BlockHeight: %w", err)
 	}
 
 	cfg := CLIConfig{
@@ -94,7 +95,7 @@ func TestConsumeEventsSepolia(t *testing.T) {
 
 	newInvalidProposalWithdrawalsEvents, err := test_monitor.ConsumeEvents(newEvents)
 	require.NoError(t, err)
-	require.Equal(t, len(*newInvalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, 0, len(newInvalidProposalWithdrawalsEvents))
 }
 
 // TestConsumeEventValid_DEFENDER_WINS_Sepolia tests the consumption of a valid event where the defender wins.

@@ -31,7 +31,7 @@ func NewTestMonitorMainnet() *Monitor {
 	require.NoError(err)
 
 	StartingL1BlockHeightStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT")
-	StartingL1BlockHeight, err := strconv.ParseInt(StartingL1BlockHeightStr, 10, 64)
+	StartingL1BlockHeight, err := strconv.ParseUint(StartingL1BlockHeightStr, 10, 64)
 	require.NoError(err)
 
 	cfg := CLIConfig{
@@ -62,7 +62,6 @@ func TestSingleRunMainnet(t *testing.T) {
 
 	initialBlock := uint64(20872390) // this block is known to have events with errors
 	blockIncrement := uint64(1000)
-	// finalBlock := initialBlock + blockIncrement
 
 	test_monitor.state.nextL1Height = initialBlock
 	test_monitor.maxBlockRange = blockIncrement
@@ -85,7 +84,6 @@ func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
 	maxCycle := 30
 	initialBlock := uint64(20872390) // this block is known to have events with errors
 	blockIncrement := uint64(1000)
-	// finalBlock := initialBlock + blockIncrement
 
 	test_monitor.state.nextL1Height = initialBlock
 	test_monitor.maxBlockRange = blockIncrement
