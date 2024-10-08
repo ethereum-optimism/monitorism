@@ -43,7 +43,7 @@ type State struct {
 	// Suspicious events
 	// It is unlikely that someone is going to use a withdrawal hash on a games that resolved with ChallengerWins. If this happens, maybe there is a bug somewhere in the UI used by the users or it is a malicious attack that failed
 	suspiciousEventsOnChallengerWinsGames         *lru.Cache
-	numberOFSuspiciousEventsOnChallengerWinsGames uint64
+	numberOfSuspiciousEventsOnChallengerWinsGames uint64
 }
 
 func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64) (*State, error) {
@@ -64,7 +64,7 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 			}
 			return cache
 		}(),
-		numberOFSuspiciousEventsOnChallengerWinsGames: 0,
+		numberOfSuspiciousEventsOnChallengerWinsGames: 0,
 
 		potentialAttackOnInProgressGames:         make(map[common.Hash]validator.EnrichedProvenWithdrawalEvent),
 		numberOfPotentialAttackOnInProgressGames: 0,
@@ -100,9 +100,9 @@ func (s *State) LogState() {
 		"eventsProcessed", fmt.Sprintf("%d", s.eventsProcessed),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
 
-		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOFSuspiciousEventsOnChallengerWinsGames),
+		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
 		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
-		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOFSuspiciousEventsOnChallengerWinsGames),
+		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
 	)
 }
 
@@ -146,7 +146,7 @@ func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawa
 
 	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
-	s.numberOFSuspiciousEventsOnChallengerWinsGames++
+	s.numberOfSuspiciousEventsOnChallengerWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
 		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
@@ -356,7 +356,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 
 	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfPotentialAttackOnDefenderWinsGames))
 	m.PotentialAttackOnInProgressGamesGauge.Set(float64(state.numberOfPotentialAttackOnInProgressGames))
-	m.SuspiciousEventsOnChallengerWinsGamesGauge.Set(float64(state.numberOFSuspiciousEventsOnChallengerWinsGames))
+	m.SuspiciousEventsOnChallengerWinsGamesGauge.Set(float64(state.numberOfSuspiciousEventsOnChallengerWinsGames))
 
 	// Update Counters by calculating deltas
 	// Processed Withdrawals
