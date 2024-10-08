@@ -71,12 +71,12 @@ func TestSingleRunSepolia(t *testing.T) {
 	test_monitor.maxBlockRange = blockIncrement
 	test_monitor.Run(test_monitor.ctx)
 
-	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, finalBlock, test_monitor.state.nextL1Height)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsValidated)
+	require.Equal(t, uint64(1), test_monitor.state.processedProvenWithdrawalsExtension1Events)
+	require.Equal(t, uint64(0), test_monitor.state.numberOfDetectedForgery)
+	require.Equal(t, 0, len(test_monitor.state.forgeriesWithdrawalsEvents))
+	require.Equal(t, 0, len(test_monitor.state.invalidProposalWithdrawalsEvents))
 }
 
 // TestConsumeEventsSepolia tests the consumption of enriched withdrawal events.
