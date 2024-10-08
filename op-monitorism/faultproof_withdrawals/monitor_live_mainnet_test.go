@@ -1,3 +1,6 @@
+//go:build live
+// +build live
+
 package faultproof_withdrawals
 
 import (
@@ -79,35 +82,35 @@ func TestSingleRuMainnet(t *testing.T) {
 
 // TestSingleRuMainnet tests a single execution of the monitor's Run method.
 // It verifies that the state updates correctly after running.
-// func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
-// 	test_monitor := NewTestMonitoMainnet()
+func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
+	test_monitor := NewTestMonitoMainnet()
 
-// 	maxCycle := 1
-// 	initialBlock := uint64(20872390) // this block is known to have events with errors
-// 	blockIncrement := uint64(1000)
-// 	// finalBlock := initialBlock + blockIncrement
+	maxCycle := 1
+	initialBlock := uint64(20872390) // this block is known to have events with errors
+	blockIncrement := uint64(1000)
+	// finalBlock := initialBlock + blockIncrement
 
-// 	test_monitor.state.nextL1Height = initialBlock
-// 	test_monitor.maxBlockRange = blockIncrement
+	test_monitor.state.nextL1Height = initialBlock
+	test_monitor.maxBlockRange = blockIncrement
 
-// 	for cycle := 1; cycle <= maxCycle; cycle++ {
-// 		fmt.Println("-----------")
-// 		fmt.Printf("Cycle: %d\n", cycle)
+	for cycle := 1; cycle <= maxCycle; cycle++ {
+		fmt.Println("-----------")
+		fmt.Printf("Cycle: %d\n", cycle)
 
-// 		test_monitor.Run(test_monitor.ctx)
-// 		fmt.Println("************")
-// 		fmt.Printf("State: %v\n", test_monitor.state)
-// 		fmt.Printf("Metrics: %v\n", &test_monitor.metrics)
-// 		fmt.Println("###########")
+		test_monitor.Run(test_monitor.ctx)
+		fmt.Println("************")
+		fmt.Printf("State: %v\n", test_monitor.state)
+		fmt.Printf("Metrics: %v\n", &test_monitor.metrics)
+		fmt.Println("###########")
 
-// 	}
-// 	// require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-// 	// require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-// 	// require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-// 	// require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-// 	// require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-// 	// require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
-// }
+	}
+	// require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
+	// require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
+	// require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
+	// require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
+	// require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
+	// require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+}
 
 // Cycle: 1
 // t=2024-10-03T12:52:11+0200 lvl=info msg="processing withdrawal event" event="WithdrawalHash: 0x307834356664346262636633333836623166646637353932393334356239323433633035636437343331613730376538346332393362373130643430323230656264, ProofSubmitter: 0x394400571C825Da37ca4D6780417DFB514141b1f, Raw: {BlockNumber: 20873192, TxHash: 0x10b4e130eca6ad9466e35ce04a76e7e273456109820c6581993596882c4cdaee}"

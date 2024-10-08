@@ -95,8 +95,6 @@ func (s *State) LogState() {
 		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
 
 		"eventsProcessed", fmt.Sprintf("%d", s.eventsProcessed),
-		"numberOfDetectedForgery", fmt.Sprintf("%d", s.numberOfPotentialAttackOnDefenderWinsGames),
-		"numberOfInvalidWithdrawals", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
 
 		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOFSuspiciousEventsOnChallengerWinsGames),
@@ -137,18 +135,20 @@ func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEven
 
 	// eventually update the map with the new enrichedWithdrawalEvent
 	s.potentialAttackOnInProgressGames[key] = enrichedWithdrawalEvent
+	panic("Not implemented")
 }
 
 func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL:is NOT valid, is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
 	s.numberOFSuspiciousEventsOnChallengerWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
 		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
+		s.numberOfPotentialAttackOnInProgressGames--
 	}
 
 	s.withdrawalsProcessed++
@@ -167,17 +167,19 @@ func (s *State) GetPercentages() (uint64, uint64) {
 }
 
 type Metrics struct {
-	InitialL1HeightGauge                          prometheus.Gauge
-	NextL1HeightGauge                             prometheus.Gauge
-	LatestL1HeightGauge                           prometheus.Gauge
-	EventsProcessedCounter                        prometheus.Counter
-	NumberOfDetectedForgeryGauge                  prometheus.Gauge
-	NumberOfInvalidWithdrawalsGauge               prometheus.Gauge
-	WithdrawalsProcessedCounter                   prometheus.Counter
-	NodeConnectionFailuresCounter                 prometheus.Counter
-	PotentialAttackOnDefenderWinsGamesGauge       prometheus.Gauge
-	PotentialAttackOnInProgressGamesGauge         prometheus.Gauge
-	SuspiciousEventsOnChallengerWinsGamesGauge    prometheus.Gauge
+	InitialL1HeightGauge prometheus.Gauge
+	NextL1HeightGauge    prometheus.Gauge
+	LatestL1HeightGauge  prometheus.Gauge
+
+	EventsProcessedCounter      prometheus.Counter
+	WithdrawalsProcessedCounter prometheus.Counter
+
+	NodeConnectionFailuresCounter prometheus.Counter
+
+	PotentialAttackOnDefenderWinsGamesGauge    prometheus.Gauge
+	PotentialAttackOnInProgressGamesGauge      prometheus.Gauge
+	SuspiciousEventsOnChallengerWinsGamesGauge prometheus.Gauge
+
 	PotentialAttackOnDefenderWinsGamesGaugeVec    *prometheus.GaugeVec
 	PotentialAttackOnInProgressGamesGaugeVec      *prometheus.GaugeVec
 	SuspiciousEventsOnChallengerWinsGamesGaugeVec *prometheus.GaugeVec
@@ -196,9 +198,6 @@ func (m *Metrics) String() string {
 	withdrawalsProcessedCounterValue, _ := GetCounterValue(m.WithdrawalsProcessedCounter)
 	eventsProcessedCounterValue, _ := GetCounterValue(m.EventsProcessedCounter)
 
-	numberOfDetectedForgeryGaugeValue, _ := GetGaugeValue(m.NumberOfDetectedForgeryGauge)
-	numberOfInvalidWithdrawalsGaugeValue, _ := GetGaugeValue(m.NumberOfInvalidWithdrawalsGauge)
-
 	nodeConnectionFailuresCounterValue, _ := GetCounterValue(m.NodeConnectionFailuresCounter)
 
 	potentialAttackOnDefenderWinsGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnDefenderWinsGamesGauge)
@@ -208,13 +207,11 @@ func (m *Metrics) String() string {
 	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnInProgressGamesGaugeVec, prometheus.Labels{})
 
 	return fmt.Sprintf(
-		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\nProcessedProvenWithdrawalsEventsExtensions1Counter: %d\nNumberOfDetectedForgeryGauge: %d\nNumberOfInvalidWithdrawalsGauge: %d\nWithdrawalsValidatedCounter: %d\nNodeConnectionFailuresCounter: %d\nForgeriesWithdrawalsEventsGauge: %d\nInvalidProposalWithdrawalsEventsGauge: %d\nForgeriesWithdrawalsEventsGaugeVec: %d\nInvalidProposalWithdrawalsEventsGaugeVec: %d\npreviousProcessedProvenWithdrawalsExtension1Events: %d\npreviousWithdrawalsValidated: %d\npreviousNodeConnectionFailures: %d",
+		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\neventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
 		uint64(initialL1HeightGaugeValue),
 		uint64(nextL1HeightGaugeValue),
 		uint64(latestL1HeightGaugeValue),
 		uint64(eventsProcessedCounterValue),
-		uint64(numberOfDetectedForgeryGaugeValue),
-		uint64(numberOfInvalidWithdrawalsGaugeValue),
 		uint64(withdrawalsProcessedCounterValue),
 		uint64(nodeConnectionFailuresCounterValue),
 		uint64(potentialAttackOnDefenderWinsGamesGaugeValue),
@@ -281,23 +278,13 @@ func NewMetrics(m metrics.Factory) *Metrics {
 		}),
 		EventsProcessedCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
-			Name:      "processed_provenwithdrawalsextension1_events_total",
-			Help:      "Total number of processed provenwithdrawalsextension1 events",
-		}),
-		NumberOfDetectedForgeryGauge: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "number_of_detected_forgeries",
-			Help:      "Number of detected forgeries",
-		}),
-		NumberOfInvalidWithdrawalsGauge: m.NewGauge(prometheus.GaugeOpts{
-			Namespace: MetricsNamespace,
-			Name:      "number_of_invalid_withdrawals",
-			Help:      "Number of invalid withdrawals",
+			Name:      "events_processed_total",
+			Help:      "Total number of events processed",
 		}),
 		WithdrawalsProcessedCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
-			Name:      "withdrawals_validated_total",
-			Help:      "Total number of withdrawals validated",
+			Name:      "withdrawals_processed_total",
+			Help:      "Total number of withdrawals processed",
 		}),
 		NodeConnectionFailuresCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
@@ -355,8 +342,6 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.NextL1HeightGauge.Set(float64(state.nextL1Height))
 	m.LatestL1HeightGauge.Set(float64(state.latestL1Height))
 
-	m.NumberOfDetectedForgeryGauge.Set(float64(state.numberOfPotentialAttackOnDefenderWinsGames))
-	m.NumberOfInvalidWithdrawalsGauge.Set(float64(state.numberOfPotentialAttackOnInProgressGames))
 	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfPotentialAttackOnDefenderWinsGames))
 	m.PotentialAttackOnInProgressGamesGauge.Set(float64(state.numberOfPotentialAttackOnInProgressGames))
 	m.SuspiciousEventsOnChallengerWinsGamesGauge.Set(float64(state.numberOFSuspiciousEventsOnChallengerWinsGames))

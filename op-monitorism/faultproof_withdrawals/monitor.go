@@ -312,7 +312,6 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenW
 	}
 
 	if !valid {
-		m.state.numberOfPotentialAttackOnInProgressGames++
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
 				m.state.IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent)
