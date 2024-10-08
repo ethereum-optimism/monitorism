@@ -144,6 +144,8 @@ func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawa
 	s.logger.Error("STATE WITHDRAWAL:is NOT valid, is NOT valid, but the game is correctly resolved", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
 	s.numberOFSuspiciousEventsOnChallengerWinsGames++
+	fmt.Printf("---------- Added key: %v\n", key)
+	fmt.Printf("---------- keys: %v\n", s.suspiciousEventsOnChallengerWinsGames.Keys())
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
 		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
@@ -417,7 +419,8 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	// Clear the previous values
 	// m.SuspiciousEventsOnChallengerWinsGamesGaugeVec.Reset()
 	// Update metrics for invalid proposal withdrawals events
-	for key := range state.suspiciousEventsOnChallengerWinsGames.Keys() {
+
+	for _, key := range state.suspiciousEventsOnChallengerWinsGames.Keys() {
 		enrichedEvent, ok := state.suspiciousEventsOnChallengerWinsGames.Get(key)
 		if ok {
 			event := enrichedEvent.(validator.EnrichedProvenWithdrawalEvent)

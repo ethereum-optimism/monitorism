@@ -22,8 +22,6 @@ or
 cd ../
 go run ./cmd/monitorism faultproof_withdrawals --metrics.enabled --metrics.port 7300
 ```
-## Available Metrics and Meaning
-
 
 # Cli options
 
