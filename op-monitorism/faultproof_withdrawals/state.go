@@ -419,9 +419,8 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	}
 
 	// Clear the previous values
-	// m.SuspiciousEventsOnChallengerWinsGamesGaugeVec.Reset()
+	m.SuspiciousEventsOnChallengerWinsGamesGaugeVec.Reset()
 	// Update metrics for invalid proposal withdrawals events
-
 	for _, key := range state.suspiciousEventsOnChallengerWinsGames.Keys() {
 		enrichedEvent, ok := state.suspiciousEventsOnChallengerWinsGames.Get(key)
 		if ok {
@@ -431,7 +430,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			proofSubmitter := event.Event.ProofSubmitter.String()
 			status := event.DisputeGame.DisputeGameData.Status.String()
 
-			m.PotentialAttackOnInProgressGamesGaugeVec.WithLabelValues(
+			m.SuspiciousEventsOnChallengerWinsGamesGaugeVec.WithLabelValues(
 				withdrawalHash,
 				proofSubmitter,
 				status,
