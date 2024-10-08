@@ -4,19 +4,21 @@
 package faultproof_withdrawals
 
 import (
+	"log"
 	"os"
-	"testing"
 
 	"github.com/joho/godotenv"
 )
 
-// TestMain runs the tests in the package and exits with the appropriate exit code.
-func TestMain(m *testing.M) {
-	exitVal := m.Run()
-	os.Exit(exitVal)
-}
-
 // loadEnv loads environment variables from the specified .env file.
-func loadEnv(env string) error {
-	return godotenv.Load(env)
+func loadEnv(env string) (envMap map[string]string, err error) {
+
+	// Read the file content
+	content, err := os.ReadFile(env)
+	if err != nil {
+		log.Fatalf("Error reading .env file: %v", err)
+	}
+
+	// Unmarshal the content (pass it as string)
+	return godotenv.Unmarshal(string(content))
 }

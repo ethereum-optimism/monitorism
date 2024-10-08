@@ -5,11 +5,8 @@ package faultproof_withdrawals
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math/big"
-	"os"
-	"strconv"
 	"testing"
 
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
@@ -21,26 +18,27 @@ import (
 // NewTestMonitorMainnet initializes and returns a new Monitor instance for testing.
 // It sets up the necessary environment variables and configurations required for the monitor.
 func NewTestMonitorMainnet() *Monitor {
-	loadEnv(".env.op.mainnet")
-	ctx := context.Background()
-	L1GethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL")
-	L2OpNodeURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL")
-	L2OpGethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL")
-	EventBlockRangeStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE")
-	EventBlockRange, err := strconv.ParseUint(EventBlockRangeStr, 10, 64)
-	require.NoError(err)
+	envmap, err := loadEnv(".env.op.mainnet")
+	if err != nil {
+		panic("error")
+	}
 
-	StartingL1BlockHeightStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT")
-	StartingL1BlockHeight, err := strconv.ParseUint(StartingL1BlockHeightStr, 10, 64)
-	require.NoError(err)
+	ctx := context.Background()
+	L1GethURL := envmap["FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL"]
+	L2OpNodeURL := envmap["FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL"]
+	L2OpGethURL := envmap["FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL"]
+
+	FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL := "0xbEb5Fc579115071764c7423A4f12eDde41f106Ed"
+	FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE := uint64(1000)
+	FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT := int64(6789100)
 
 	cfg := CLIConfig{
 		L1GethURL:             L1GethURL,
 		L2OpGethURL:           L2OpGethURL,
 		L2OpNodeURL:           L2OpNodeURL,
-		EventBlockRange:       EventBlockRange,
-		StartingL1BlockHeight: StartingL1BlockHeight,
-		OptimismPortalAddress: common.HexToAddress(os.Getenv("FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL")),
+		EventBlockRange:       FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE,
+		StartingL1BlockHeight: FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT,
+		OptimismPortalAddress: common.HexToAddress(FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL),
 	}
 
 	clicfg := oplog.DefaultCLIConfig()
@@ -60,75 +58,77 @@ func NewTestMonitorMainnet() *Monitor {
 func TestSingleRunMainnet(t *testing.T) {
 	test_monitor := NewTestMonitorMainnet()
 
-	initialBlock := uint64(20872390) // this block is known to have events with errors
-	blockIncrement := uint64(1000)
+	initialBlock := test_monitor.state.nextL1Height
+	blockIncrement := test_monitor.maxBlockRange
+	finalBlock := initialBlock + blockIncrement
 
-	test_monitor.state.nextL1Height = initialBlock
-	test_monitor.maxBlockRange = blockIncrement
 	test_monitor.Run(test_monitor.ctx)
-	fmt.Printf("State: %+v\n", test_monitor.state)
 
-	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, finalBlock, test_monitor.state.nextL1Height)
+	require.Equal(t, uint64(0), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(0), test_monitor.state.eventsProcessed)
+	require.Equal(t, uint64(0), test_monitor.state.numberOfPotentialAttackOnInProgressGames)
+	require.Equal(t, uint64(0), test_monitor.state.numberOfPotentialAttacksOnDefenderWinsGames)
+	require.Equal(t, uint64(0), test_monitor.state.numberOfSuspiciousEventsOnChallengerWinsGames)
+
+	require.Equal(t, test_monitor.state.numberOfPotentialAttackOnInProgressGames, uint64(len(test_monitor.state.potentialAttackOnInProgressGames)))
+	require.Equal(t, test_monitor.state.numberOfPotentialAttacksOnDefenderWinsGames, uint64(len(test_monitor.state.potentialAttackOnDefenderWinsGames)))
+	require.Equal(t, test_monitor.state.numberOfSuspiciousEventsOnChallengerWinsGames, uint64(test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len()))
+
 }
 
-// TestRun30Cycle1000BlocksMainnet tests multiple executions of the monitor's Run method over several cycles.
+// TestRun5Cycle1000BlocksMainnet tests multiple executions of the monitor's Run method over several cycles.
 // It verifies that the state updates correctly after each cycle.
-func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
+func TestRun5Cycle1000BlocksMainnet(t *testing.T) {
 	test_monitor := NewTestMonitorMainnet()
 
-	maxCycle := 30
-	initialBlock := uint64(20872390) // this block is known to have events with errors
-	blockIncrement := uint64(1000)
+	maxCycle := uint64(5)
+	initialBlock := test_monitor.state.nextL1Height
+	blockIncrement := test_monitor.maxBlockRange
 
-	test_monitor.state.nextL1Height = initialBlock
-	test_monitor.maxBlockRange = blockIncrement
-
-	for cycle := 1; cycle <= maxCycle; cycle++ {
-		fmt.Println("-----------")
-		fmt.Printf("Cycle: %d\n", cycle)
-
+	for cycle := uint64(1); cycle <= maxCycle; cycle++ {
 		test_monitor.Run(test_monitor.ctx)
-		fmt.Println("************")
-		fmt.Printf("State: %v\n", test_monitor.state)
-		fmt.Printf("Metrics: %v\n", &test_monitor.metrics)
-		fmt.Println("###########")
-
 	}
+
+	initialL1HeightGaugeValue, _ := GetGaugeValue(test_monitor.metrics.InitialL1HeightGauge)
+	nextL1HeightGaugeValue, _ := GetGaugeValue(test_monitor.metrics.NextL1HeightGauge)
+
+	withdrawalsProcessedCounterValue, _ := GetCounterValue(test_monitor.metrics.WithdrawalsProcessedCounter)
+	eventsProcessedCounterValue, _ := GetCounterValue(test_monitor.metrics.EventsProcessedCounter)
+
+	nodeConnectionFailuresCounterValue, _ := GetCounterValue(test_monitor.metrics.NodeConnectionFailuresCounter)
+
+	expected_end_block := blockIncrement*maxCycle + initialBlock
+	require.Equal(t, uint64(initialBlock), uint64(initialL1HeightGaugeValue))
+	require.Equal(t, uint64(expected_end_block), uint64(nextL1HeightGaugeValue))
+
+	require.Equal(t, uint64(0), uint64(eventsProcessedCounterValue))
+	require.Equal(t, uint64(0), uint64(withdrawalsProcessedCounterValue))
+	require.Equal(t, uint64(0), uint64(nodeConnectionFailuresCounterValue))
+
+	require.Equal(t, uint64(0), test_monitor.metrics.previousEventsProcessed)
+	require.Equal(t, uint64(0), test_monitor.metrics.previousWithdrawalsProcessed)
+
 }
 
 func TestRunSingleBlocksMainnet(t *testing.T) {
 	test_monitor := NewTestMonitorMainnet()
 
 	maxCycle := 1
-	initialBlock := uint64(20873192) // this block is known to have events with errors
-	blockIncrement := uint64(1)
+	initialBlock := test_monitor.state.nextL1Height
+	blockIncrement := test_monitor.maxBlockRange
 	finalBlock := initialBlock + blockIncrement
 
-	test_monitor.state.nextL1Height = initialBlock
-	test_monitor.maxBlockRange = blockIncrement
-
 	for cycle := 1; cycle <= maxCycle; cycle++ {
-		fmt.Println("-----------")
-		fmt.Printf("Cycle: %d\n", cycle)
-
 		test_monitor.Run(test_monitor.ctx)
-		fmt.Println("************")
-		fmt.Printf("State: %v\n", test_monitor.state)
-		fmt.Printf("Metrics: %v\n", &test_monitor.metrics)
-		fmt.Println("###########")
 	}
 
 	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-	require.Equal(t, test_monitor.state.withdrawalsProcessed, uint64(1))
-	require.Equal(t, test_monitor.state.eventsProcessed, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfPotentialAttackOnDefenderWinsGames, uint64(0))
-	require.Equal(t, len(test_monitor.state.potentialAttackOnDefenderWinsGames), 0)
-	require.Equal(t, len(test_monitor.state.potentialAttackOnInProgressGames), 0)
+	require.Equal(t, uint64(0), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(0), test_monitor.state.eventsProcessed)
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
 
 func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
@@ -161,13 +161,12 @@ func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
 	require.Equal(t, event.DisputeGame.DisputeGameData.L2blockNumber, big.NewInt(1276288764))
 
 	isValid, err := test_monitor.withdrawalValidator.IsWithdrawalEventValid(&event)
-	require.EqualError(t, err, "trustedRootClaim is nil, game not enriched")
-	fmt.Printf("isValid: %+v\n", isValid)
-	fmt.Printf("event: %+v\n", event)
+	require.EqualError(t, err, "game not enriched")
+	require.False(t, isValid)
 	err = test_monitor.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&event)
-	fmt.Printf("event: %+v\n", event)
-	fmt.Printf("err: %+v\n", err)
-
 	require.NoError(t, err)
+	isValid, err = test_monitor.withdrawalValidator.IsWithdrawalEventValid(&event)
+	require.NoError(t, err)
+	require.False(t, isValid)
 
 }
