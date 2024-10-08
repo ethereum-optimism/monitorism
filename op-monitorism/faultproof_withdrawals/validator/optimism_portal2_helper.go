@@ -126,9 +126,9 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsEvents(start uint64, end *u
 	return events, nil
 }
 
-// GetProvenWithdrawalsExtension1EventsIterartor creates an iterator for proven withdrawal extension 1 events within the specified block range.
+// GetProvenWithdrawalsExtension1EventsIterator creates an iterator for proven withdrawal extension 1 events within the specified block range.
 // It returns the iterator along with any error encountered.
-func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1EventsIterartor(start uint64, end *uint64) (*l1.OptimismPortal2WithdrawalProvenExtension1Iterator, error) {
+func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1EventsIterator(start uint64, end *uint64) (*l1.OptimismPortal2WithdrawalProvenExtension1Iterator, error) {
 	filterOpts := &bind.FilterOpts{Context: op.ctx, Start: start, End: end}
 	iterator, err := op.optimismPortal2.FilterWithdrawalProvenExtension1(filterOpts, nil, nil)
 	if err != nil {
@@ -141,7 +141,7 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1EventsIterartor(s
 // GetProvenWithdrawalsExtension1Events retrieves proven withdrawal extension 1 events within the specified block range.
 // It returns a slice of WithdrawalProvenExtension1Event along with any error encountered.
 func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1Events(start uint64, end *uint64) ([]WithdrawalProvenExtension1Event, error) {
-	iterator, err := op.GetProvenWithdrawalsExtension1EventsIterartor(start, end)
+	iterator, err := op.GetProvenWithdrawalsExtension1EventsIterator(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
 	}

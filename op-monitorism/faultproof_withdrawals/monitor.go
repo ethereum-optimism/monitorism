@@ -282,7 +282,7 @@ func (m *Monitor) Run(ctx context.Context) {
 // It returns any events detected during the consumption that requires to be re-analysed again at a later stage (when the event referenced DisputeGame completes).
 func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]validator.EnrichedProvenWithdrawalEvent) error {
 	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvents {
-		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
+		m.log.Info("processing withdrawal event", "event", &enrichedWithdrawalEvent)
 		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
 		//upgrade state to the latest L2 height	after the event is processed
 		m.state.latestL2Height = m.withdrawalValidator.GetLatestL2Height()
