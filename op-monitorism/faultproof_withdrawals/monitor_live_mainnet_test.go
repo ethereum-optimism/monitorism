@@ -77,8 +77,8 @@ func TestSingleRuMainnet(t *testing.T) {
 	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
 }
 
-// TestSingleRuMainnet tests a single execution of the monitor's Run method.
-// It verifies that the state updates correctly after running.
+// TestRun30Cycle1000BlocksMainnet tests multiple executions of the monitor's Run method over several cycles.
+// It verifies that the state updates correctly after each cycle.
 func TestRun30Cycle1000BlocksMainnet(t *testing.T) {
 	test_monitor := NewTestMonitorMainnet()
 
