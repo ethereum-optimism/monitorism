@@ -24,8 +24,8 @@ type State struct {
 	initialL1Height uint64
 	latestL2Height  uint64
 
-	eventsProcessed      uint64
-	withdrawalsProcessed uint64
+	eventsProcessed      uint64 // This counts the events that we have taken care of, and we are aware of.
+	withdrawalsProcessed uint64 // This counts the withdrawals that have being completed and processed and we are not tracking anymore. eventProcessed >= withdrawalsProcessed. withdrawalsProcessed does not includes potential attacks with games in progress.
 
 	nodeConnectionFailures uint64
 
