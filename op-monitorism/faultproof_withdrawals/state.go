@@ -121,6 +121,7 @@ func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEv
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
 		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
+		s.numberOfPotentialAttackOnInProgressGames--
 	}
 
 	s.withdrawalsProcessed++
