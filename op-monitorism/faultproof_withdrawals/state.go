@@ -36,7 +36,7 @@ type State struct {
 	numberOfPotentialAttacksOnDefenderWinsGames uint64
 
 	// Forgeries detected on games that are still in progress
-	// Because games are still in progress and Faulproof system should make them invalid
+	// Faultproof system should make them invalid
 	potentialAttackOnInProgressGames         map[common.Hash]validator.EnrichedProvenWithdrawalEvent
 	numberOfPotentialAttackOnInProgressGames uint64
 
