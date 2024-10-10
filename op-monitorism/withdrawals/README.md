@@ -1,10 +1,10 @@
 # Purpose of the Service
-faultproof_withdrawals has the following purpose:
+withdrawals has the following purpose:
 - Monitor Withdrawals: The service listens for WithdrawalProven events on the OptimismPortal contract on L1.
 - Validate Withdrawals: It verifies the validity of these withdrawals by checking the corresponding state on L2.
 - Detect Forgeries: The service identifies and reports any invalid withdrawals or potential forgeries.
 
-NOTE: Withdrawal monitor is only working against chains Pre-Faultproof. For chains using Faultproof system please check [faultproof_withdrwals service](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof_withdrawals/README.md)
+NOTE: The withdrawal monitor is only working against chains that are pre-Faultproof. For chains using the Faultproof system, please check the [faultproof_withdrawals service](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof_withdrawals/README.md).
 
 ```bash
 OPTIONS:
