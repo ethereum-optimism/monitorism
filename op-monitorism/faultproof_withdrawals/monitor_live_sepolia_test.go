@@ -7,8 +7,6 @@ import (
 	"context"
 	"io"
 	"math/big"
-	"os"
-	"strconv"
 	"testing"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
@@ -19,43 +17,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMain runs the tests in the package and exits with the appropriate exit code.
-func TestMain(m *testing.M) {
-	exitVal := m.Run()
-	os.Exit(exitVal)
-}
-
-// loadEnv loads environment variables from the specified .env file.
-func loadEnv(env string) error {
-	return godotenv.Load(env)
-}
-
-// NewTestMonitor initializes and returns a new Monitor instance for testing.
+// NewTestMonitorSepolia initializes and returns a new Monitor instance for testing.
 // It sets up the necessary environment variables and configurations required for the monitor.
-func NewTestMonitor() *Monitor {
-	loadEnv(".env.op.sepolia")
+func NewTestMonitorSepolia() *Monitor {
+	envmap, err := godotenv.Read(".env.op.sepolia")
+	if err != nil {
+		panic("error")
+	}
+
 	ctx := context.Background()
-	L1GethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL")
-	L2OpNodeURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL")
-	L2OpGethURL := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL")
-	EventBlockRangeStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE")
-	EventBlockRange, err := strconv.ParseUint(EventBlockRangeStr, 10, 64)
-	if err != nil {
-		panic(err)
-	}
-	StartingL1BlockHeightStr := os.Getenv("FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT")
-	StartingL1BlockHeight, err := strconv.ParseInt(StartingL1BlockHeightStr, 10, 64)
-	if err != nil {
-		panic(err)
-	}
+	L1GethURL := envmap["FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL"]
+	L2OpNodeURL := envmap["FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL"]
+	L2OpGethURL := envmap["FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL"]
+
+	FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL := "0x16Fc5058F25648194471939df75CF27A2fdC48BC"
+	FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE := uint64(1000)
+	FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT := int64(6789100)
 
 	cfg := CLIConfig{
 		L1GethURL:             L1GethURL,
 		L2OpGethURL:           L2OpGethURL,
 		L2OpNodeURL:           L2OpNodeURL,
-		EventBlockRange:       EventBlockRange,
-		StartingL1BlockHeight: StartingL1BlockHeight,
-		OptimismPortalAddress: common.HexToAddress(os.Getenv("FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL")),
+		EventBlockRange:       FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE,
+		StartingL1BlockHeight: FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT,
+		OptimismPortalAddress: common.HexToAddress(FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL),
 	}
 
 	clicfg := oplog.DefaultCLIConfig()
@@ -70,49 +55,46 @@ func NewTestMonitor() *Monitor {
 	return monitor
 }
 
-// TestSingleRun tests a single execution of the monitor's Run method.
+// TestSingleRunSepolia tests a single execution of the monitor's Run method.
 // It verifies that the state updates correctly after running.
-func TestSingleRun(t *testing.T) {
-	test_monitor := NewTestMonitor()
+func TestSingleRunSepolia(t *testing.T) {
+	test_monitor := NewTestMonitorSepolia()
 
-	initialBlock := uint64(5914813)
-	blockIncrement := uint64(1000)
+	initialBlock := test_monitor.state.nextL1Height
+	blockIncrement := test_monitor.maxBlockRange
 	finalBlock := initialBlock + blockIncrement
 
-	test_monitor.state.nextL1Height = initialBlock
-	test_monitor.maxBlockRange = blockIncrement
-	test_monitor.Run(test_monitor.ctx)
+	test_monitor.Run(context.Background())
 
 	require.Equal(t, test_monitor.state.nextL1Height, finalBlock)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
 
-// TestConsumeEvents tests the consumption of enriched withdrawal events.
+// TestConsumeEventsSepolia tests the consumption of enriched withdrawal events.
 // It verifies that new events can be processed correctly.
-func TestConsumeEvents(t *testing.T) {
-	test_monitor := NewTestMonitor()
+func TestConsumeEventsSepolia(t *testing.T) {
+	test_monitor := NewTestMonitorSepolia()
 
-	initialBlock := uint64(5914813)
-	blockIncrement := uint64(1000)
+	initialBlock := test_monitor.state.nextL1Height
+	blockIncrement := test_monitor.maxBlockRange
 	finalBlock := initialBlock + blockIncrement
 
-	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEvents(initialBlock, &finalBlock)
+	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(initialBlock, &finalBlock)
 	require.NoError(t, err)
-	require.NotEqual(t, len(newEvents), 0)
+	require.NotEqual(t, 0, len(newEvents))
 
-	newInvalidProposalWithdrawalsEvents, err := test_monitor.ConsumeEvents(newEvents)
+	err = test_monitor.ConsumeEvents(newEvents)
 	require.NoError(t, err)
-	require.Equal(t, len(*newInvalidProposalWithdrawalsEvents), 0)
 }
 
-// TestConsumeEventValid_DEFENDER_WINS tests the consumption of a valid event where the defender wins.
+// TestConsumeEventValid_DEFENDER_WINS_Sepolia tests the consumption of a valid event where the defender wins.
 // It checks that the state updates correctly after processing the event.
-func TestConsumeEventValid_DEFENDER_WINS(t *testing.T) {
-	test_monitor := NewTestMonitor()
+func TestConsumeEventValid_DEFENDER_WINS_Sepolia(t *testing.T) {
+	test_monitor := NewTestMonitorSepolia()
 
 	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
 
@@ -146,20 +128,23 @@ func TestConsumeEventValid_DEFENDER_WINS(t *testing.T) {
 		},
 	}
 
-	consumedEvent, err := test_monitor.ConsumeEvent(validEvent)
+	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
+		validEvent.Event.WithdrawalHash: validEvent,
+	}
+	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
-	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
+
 }
 
-// TestConsumeEventValid_CHALLENGER_WINS tests the consumption of a valid event where the challenger wins.
+// TestConsumeEventValid_CHALLENGER_WINS_Sepolia tests the consumption of a valid event where the challenger wins.
 // It checks that the state updates correctly after processing the event.
-func TestConsumeEventValid_CHALLENGER_WINS(t *testing.T) {
-	test_monitor := NewTestMonitor()
+func TestConsumeEventValid_CHALLENGER_WINS_Sepolia(t *testing.T) {
+	test_monitor := NewTestMonitorSepolia()
 
 	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
 	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
@@ -194,20 +179,23 @@ func TestConsumeEventValid_CHALLENGER_WINS(t *testing.T) {
 		},
 	}
 
-	consumedEvent, err := test_monitor.ConsumeEvent(event)
+	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
+		event.Event.WithdrawalHash: event,
+	}
+	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
-	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 1, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
+
 }
 
-// TestConsumeEventValid_Blacklisted tests the consumption of a valid event that is blacklisted.
+// TestConsumeEventValid_BlacklistedSepolia tests the consumption of a valid event that is blacklisted.
 // It checks that the state updates correctly after processing the event.
-func TestConsumeEventValid_Blacklisted(t *testing.T) {
-	test_monitor := NewTestMonitor()
+func TestConsumeEventValid_BlacklistedSepolia(t *testing.T) {
+	test_monitor := NewTestMonitorSepolia()
 
 	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
 	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
@@ -242,20 +230,23 @@ func TestConsumeEventValid_Blacklisted(t *testing.T) {
 		},
 	}
 
-	consumedEvent, err := test_monitor.ConsumeEvent(event)
+	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
+		event.Event.WithdrawalHash: event,
+	}
+	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
-	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(1))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(0))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 0)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
+	require.Equal(t, 1, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
+
 }
 
-// TestConsumeEventForgery1 tests the consumption of an event that indicates a forgery.
+// TestConsumeEventForgery1Sepolia tests the consumption of an event that indicates a forgery.
 // It checks that the state updates correctly after processing the event.
-func TestConsumeEventForgery1(t *testing.T) {
-	test_monitor := NewTestMonitor()
+func TestConsumeEventForgery1Sepolia(t *testing.T) {
+	test_monitor := NewTestMonitorSepolia()
 
 	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
 
@@ -289,20 +280,22 @@ func TestConsumeEventForgery1(t *testing.T) {
 		},
 	}
 
-	consumedEvent, err := test_monitor.ConsumeEvent(validEvent)
+	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
+		validEvent.Event.WithdrawalHash: validEvent,
+	}
+	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
-	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(0))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(1))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 1)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
 
-// TestConsumeEventForgery2 tests the consumption of another event that indicates a forgery.
+// TestConsumeEventForgery2Sepolia tests the consumption of another event that indicates a forgery.
 // It checks that the state updates correctly after processing the event.
-func TestConsumeEventForgery2(t *testing.T) {
-	test_monitor := NewTestMonitor()
+func TestConsumeEventForgery2Sepolia(t *testing.T) {
+	test_monitor := NewTestMonitorSepolia()
 
 	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
 	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
@@ -337,12 +330,15 @@ func TestConsumeEventForgery2(t *testing.T) {
 		},
 	}
 
-	consumedEvent, err := test_monitor.ConsumeEvent(event)
+	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
+		event.Event.WithdrawalHash: event,
+	}
+	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
-	require.True(t, consumedEvent)
-	require.Equal(t, test_monitor.state.withdrawalsValidated, uint64(0))
-	require.Equal(t, test_monitor.state.processedProvenWithdrawalsExtension1Events, uint64(1))
-	require.Equal(t, test_monitor.state.numberOfDetectedForgery, uint64(1))
-	require.Equal(t, len(test_monitor.state.forgeriesWithdrawalsEvents), 1)
-	require.Equal(t, len(test_monitor.state.invalidProposalWithdrawalsEvents), 0)
+	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
+	require.Equal(t, 1, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
+
 }

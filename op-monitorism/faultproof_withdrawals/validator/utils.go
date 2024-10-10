@@ -2,6 +2,7 @@ package validator
 
 import (
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,6 +13,11 @@ import (
 type Raw struct {
 	BlockNumber uint64      // The block number in which the transaction is included.
 	TxHash      common.Hash // The hash of the transaction.
+}
+
+// String provides a string representation of Raw.
+func (r Raw) String() string {
+	return fmt.Sprintf("{BlockNumber: %d, TxHash: %s}", r.BlockNumber, r.TxHash.String())
 }
 
 // Timestamp represents a Unix timestamp.

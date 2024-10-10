@@ -45,7 +45,7 @@ func (e *EnrichedProvenWithdrawalEvent) String() string {
 	return fmt.Sprintf("Event: %v, DisputeGame: %v, ExpectedRootClaim: %s, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v",
 		e.Event,
 		e.DisputeGame,
-		common.BytesToHash(e.ExpectedRootClaim[:]),
+		common.Bytes2Hex(e.ExpectedRootClaim[:]),
 		e.Blacklisted,
 		e.WithdrawalHashPresentOnL2,
 		e.Enriched)
@@ -74,7 +74,7 @@ func NewWithdrawalValidator(ctx context.Context, l1GethClient *ethclient.Client,
 		return nil, fmt.Errorf("failed to create l2 to l1 message passer helper: %w", err)
 	}
 
-	l2NodeHelper, err := NewOpNodeHelper(ctx, l2OpNodeClient)
+	l2NodeHelper, err := NewOpNodeHelper(ctx, l2OpNodeClient, l2OpGethClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create l2 node helper: %w", err)
 	}
@@ -112,11 +112,20 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 
 	// Check if the game root claim is valid on L2 only if not confirmed already that it is on L2
 	if !event.Enriched {
-		trustedRootClaim, err := wv.l2NodeHelper.GetOutputRootFromTrustedL2Node(event.DisputeGame.DisputeGameData.L2blockNumber)
+		latest_known_l2_block, err := wv.l2NodeHelper.GetLatestKnownL2BlockNumber()
 		if err != nil {
-			return fmt.Errorf("failed to get trustedRootClaim from Op-node: %w", err)
+			return fmt.Errorf("failed to get latest known L2 block number: %w", err)
 		}
-		event.ExpectedRootClaim = trustedRootClaim
+		if latest_known_l2_block >= event.DisputeGame.DisputeGameData.L2blockNumber.Uint64() {
+			trustedRootClaim, err := wv.l2NodeHelper.GetOutputRootFromTrustedL2Node(event.DisputeGame.DisputeGameData.L2blockNumber)
+			if err != nil {
+				return fmt.Errorf("failed to get trustedRootClaim from Op-node: %w", err)
+			}
+			event.ExpectedRootClaim = trustedRootClaim
+		} else {
+			event.ExpectedRootClaim = [32]byte{}
+		}
+
 	}
 
 	// Check if the withdrawal exists on L2 only if not confirmed already that it is on L2
@@ -194,11 +203,43 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, 
 	return enrichedProvenWithdrawalEvents, nil
 }
 
+// GetEnrichedWithdrawalsEvents retrieves enriched withdrawal events within the specified block range.
+// It returns a slice of EnrichedProvenWithdrawalEvent along with any error encountered.
+func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint64, end *uint64) (map[common.Hash]EnrichedProvenWithdrawalEvent, error) {
+	iterator, err := wv.optimismPortal2Helper.GetProvenWithdrawalsExtension1EventsIterator(start, end)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
+	}
+
+	enrichedProvenWithdrawalEvents := make(map[common.Hash]EnrichedProvenWithdrawalEvent)
+
+	for iterator.Next() {
+		event := iterator.Event
+
+		enrichedWithdrawalEvent, err := wv.GetEnrichedWithdrawalEvent(&WithdrawalProvenExtension1Event{
+			WithdrawalHash: event.WithdrawalHash,
+			ProofSubmitter: event.ProofSubmitter,
+			Raw: Raw{
+				BlockNumber: event.Raw.BlockNumber,
+				TxHash:      event.Raw.TxHash,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get enriched withdrawal event: %w", err)
+		}
+
+		key := enrichedWithdrawalEvent.Event.Raw.TxHash
+		enrichedProvenWithdrawalEvents[key] = *enrichedWithdrawalEvent
+	}
+
+	return enrichedProvenWithdrawalEvents, nil
+}
+
 // IsWithdrawalEventValid checks if the enriched withdrawal event is valid.
 // It returns true if the event is valid, otherwise returns false.
 func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEvent *EnrichedProvenWithdrawalEvent) (bool, error) {
-	if enrichedWithdrawalEvent.ExpectedRootClaim == [32]byte{} {
-		return false, fmt.Errorf("trustedRootClaim is nil, game not enriched")
+	if !enrichedWithdrawalEvent.Enriched {
+		return false, fmt.Errorf("game not enriched")
 	}
 	validGameRootClaim := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == enrichedWithdrawalEvent.ExpectedRootClaim
 
@@ -207,4 +248,8 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 	} else {
 		return false, nil
 	}
+}
+
+func (wv *ProvenWithdrawalValidator) GetLatestL2Height() uint64 {
+	return wv.l2NodeHelper.LatestKnownL2BlockNumber
 }
