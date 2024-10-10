@@ -1,0 +1,6 @@
+jupyterlab
+python-dotenv
+requests
+toml
+web3
+urllib3
