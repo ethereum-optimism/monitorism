@@ -69,7 +69,7 @@ func (gs GameStatus) String() string {
 
 // String provides a string representation of DisputeGameData.
 func (d DisputeGameData) String() string {
-	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress=%v rootClaim=%s l2blockNumber=%s l2ChainID=%s status=%v createdAt=%v  resolvedAt=%v ]",
+	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress: %v rootClaim: %s l2blockNumber: %s l2ChainID: %s status: %v createdAt: %v resolvedAt: %v ]",
 		d.ProxyAddress,
 		common.BytesToHash(d.RootClaim[:]),
 		d.L2blockNumber.String(),
