@@ -142,13 +142,13 @@ This alert will be triggered when the number of connection errors goes above a s
 
 - **Description:** Represents the next expected L1 block height.
 
-### `faultproof_withdrawals_number_of_invalid_withdrawals`
+### `faultproof_withdrawals_withdrawals_processed_total`
 
-- **Description:** Number of invalid withdrawals processed.
+- **Description:** Number of withdrawals processed. These withdrawals are complete and they are forgotten.
 
-### `faultproof_withdrawals_processed_provenwithdrawalsextension1_events_total`
+### `faultproof_withdrawals_events_processed_total`
 
-- **Description:** Total number of processed `ProvenWithdrawalsExtension1` events.
+- **Description:** Total number of processed `ProvenWithdrawals` events. These events are processed. `faultproof_withdrawals_events_processed_total` >=`faultproof_withdrawals_withdrawals_processed_total`
 
 ---
 
