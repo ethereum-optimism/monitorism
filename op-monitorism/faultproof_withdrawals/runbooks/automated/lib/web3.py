@@ -127,7 +127,6 @@ class Web3Utility:
             ret = {
                 "blockNumber": blockNumber,
                 "timestamp": timestamp,
-                "time_since_last_withdrawal": f"{datetime.now(timezone.utc) - datetime.fromtimestamp(timestamp, tz=timezone.utc)}",
                 "formatted_timestamp": f"{datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}",
             }    
             return ret

@@ -16,9 +16,16 @@ On L1, it will make use of [OptimismPortal2](https://github.com/ethereum-optimis
 
 The monitor is driven by the event [WithdrawalProvenExtension1(bytes32 indexed withdrawalHash, address indexed proofSubmitter)](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L144C5-L144C102). Every time an event is emitted, the monitor will check if this withdrawal is legitimate or a forgery attempt.
 
-## Disclaimer
+## ⚠️ Disclaimer: work in progress!
 
 This runbook may contain references to actions and specifications not included in this repository. This runbook is provided as a guideline for incident response to the scenarios detailed herein, but some details may be redacted or missing due to the sensitive nature of the information. Where information is redacted or missing, we will try to make this clear.
+
+The mechanism and the content of the alert is not yet published, so the name of the alerts and the contents of the alerts will depend on your own setup.
+
+## Automated runbooks
+Along side this runbook we have some "automated" runbooks. These runbooks can be used to execute some actions either during triaging of an alert or during containement of an incident. These are basically [Jupiter playbooks](https://jupyter.org/), a mix of executable code and markdown, that makes them perfect for putting together instructions and "executable instructions"
+Automated runbooks are in the **automated** subfolder**. 
+Each runbook is useful for a specific task. After starting the runbook make sure you select the one you need to execute.
 
 ---
 ## Alerts
@@ -28,17 +35,27 @@ An incident will be declared upon receiving an alert. The metrics described belo
 
 | **Network** | **Severity Level** | **Impact**                      | **Reaction**                                             | **Actions**                                                                                                                                       |
 |-------------|--------------------|---------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| Mainnet     | SEV1               | Fund loss                       | Immediate action required                                | - Page Faultproof (FP) team<br>- Follow critical incident procedures **NOTE:private procedure**                                                                              |
-| Sepolia     | SEV3               | Fund loss                       | Assess acceptability of loss on Sepolia<br>Investigate the specific withdrawal | - Page Faultproof (FP) team<br>- Follow critical incident procedures  **NOTE:private procedure** |
+| Mainnet     | SEV1               | Potential loss of funds          | Immediate action required                                | - Notify the Faultproof (FP) team<br>- Follow the critical incident procedures (private)                                                                              |
+| Sepolia     | SEV3               | Potential loss of funds          | Assess the acceptability of the loss on Sepolia<br>Investigate the specific withdrawal | - Notify the Faultproof (FP) team<br>- Follow the critical incident procedures (⚠️ private procedure) |
 
-##### Alert Description
-An event is considered a forgery if any of the following conditions apply:
-1. The withdrawalHash is not present on L2. We check this by querying [L2ToL1MessagePasser](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2CrossDomainMessenger.sol).
-2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) does not match what we see on [L2 block rootState](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/op_node_helper.go#L47).
+#### Alert Description
 
-There are exceptions to the rule above. The event is still considered valid if:
-1. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) belongs to a FaultDisputeGame that is [blacklisted](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/optimism_portal2_helper.go#L75), or to a FaultDisputeGame for which the game is in state [CHALLENGER_WIN](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L326).
-2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) belongs to a FaultDisputeGame that has the status [IN_PROGRESS](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L336). We use the [faultproof_withdrawals_invalid_proposal_withdrawals_events_count](#faultproof_withdrawals_invalid_proposal_withdrawals_events_count) metric to track this event.
+A withdrawal event is considered a forgery if any of the following conditions apply:
+1. The `withdrawalHash` is not found on L2, which can be verified by querying the [L2ToL1MessagePasser](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2CrossDomainMessenger.sol).
+2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) does not match what is recorded in the [L2 block rootState](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/op_node_helper.go#L47).
+
+However, there are exceptions to these conditions. The event is still considered valid if:
+1. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) is part of a FaultDisputeGame that has been [blacklisted](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/validator/optimism_portal2_helper.go#L75), or where the game has ended in a [CHALLENGER_WIN](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L326).
+2. The [outputRoot provided](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L314C15-L314C25) belongs to a FaultDisputeGame that is still [IN_PROGRESS](https://github.com/ethereum-optimism/monitorism/blob/c0b2ecdf4404888e5ceccf6ad14e35c5e5c52664/op-monitorism/faultproof_withdrawals/monitor.go#L336). The metric [faultproof_withdrawals_invalid_proposal_withdrawals_events_count](#faultproof_withdrawals_invalid_proposal_withdrawals_events_count) is used to track such events.
+
+#### Triage Phase
+
+The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
+
+To confirm the attack, begin by reviewing the event details and ensuring the conditions for the attack are met.
+
+You can use the automated `op-monitorism/faultproof_withdrawals/runbooks/automated/triage_potential_attack_event.ipynb` runbook for this process.
+
 
 ### faultproof-potential-withdrawal-forgery-detected
 
@@ -55,6 +72,14 @@ An event is considered a potential forgery if any of the following conditions ap
 and
 1. Dispute Game status is IN_PROGRESS
 
+#### Triage Phase
+
+The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
+
+To confirm the attack, begin by reviewing the event details and ensuring the conditions for the attack are met.
+
+You can use the automated `op-monitorism/faultproof_withdrawals/runbooks/automated/triage_potential_attack_event.ipynb` runbook for this process.
+
 ### faultproof-suspicious-withdrawal-forgery-detected
 
 | **Network** | **Severity Level** | **Impact**                      | **Reaction**                                             | **Actions**                                                                                                                                       |
@@ -70,12 +95,28 @@ An event is considered a potential forgery if any of the following conditions ap
 and
 1. Dispute Game status is CHALLENGER_WIN
 
+#### Triage Phase
+
+The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
+
+To confirm the attack, begin by reviewing the event details and ensuring the conditions for the attack are met.
+
+You can use the automated `op-monitorism/faultproof_withdrawals/runbooks/automated/triage_potential_attack_event.ipynb` runbook for this process.
+
 ### faultproof-withdrawal-forgery-detection-stalled
 
 | **Network** | **Severity Level** | **Impact**                                          | **Cause**                             | **Actions**                                                  |
 |-------------|--------------------|-----------------------------------------------------|---------------------------------------|--------------------------------------------------------------|
 | Mainnet     | SEV2               | - Security max reaction time is reduced<br>- May not be able to react properly to an attack | Daemon is not processing withdrawals  | - Understand the issue with the daemon<br>- If necessary, restart the service |
 | Sepolia     | SEV3               | - Security max reaction time is reduced<br>- May not be able to react properly to an attack | Daemon is not processing withdrawals  | - Understand the issue with the daemon<br>- If necessary, restart the service |
+
+#### Triage Phase
+
+The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the monitoring is not processing event anymore and is stalled for some internal issue or the chain is in reality not processing any events since more then a day.
+
+To confirm review the chain, see when it was last withdrawals event on it and confirm if the event happened or not within 24 hours.
+
+You can use the automated `op-monitorism/faultproof_withdrawals/runbooks/automated/triage_detection_stalled.ipynb` runbook for this process.
 
 ##### Alert Description
 This alert monitors the number of withdrawal events that are considered normal in a chain. If the number of withdrawal events goes below a specified threshold, we trigger this alert.
@@ -89,6 +130,10 @@ This alert monitors the number of withdrawal events that are considered normal i
 
 ##### Alert Description
 This alert will be triggered when the number of connection errors goes above a specified threshold. Errors should always be very limited or absent in the monitoring. When present, it often means there is an issue with communication between the monitor and the trusted nodes used for monitoring.
+
+#### Triage Phase
+
+The alert (⚠️ private alert details) includes a dashboard link where you can review logs to diagnose potential issues with the monitoring system and understand the cause of the alert.
 
 ---
 ## Metrics and Alerts Conditions
