@@ -23,7 +23,7 @@ This runbook may contain references to actions and specifications not included i
 The mechanism and the content of the alert is not yet published, so the name of the alerts and the contents of the alerts will depend on your own setup.
 
 ## Automated runbooks
-Along side this runbook we have some "automated" runbooks. These runbooks can be used to execute some actions either during triaging of an alert or during containement of an incident. These are basically [Jupiter playbooks](https://jupyter.org/), a mix of executable code and markdown, that makes them perfect for putting together instructions and "executable instructions"
+Along side this runbook we have some "automated" runbooks. These runbooks can be used to execute some actions either during triaging of an alert or during containement of an incident. These are basically [Jupiter notebooks](https://jupyter.org/), a mix of executable code and markdown, that makes them perfect for putting together instructions and "executable instructions"
 Automated runbooks are in the **automated** subfolder**. 
 Each runbook is useful for a specific task. After starting the runbook make sure you select the one you need to execute.
 
