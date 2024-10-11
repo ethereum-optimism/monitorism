@@ -108,7 +108,7 @@ func (s *State) LogState() {
 }
 
 func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
-	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.withdrawalsProcessed++
 	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 }
@@ -116,12 +116,12 @@ func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent *validator
 func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.potentialAttackOnDefenderWinsGames[key] = enrichedWithdrawalEvent
 	s.numberOfPotentialAttacksOnDefenderWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 		s.numberOfPotentialAttackOnInProgressGames--
 	}
@@ -135,9 +135,9 @@ func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEven
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 	// check if key already exists
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	} else {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		s.numberOfPotentialAttackOnInProgressGames++
 		enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 
@@ -150,12 +150,12 @@ func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEven
 func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
 	s.numberOfSuspiciousEventsOnChallengerWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 		s.numberOfPotentialAttackOnInProgressGames--
 	}
@@ -404,7 +404,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			fmt.Sprintf("%v", event.Enriched),
 			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
 			event.Event.Raw.TxHash.String(),
-		).Set(event.ProcessedTimeStamp) // Set a value  for existence
+		).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
 	}
 
 	// Clear the previous values
@@ -425,7 +425,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			fmt.Sprintf("%v", event.Enriched),
 			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
 			event.Event.Raw.TxHash.String(),
-		).Set(event.ProcessedTimeStamp) // Set a value  for existence
+		).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
 	}
 
 	// Clear the previous values
@@ -448,8 +448,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 				fmt.Sprintf("%v", event.Enriched),
 				fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
 				event.Event.Raw.TxHash.String(),
-			).Set(event.ProcessedTimeStamp) // Set a value  for existence
+			).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
 		}
 	}
-
 }
