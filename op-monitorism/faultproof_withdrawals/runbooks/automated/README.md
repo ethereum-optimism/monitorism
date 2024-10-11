@@ -17,6 +17,11 @@ To run these notebooks locally:
 1. Clone the repository.
 2. Run the `make start` command, which will launch the notebooks in your local environment, allowing you to start your incident response process.
 
+Alternative way to use it is directly in visual studio code. Video below show how to use it. You only need to click on the playbook at the start of the playbook (after eventually set the variable needed) and press CMD+Enter or CTRL+Enter and execute one block at a time.
+
+https://github.com/user-attachments/assets/5800dd75-58f2-4114-b8d8-dc187009376e
+
+
 ## Setting Variables
 
 Before starting, you will need to configure some local variables for the notebooks to function correctly. These variables can be set in your local environment or directly within the text of the notebook. To avoid setting environment variables repeatedly for multiple runbooks, you can store them in a `.env` file located in the same folder as the notebooks.
