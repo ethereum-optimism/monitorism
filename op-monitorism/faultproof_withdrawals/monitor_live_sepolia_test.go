@@ -128,8 +128,8 @@ func TestConsumeEventValid_DEFENDER_WINS_Sepolia(t *testing.T) {
 		},
 	}
 
-	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
-		validEvent.Event.WithdrawalHash: validEvent,
+	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
+		validEvent.Event.WithdrawalHash: &validEvent,
 	}
 	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
@@ -179,8 +179,8 @@ func TestConsumeEventValid_CHALLENGER_WINS_Sepolia(t *testing.T) {
 		},
 	}
 
-	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
-		event.Event.WithdrawalHash: event,
+	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
+		event.Event.WithdrawalHash: &event,
 	}
 	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
@@ -230,8 +230,8 @@ func TestConsumeEventValid_BlacklistedSepolia(t *testing.T) {
 		},
 	}
 
-	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
-		event.Event.WithdrawalHash: event,
+	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
+		event.Event.WithdrawalHash: &event,
 	}
 	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
@@ -280,8 +280,8 @@ func TestConsumeEventForgery1Sepolia(t *testing.T) {
 		},
 	}
 
-	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
-		validEvent.Event.WithdrawalHash: validEvent,
+	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
+		validEvent.Event.WithdrawalHash: &validEvent,
 	}
 	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)
@@ -330,8 +330,8 @@ func TestConsumeEventForgery2Sepolia(t *testing.T) {
 		},
 	}
 
-	eventsMap := map[common.Hash]validator.EnrichedProvenWithdrawalEvent{
-		event.Event.WithdrawalHash: event,
+	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
+		event.Event.WithdrawalHash: &event,
 	}
 	err := test_monitor.ConsumeEvents(eventsMap)
 	require.NoError(t, err)

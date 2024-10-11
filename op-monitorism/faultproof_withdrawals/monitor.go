@@ -280,10 +280,10 @@ func (m *Monitor) Run(ctx context.Context) {
 
 // ConsumeEvents processes a slice of enriched withdrawal events and updates their states.
 // It returns any events detected during the consumption that requires to be re-analysed again at a later stage (when the event referenced DisputeGame completes).
-func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]validator.EnrichedProvenWithdrawalEvent) error {
+func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*validator.EnrichedProvenWithdrawalEvent) error {
 	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvents {
-		m.log.Info("processing withdrawal event", "event", &enrichedWithdrawalEvent)
-		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&enrichedWithdrawalEvent)
+		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
+		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
 		//upgrade state to the latest L2 height	after the event is processed
 		m.state.latestL2Height = m.withdrawalValidator.GetLatestL2Height()
 		if err != nil {
@@ -303,11 +303,11 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]validat
 
 // ConsumeEvent processes a single enriched withdrawal event.
 // It logs the event details and checks for any forgery detection.
-func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) error {
+func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) error {
 	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
 	}
-	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(&enrichedWithdrawalEvent)
+	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(enrichedWithdrawalEvent)
 	if err != nil {
 		m.log.Error("failed to check if forgery detected", "error", err)
 		return err
