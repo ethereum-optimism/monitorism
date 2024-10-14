@@ -29,6 +29,7 @@ type EnrichedProvenWithdrawalEvent struct {
 	Blacklisted               bool                             // Indicates if the game is blacklisted.
 	WithdrawalHashPresentOnL2 bool                             // Indicates if the withdrawal hash is present on L2.
 	Enriched                  bool                             // Indicates if the event is enriched.
+	ProcessedTimeStamp        float64                          // Unix TimeStamp seconds when the event was processed.
 }
 
 // ProvenWithdrawalValidator validates proven withdrawal events.
@@ -205,13 +206,13 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, 
 
 // GetEnrichedWithdrawalsEvents retrieves enriched withdrawal events within the specified block range.
 // It returns a slice of EnrichedProvenWithdrawalEvent along with any error encountered.
-func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint64, end *uint64) (map[common.Hash]EnrichedProvenWithdrawalEvent, error) {
+func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint64, end *uint64) (map[common.Hash]*EnrichedProvenWithdrawalEvent, error) {
 	iterator, err := wv.optimismPortal2Helper.GetProvenWithdrawalsExtension1EventsIterator(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
 	}
 
-	enrichedProvenWithdrawalEvents := make(map[common.Hash]EnrichedProvenWithdrawalEvent)
+	enrichedProvenWithdrawalEvents := make(map[common.Hash]*EnrichedProvenWithdrawalEvent)
 
 	for iterator.Next() {
 		event := iterator.Event
@@ -229,7 +230,7 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint6
 		}
 
 		key := enrichedWithdrawalEvent.Event.Raw.TxHash
-		enrichedProvenWithdrawalEvents[key] = *enrichedWithdrawalEvent
+		enrichedProvenWithdrawalEvents[key] = enrichedWithdrawalEvent
 	}
 
 	return enrichedProvenWithdrawalEvents, nil

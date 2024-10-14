@@ -3,6 +3,7 @@ package faultproof_withdrawals
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -32,12 +33,12 @@ type State struct {
 	// possible attacks detected
 
 	// Forgeries detected on games that are already resolved
-	potentialAttackOnDefenderWinsGames          map[common.Hash]validator.EnrichedProvenWithdrawalEvent
+	potentialAttackOnDefenderWinsGames          map[common.Hash]*validator.EnrichedProvenWithdrawalEvent
 	numberOfPotentialAttacksOnDefenderWinsGames uint64
 
 	// Forgeries detected on games that are still in progress
 	// Faultproof system should make them invalid
-	potentialAttackOnInProgressGames         map[common.Hash]validator.EnrichedProvenWithdrawalEvent
+	potentialAttackOnInProgressGames         map[common.Hash]*validator.EnrichedProvenWithdrawalEvent
 	numberOfPotentialAttackOnInProgressGames uint64
 
 	// Suspicious events
@@ -54,7 +55,7 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 	}
 
 	ret := State{
-		potentialAttackOnDefenderWinsGames:          make(map[common.Hash]validator.EnrichedProvenWithdrawalEvent),
+		potentialAttackOnDefenderWinsGames:          make(map[common.Hash]*validator.EnrichedProvenWithdrawalEvent),
 		numberOfPotentialAttacksOnDefenderWinsGames: 0,
 		suspiciousEventsOnChallengerWinsGames: func() *lru.Cache {
 			cache, err := lru.New(suspiciousEventsOnChallengerWinsGamesCacheSize)
@@ -66,7 +67,7 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 		}(),
 		numberOfSuspiciousEventsOnChallengerWinsGames: 0,
 
-		potentialAttackOnInProgressGames:         make(map[common.Hash]validator.EnrichedProvenWithdrawalEvent),
+		potentialAttackOnInProgressGames:         make(map[common.Hash]*validator.EnrichedProvenWithdrawalEvent),
 		numberOfPotentialAttackOnInProgressGames: 0,
 
 		eventsProcessed: 0,
@@ -106,56 +107,61 @@ func (s *State) LogState() {
 	)
 }
 
-func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
-	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
+	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.withdrawalsProcessed++
+	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 }
 
-func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
+func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.potentialAttackOnDefenderWinsGames[key] = enrichedWithdrawalEvent
 	s.numberOfPotentialAttacksOnDefenderWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 		s.numberOfPotentialAttackOnInProgressGames--
 	}
 
 	s.withdrawalsProcessed++
+	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
+
 }
 
-func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
+func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 	// check if key already exists
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	} else {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		s.numberOfPotentialAttackOnInProgressGames++
+		enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
+
 	}
 
 	// eventually update the map with the new enrichedWithdrawalEvent
 	s.potentialAttackOnInProgressGames[key] = enrichedWithdrawalEvent
 }
 
-func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent validator.EnrichedProvenWithdrawalEvent) {
+func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
 	s.numberOfSuspiciousEventsOnChallengerWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", &enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		delete(s.potentialAttackOnInProgressGames, key)
 		s.numberOfPotentialAttackOnInProgressGames--
 	}
 
 	s.withdrawalsProcessed++
-
+	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 }
 
 func (s *State) GetPercentages() (uint64, uint64) {
@@ -380,6 +386,9 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	}
 	m.previousNodeConnectionFailures = state.nodeConnectionFailures
 
+	// Clear the previous values
+	m.PotentialAttackOnDefenderWinsGamesGaugeVec.Reset()
+
 	// Update metrics for forgeries withdrawals events
 	for _, event := range state.potentialAttackOnDefenderWinsGames {
 		withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
@@ -395,7 +404,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			fmt.Sprintf("%v", event.Enriched),
 			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
 			event.Event.Raw.TxHash.String(),
-		).Set(1) // Set a value  for existence
+		).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
 	}
 
 	// Clear the previous values
@@ -416,7 +425,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			fmt.Sprintf("%v", event.Enriched),
 			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
 			event.Event.Raw.TxHash.String(),
-		).Set(1) // Set a value  for existence
+		).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
 	}
 
 	// Clear the previous values
@@ -425,8 +434,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	for _, key := range state.suspiciousEventsOnChallengerWinsGames.Keys() {
 		enrichedEvent, ok := state.suspiciousEventsOnChallengerWinsGames.Get(key)
 		if ok {
-			event := enrichedEvent.(validator.EnrichedProvenWithdrawalEvent)
-
+			event := enrichedEvent.(*validator.EnrichedProvenWithdrawalEvent)
 			withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
 			proofSubmitter := event.Event.ProofSubmitter.String()
 			status := event.DisputeGame.DisputeGameData.Status.String()
@@ -440,8 +448,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 				fmt.Sprintf("%v", event.Enriched),
 				fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
 				event.Event.Raw.TxHash.String(),
-			).Set(1) // Set a value  for existence
+			).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
 		}
 	}
-
 }
