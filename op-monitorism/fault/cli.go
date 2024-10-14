@@ -46,14 +46,12 @@ func CLIFlags(envVar string) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:    L1NodeURLFlagName,
-			Usage:   "Node URL of L1 peer",
-			Value:   "127.0.0.1:8545",
+			Usage:   "Node URL of L1 peer Geth node",
 			EnvVars: opservice.PrefixEnvVar(envVar, "L1_NODE_URL"),
 		},
 		&cli.StringFlag{
 			Name:    L2NodeURLFlagName,
-			Usage:   "Node URL of L2 peer",
-			Value:   "127.0.0.1:9545",
+			Usage:   "Node URL of L2 peer Op-Geth node",
 			EnvVars: opservice.PrefixEnvVar(envVar, "L2_NODE_URL"),
 		},
 		&cli.Int64Flag{
