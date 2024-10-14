@@ -56,6 +56,9 @@ func PSPExecutorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	if err != nil {
 		return nil, fmt.Errorf("Failed to parse psp_executor config from flags: %w", err)
 	}
+	if err := cfg.Check(); err != nil {
+		return nil, err
+	}
 
 	metricsRegistry := opmetrics.NewRegistry()
 	executor := &executor.DefenderExecutor{}
