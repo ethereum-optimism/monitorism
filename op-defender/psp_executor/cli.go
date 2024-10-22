@@ -2,8 +2,8 @@ package psp_executor
 
 import (
 	opservice "github.com/ethereum-optimism/optimism/op-service"
+	optls "github.com/ethereum-optimism/optimism/op-service/tls"
 	"github.com/ethereum/go-ethereum/common"
-
 	"github.com/urfave/cli/v2"
 )
 
@@ -27,6 +27,7 @@ type CLIConfig struct {
 	SuperChainConfigAddress common.Address
 	SafeAddress             common.Address
 	ChainID                 uint64
+	TLSConfig               optls.CLIConfig
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -39,13 +40,14 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		SafeAddress:             common.HexToAddress(ctx.String(SafeAddressFlagName)),
 		ChainID:                 ctx.Uint64(ChainIDFlagName),
 		BlockDuration:           ctx.Uint64(BlockDurationFlagName),
+		TLSConfig:               optls.ReadCLIConfig(ctx),
 	}
 
 	return cfg, nil
 }
 
 func CLIFlags(envPrefix string) []cli.Flag {
-	return []cli.Flag{
+	flags := []cli.Flag{
 		&cli.StringFlag{
 			Name:    NodeURLFlagName,
 			Usage:   "Node URL of a peer",
@@ -97,4 +99,31 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Required: true,
 		},
 	}
+	// Add mtls flags
+	flags = append(flags, []cli.Flag{
+		&cli.StringFlag{
+			Name:    optls.TLSCaCertFlagName,
+			Usage:   "tls ca cert path",
+			EnvVars: opservice.PrefixEnvVar(envPrefix, "TLS_CA"),
+		},
+		&cli.StringFlag{
+			Name:    optls.TLSCertFlagName,
+			Usage:   "tls cert path",
+			EnvVars: opservice.PrefixEnvVar(envPrefix, "TLS_CERT"),
+		},
+		&cli.StringFlag{
+			Name:    optls.TLSKeyFlagName,
+			Usage:   "tls key",
+			EnvVars: opservice.PrefixEnvVar(envPrefix, "TLS_KEY"),
+		},
+	}...)
+	return flags
+}
+
+func (c CLIConfig) Check() error {
+
+	if err := c.TLSConfig.Check(); err != nil {
+		return err
+	}
+	return nil
 }
