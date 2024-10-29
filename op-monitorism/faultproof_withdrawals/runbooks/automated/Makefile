@@ -28,6 +28,6 @@ clean:
 	@echo "Cleaning up..."
 	rm -rf $(VENV_DIR)
 
-start: venv
+start: install
 	@echo "Starting Jupyter Notebook..."
 	$(PYTHON) -m jupyter lab 
