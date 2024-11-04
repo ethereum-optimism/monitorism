@@ -138,3 +138,4 @@ local_data
 local_data/*
 
 .env
+nodes.yaml

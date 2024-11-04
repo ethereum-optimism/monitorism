@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import urllib3
 import os
 import requests
+from pprint import pprint
 # Disable warnings for insecure HTTPS requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -130,7 +131,8 @@ class Web3Utility:
                 "formatted_timestamp": f"{datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}",
             }    
             return ret
-
+    
+    
     def get_game_data(self,withDrawalHash:str ,proofSubmitter:str):
         if type(withDrawalHash) is str:
             withDrawalHash = bytes.fromhex(withDrawalHash)
@@ -140,9 +142,13 @@ class Web3Utility:
         rootClaim=game.functions.rootClaim().call()  
      
         sentMessages=self.L2ToL1MessagePasser.functions.sentMessages(withDrawalHash).call()
-     
-        optimism_outputAtBlock=self.optimism_output_at_block(l2BlockNumber)
-     
+
+        try:
+            optimism_outputAtBlock=self.optimism_output_at_block(l2BlockNumber)
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            optimism_outputAtBlock=None
+
         return {"gameProxyAddress":gameProxyAddress,"timestamp":timestamp,"l2BlockNumber":l2BlockNumber,"rootClaim":f"0x{rootClaim.hex()}","sentMessages":sentMessages,"optimism_outputAtBlock":optimism_outputAtBlock}
     
 
@@ -163,9 +169,16 @@ class Web3Utility:
 
         # Send the POST request
         response = requests.post(url, headers=headers, data=json.dumps(data),verify=not self.ignore_certificate)
-
         # Check if the request was successful
         if response.status_code == 200:
             return response.json()["result"]["outputRoot"]
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
+        
+    def getL2Block(self,blockNumber:int):
+        try:
+            block=self.l2_op_geth.eth.get_block(blockNumber)
+            return block
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            return None

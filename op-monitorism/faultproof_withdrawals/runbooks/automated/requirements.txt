@@ -4,3 +4,4 @@ requests
 toml
 web3
 urllib3
+ipywidgets
