@@ -50,7 +50,7 @@ However, there are exceptions to these conditions. The event is still considered
 
 #### Triage Phase
 
-The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
+The alert (which is currently private) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
 
 To confirm the attack, begin by reviewing the event details and ensuring the conditions for the attack are met.
 
