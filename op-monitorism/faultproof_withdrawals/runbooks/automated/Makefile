@@ -9,6 +9,7 @@ ENV_DIR = local_data
 all: venv install
 
 venv:
+	@which python3 > /dev/null || { echo "Error: python3 not found! Please install Python 3."; exit 1; }
 	@if [ ! -d "$(VENV_DIR)" ]; then \
 		echo "Creating virtual environment..."; \
 		python3 -m venv $(VENV_DIR); \
