@@ -1,10 +1,44 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Runbook: Incident Response for Faultproof Withdrawals](#runbook-incident-response-for-faultproof-withdrawals)
+  - [Overview](#overview)
+  - [⚠️ Disclaimer: work in progress!](#-disclaimer-work-in-progress)
+  - [Automated runbooks](#automated-runbooks)
+  - [Alerts](#alerts)
+    - [faultproof-withdrawal-forgery-detected](#faultproof-withdrawal-forgery-detected)
+      - [Alert Description](#alert-description)
+      - [Triage Phase](#triage-phase)
+    - [faultproof-potential-withdrawal-forgery-detected](#faultproof-potential-withdrawal-forgery-detected)
+        - [Alert Description](#alert-description-1)
+      - [Triage Phase](#triage-phase-1)
+    - [faultproof-suspicious-withdrawal-forgery-detected](#faultproof-suspicious-withdrawal-forgery-detected)
+        - [Alert Description](#alert-description-2)
+      - [Triage Phase](#triage-phase-2)
+    - [faultproof-withdrawal-forgery-detection-stalled](#faultproof-withdrawal-forgery-detection-stalled)
+      - [Triage Phase](#triage-phase-3)
+        - [Alert Description](#alert-description-3)
+    - [faultproof-withdrawal-forgery-detection-error-unhandled](#faultproof-withdrawal-forgery-detection-error-unhandled)
+        - [Alert Description](#alert-description-4)
+      - [Triage Phase](#triage-phase-4)
+  - [Metrics and Alerts Conditions](#metrics-and-alerts-conditions)
+    - [`faultproof_withdrawals_potential_attack_on_defender_wins_games_count`](#faultproof_withdrawals_potential_attack_on_defender_wins_games_count)
+    - [`faultproof_withdrawals_potential_attack_on_in_progress_games_count`](#faultproof_withdrawals_potential_attack_on_in_progress_games_count)
+    - [`faultproof_withdrawals_suspicious_events_on_challenger_wins_games_count`](#faultproof_withdrawals_suspicious_events_on_challenger_wins_games_count)
+    - [`faultproof_withdrawals_node_connection_failures_total`](#faultproof_withdrawals_node_connection_failures_total)
+    - [`faultproof_withdrawals_events_processed_total`](#faultproof_withdrawals_events_processed_total)
+    - [`faultproof_withdrawals_withdrawals_processed_total`](#faultproof_withdrawals_withdrawals_processed_total)
+    - [`faultproof_withdrawals_initial_l1_height`](#faultproof_withdrawals_initial_l1_height)
+    - [`faultproof_withdrawals_invalid_proposal_withdrawals_events_count`](#faultproof_withdrawals_invalid_proposal_withdrawals_events_count)
+    - [`faultproof_withdrawals_latest_l1_height`](#faultproof_withdrawals_latest_l1_height)
+    - [`faultproof_withdrawals_next_l1_height`](#faultproof_withdrawals_next_l1_height)
+  - [Incident Response](#incident-response)
+  - [Conclusion](#conclusion)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Runbook: Incident Response for Faultproof Withdrawals
-- [Runbook](#runbook)
-    - [Overview](#overview)
-    - [Incident Management](#incident-management)
-    - [General Metrics and Alerts Descriptions](#general-metrics-and-alerts-descriptions)
-    - [General Incident Response Guidelines](#general-incident-response-guidelines)
-    - [Conclusion](#conclusion)
 
 ## Overview
 
