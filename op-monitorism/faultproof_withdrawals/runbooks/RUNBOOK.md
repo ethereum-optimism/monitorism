@@ -69,8 +69,8 @@ An incident will be declared upon receiving an alert. The metrics described belo
 
 | **Network** | **Severity Level** | **Impact**                      | **Reaction**                                             | **Actions**                                                                                                                                       |
 |-------------|--------------------|---------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| Mainnet     | SEV1               | Potential loss of funds          | Immediate action required                                | - Notify the Faultproof (FP) team<br>- Follow the critical incident procedures (private)                                                                              |
-| Sepolia     | SEV3               | Potential loss of funds          | Assess the acceptability of the loss on Sepolia<br>Investigate the specific withdrawal | - Notify the Faultproof (FP) team<br>- Follow the critical incident procedures ([!IMPORTANT] private procedure) |
+| Mainnet     | SEV1               | Potential loss of funds          | Immediate action required                                | - Notify the Faultproof (FP) team                                                                              |
+| Sepolia     | SEV3               | Potential loss of funds          | Assess the acceptability of the loss on Sepolia<br>Investigate the specific withdrawal | - Notify the Faultproof (FP) team |
 
 #### Alert Description
 
