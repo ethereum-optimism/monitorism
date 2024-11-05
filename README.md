@@ -27,12 +27,17 @@ The suite is composed of two main components: `op-monitorism` and `op-defender`,
 ### Op-Monitorism
 Op-Monitorism Docker images are published with each release and build, ensuring you have access to the latest features and fixes.
 
-The latest release version for linux/amd64 can be found in the [release notes](https://github.com/ethereum-optimism/monitorism/releases/tag/op-monitorism%2Fv0.0.4)
+The latest release version for linux/amd64 can be found in the [release notes](https://github.com/ethereum-optimism/monitorism/releases)
 
 To pull the latest Docker image, run:
 ```bash
-docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:v0.0.4@sha256:be9aebdd44b5ef595986301d162d805f3cc6982291c37164000dc6671158b9bf
+docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:latest
 ``` 
+To pull a specific release version
+```bash
+docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:v0.0.4
+```
+
 Note: The --platform flag is necessary for Mac computers with ARM chips to ensure compatibility with the linux/amd64 architecture.
 
 
