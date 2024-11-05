@@ -4,7 +4,7 @@
 
 - [Runbook: Incident Response for Faultproof Withdrawals](#runbook-incident-response-for-faultproof-withdrawals)
   - [Overview](#overview)
-  - [⚠️ Disclaimer: work in progress!](#-disclaimer-work-in-progress)
+  - [[!IMPORTANT] Disclaimer: work in progress!](#-disclaimer-work-in-progress)
   - [Automated runbooks](#automated-runbooks)
   - [Alerts](#alerts)
     - [faultproof-withdrawal-forgery-detected](#faultproof-withdrawal-forgery-detected)
@@ -50,7 +50,7 @@ On L1, it will make use of [OptimismPortal2](https://github.com/ethereum-optimis
 
 The monitor is driven by the event [WithdrawalProvenExtension1(bytes32 indexed withdrawalHash, address indexed proofSubmitter)](https://github.com/ethereum-optimism/optimism/blob/dd2b21ce786f4c1b722bda270348597182153c8e/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L144C5-L144C102). Every time an event is emitted, the monitor will check if this withdrawal is legitimate or a forgery attempt.
 
-## ⚠️ Disclaimer: work in progress!
+## [!IMPORTANT] Disclaimer: work in progress!
 
 This runbook may contain references to actions and specifications not included in this repository. This runbook is provided as a guideline for incident response to the scenarios detailed herein, but some details may be redacted or missing due to the sensitive nature of the information. Where information is redacted or missing, we will try to make this clear.
 
@@ -70,7 +70,7 @@ An incident will be declared upon receiving an alert. The metrics described belo
 | **Network** | **Severity Level** | **Impact**                      | **Reaction**                                             | **Actions**                                                                                                                                       |
 |-------------|--------------------|---------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
 | Mainnet     | SEV1               | Potential loss of funds          | Immediate action required                                | - Notify the Faultproof (FP) team<br>- Follow the critical incident procedures (private)                                                                              |
-| Sepolia     | SEV3               | Potential loss of funds          | Assess the acceptability of the loss on Sepolia<br>Investigate the specific withdrawal | - Notify the Faultproof (FP) team<br>- Follow the critical incident procedures (⚠️ private procedure) |
+| Sepolia     | SEV3               | Potential loss of funds          | Assess the acceptability of the loss on Sepolia<br>Investigate the specific withdrawal | - Notify the Faultproof (FP) team<br>- Follow the critical incident procedures ([!IMPORTANT] private procedure) |
 
 #### Alert Description
 
@@ -108,7 +108,7 @@ and
 
 #### Triage Phase
 
-The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
+The alert ([!IMPORTANT] private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
 
 To confirm the attack, begin by reviewing the event details and ensuring the conditions for the attack are met.
 
@@ -131,7 +131,7 @@ and
 
 #### Triage Phase
 
-The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
+The alert ([!IMPORTANT] private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the attack is real or if it resulted from a monitoring system error or a node issue.
 
 To confirm the attack, begin by reviewing the event details and ensuring the conditions for the attack are met.
 
@@ -146,7 +146,7 @@ You can use the automated `op-monitorism/faultproof_withdrawals/runbooks/automat
 
 #### Triage Phase
 
-The alert (⚠️ private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the monitoring is not processing event anymore and is stalled for some internal issue or the chain is in reality not processing any events since more then a day.
+The alert ([!IMPORTANT] private alert details) includes the transaction hash that triggered the event. The first step after receiving the alert is to verify whether the monitoring is not processing event anymore and is stalled for some internal issue or the chain is in reality not processing any events since more then a day.
 
 To confirm review the chain, see when it was last withdrawals event on it and confirm if the event happened or not within 24 hours.
 
@@ -167,7 +167,7 @@ This alert will be triggered when the number of connection errors goes above a s
 
 #### Triage Phase
 
-The alert (⚠️ private alert details) includes a dashboard link where you can review logs to diagnose potential issues with the monitoring system and understand the cause of the alert.
+The alert ([!IMPORTANT] private alert details) includes a dashboard link where you can review logs to diagnose potential issues with the monitoring system and understand the cause of the alert.
 
 ---
 ## Metrics and Alerts Conditions
