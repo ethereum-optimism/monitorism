@@ -6,6 +6,8 @@ import urllib3
 import os
 import requests
 from pprint import pprint
+from datetime import datetime, timedelta
+
 # Disable warnings for insecure HTTPS requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -59,32 +61,20 @@ class Web3Utility:
         FaulDisputeGame = self.l1_geth.eth.contract(address=gameProxyAddress, abi=contract_abi)
         return FaulDisputeGame
 
-    def find_latest_withdrawal_event(self, batch_size: int = 1000) -> List[Any]:
-        """
-        Fetches the latest event from the OptimismPortal contract by searching in increments of `batch_size` blocks.
-
-        Args:
-            abi_path (str): The path to the contract ABI.
-            contract_address (str): The address of the OptimismPortal contract.
-            batch_size (int, optional): Number of blocks to search at a time. Defaults to 1000.
-
-        Returns:
-            Dict: A dictionary containing the latest event log and its timestamp.
-
-        Raises:
-            Exception: If there is an error fetching the events or if no events are found.
-        """
+    def find_latest_withdrawal_event(self, starting_block_search:int, batch_size: int = 1000) -> List[Any]:
+        
 
         contract=self.OptimismPortal2
         latest_block = self.l1_geth.eth.block_number
-        current_block = latest_block
+       
+        starting_block_search = max(0, starting_block_search)
+        current_max_block = latest_block
 
         # Search in batches of `batch_size` blocks
-        while current_block > 0:
-            from_block = max(0, current_block - batch_size)
+        while current_max_block >= starting_block_search:
             try:
-                to_block = current_block
-                logs = contract.events.WithdrawalProvenExtension1().get_logs(from_block=from_block, to_block=to_block)
+                from_block = max(0, current_max_block - batch_size)
+                logs = contract.events.WithdrawalProvenExtension1().get_logs(from_block=from_block, to_block=current_max_block)
                 if logs:
                     # Return the latest event found along with its timestamp
                     last_log = logs[-1]
@@ -92,12 +82,12 @@ class Web3Utility:
                     timestamp_formatted = self.get_block_timestamp(block_number)
                     return {"log": last_log, "timestamp": timestamp_formatted}
             except Exception as e:
-                print(f"Error fetching logs between blocks {from_block} and {current_block}: {str(e)}")
+                print(f"Error fetching logs between blocks {from_block} and {current_max_block}: {str(e)}")
             
             # Move the search window to the previous `batch_size` block range
-            current_block = from_block
+            current_max_block = from_block
 
-        raise Exception("No WithdrawalProven event found within the searched block range.")
+        return None
 
     def get_withdrawal_proven_extension_1(self,txHash:str):
        
@@ -131,7 +121,51 @@ class Web3Utility:
                 "formatted_timestamp": f"{datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}",
             }    
             return ret
-    
+
+    def find_block_one_week_ago(self) -> int:
+        """
+        Finds the block number that is closest to one week ago from the current time.
+
+        Returns:
+            int: The block number closest to one week ago.
+        """
+        
+        # Define the target timestamp (one week ago)
+        one_week_ago = datetime.utcnow() - timedelta(weeks=1)
+        target_timestamp = int(one_week_ago.timestamp())
+
+        # Get the latest block number
+        latest_block = self.l1_geth.eth.block_number
+
+        # Logarithmic search to find a block close to one week ago
+        low = 0
+        high = latest_block
+
+        while low <= high:
+            mid = (low + high) // 2
+            block = self.l1_geth.eth.get_block(mid)
+            block_timestamp = block.timestamp
+
+            if block_timestamp < target_timestamp:
+                low = mid + 1
+            elif block_timestamp > target_timestamp:
+                high = mid - 1
+            else:
+                # Exact match found
+                return mid
+
+        # Fine-tune the search around the closest block found
+        closest_block = low if low < latest_block else high
+        while True:
+            block = self.l1_geth.eth.get_block(closest_block)
+            block_timestamp = block.timestamp
+
+            if block_timestamp <= target_timestamp:
+                return closest_block
+
+            closest_block -= 1
+
+
     
     def get_game_data(self,withDrawalHash:str ,proofSubmitter:str):
         if type(withDrawalHash) is str:
