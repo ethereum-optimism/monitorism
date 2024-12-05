@@ -18,6 +18,11 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
+
+    "github.com/ethereum/go-ethereum/consensus/ethash"
+    "github.com/ethereum/go-ethereum/core/rawdb"
+    "github.com/ethereum/go-ethereum/triedb"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
@@ -44,54 +49,77 @@ func setupTestAccounts(t *testing.T) []testAccount {
 }
 
 func setupTestNode(t *testing.T, accounts []testAccount) (*node.Node, *ethclient.Client) {
-	alloc := make(core.GenesisAlloc)
-	fundAmount := new(big.Int).Mul(big.NewInt(1000), big.NewInt(params.Ether))
-	for _, acc := range accounts {
-		alloc[acc.address] = core.GenesisAccount{Balance: fundAmount}
-	}
+    alloc := make(core.GenesisAlloc)
+    fundAmount := new(big.Int).Mul(big.NewInt(1000), big.NewInt(params.Ether))
+    for _, acc := range accounts {
+        alloc[acc.address] = core.GenesisAccount{Balance: fundAmount}
+    }
 
-	genesis := &core.Genesis{
-		Config:    params.AllEthashProtocolChanges,
-		Alloc:     alloc,
-		ExtraData: []byte("test genesis"),
-		Timestamp: uint64(time.Now().Unix()),
-		BaseFee:   big.NewInt(params.InitialBaseFee),
-	}
+    // Set genesis time to 100 minutes ago
+    genesisTime := uint64(time.Now().Unix()) / 2
 
-	nodeConfig := &node.Config{
-		Name:    "test-node",
-		P2P:     p2p.Config{NoDiscovery: true},
-		HTTPHost: "127.0.0.1",
-		HTTPPort: 0,
-	}
+    genesis := &core.Genesis{
+        Config:    params.AllEthashProtocolChanges,
+        Alloc:     alloc,
+        ExtraData: []byte("test genesis"),
+        Timestamp: genesisTime,
+        BaseFee:   big.NewInt(params.InitialBaseFee),
+    }
 
-	n, err := node.New(nodeConfig)
-	require.NoError(t, err)
+    db := rawdb.NewMemoryDatabase()
+    trieDB := triedb.NewDatabase(db, triedb.HashDefaults)
+    genesisBlock, err := genesis.Commit(db, trieDB)
+    require.NoError(t, err)
 
-	ethConfig := &ethconfig.Config{
-		Genesis: genesis,
-		RPCGasCap: 1000000,
-	}
+    // Generate chain with block time of 12 seconds
+    blocks, _ := core.GenerateChain(genesis.Config, genesisBlock, ethash.NewFaker(), db, 10, func(i int, gen *core.BlockGen) {
+        gen.SetCoinbase(accounts[0].address)
+        gen.SetExtra([]byte("test"))
+        gen.OffsetTime(int64(i+1) * 12) // 12 second blocks
+    })
 
-	ethservice, err := eth.New(n, ethConfig)
-	require.NoError(t, err)
+    nodeConfig := &node.Config{
+        Name:    "test-node",
+        P2P:     p2p.Config{NoDiscovery: true},
+        HTTPHost: "127.0.0.1",
+        HTTPPort: 0,
+    }
 
-	err = n.Start()
-	require.NoError(t, err)
+    n, err := node.New(nodeConfig)
+    require.NoError(t, err)
 
-	client, err := ethclient.Dial(n.HTTPEndpoint())
-	require.NoError(t, err)
+    ethConfig := &ethconfig.Config{
+        Genesis: genesis,
+        RPCGasCap: 1000000,
+    }
 
-	// Wait for transaction indexing to complete
-	for {
-		progress, err := ethservice.BlockChain().TxIndexProgress()
-		if err == nil && progress.Done() {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+    ethservice, err := eth.New(n, ethConfig)
+    require.NoError(t, err)
 
-	return n, client
+    err = n.Start()
+    require.NoError(t, err)
+
+    _, err = ethservice.BlockChain().InsertChain(blocks)
+    require.NoError(t, err)
+
+    client, err := ethclient.Dial(n.HTTPEndpoint())
+    require.NoError(t, err)
+
+    timeout := time.After(5 * time.Second)
+    ticker := time.NewTicker(100 * time.Millisecond)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case <-timeout:
+            t.Fatal("timeout waiting for tx indexing")
+        case <-ticker.C:
+            progress, err := ethservice.BlockChain().TxIndexProgress()
+            if err == nil && progress.Done() {
+                return n, client
+            }
+        }
+    }
 }
 
 func TestTransactionMonitoring(t *testing.T) {
