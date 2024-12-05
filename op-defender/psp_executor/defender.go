@@ -3,10 +3,14 @@ package psp_executor
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	optls "github.com/ethereum-optimism/optimism/op-service/tls"
+	"github.com/ethereum-optimism/optimism/op-service/tls/certman"
 	"math/big"
 	"net/http"
 	"os"
@@ -85,6 +89,8 @@ type Defender struct {
 	highestBlockNumber                      *prometheus.GaugeVec
 	unexpectedRpcErrors                     *prometheus.CounterVec
 	GetNonceAndFetchAndSimulateAtBlockError *prometheus.CounterVec
+	// mtls configuration
+	TLSConfig optls.CLIConfig
 }
 
 // Define a struct that represents the data structure of your PSP.
@@ -364,6 +370,8 @@ func NewDefender(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLI
 			Name:      "unexpectedRpcErrors",
 			Help:      "number of unexpected rpc errors",
 		}, []string{"section", "name"}),
+		/** mtls configuration **/
+		TLSConfig: cfg.TLSConfig,
 	}
 	chainID, err := defender.executor.ReturnCorrectChainID(l1client, cfg.ChainID)
 	if err != nil {
@@ -586,8 +594,41 @@ func (d *Defender) Run(ctx context.Context) {
 			time.Sleep(d.blockDuration * time.Second) // Sleep for `d.blockDuration` seconds to make sure the PSP is executed onchain.
 		}
 	}()
+	server := &http.Server{
+		Addr:    ":" + d.port,
+		Handler: d.router,
+	}
+	if d.TLSConfig.TLSEnabled() {
+		d.log.Info("tlsConfig specified, loading tls config")
+		caCert, err := os.ReadFile(d.TLSConfig.TLSCaCert)
+		if err != nil {
+			d.log.Error("[MON] failed to read tls.ca", "error", err)
+			return
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
 
-	err := http.ListenAndServe(":"+d.port, d.router) // Start the HTTP server blocking thread for now.
+		cm, err := certman.New(d.log, d.TLSConfig.TLSCert, d.TLSConfig.TLSKey)
+		if err != nil {
+			d.log.Error("[MON] failed to read tls cert or key", "err", err)
+			return
+		}
+		if err := cm.Watch(); err != nil {
+			d.log.Error("[MON] failed to start certman watcher", "err", err)
+			return
+		}
+		server.TLSConfig = &tls.Config{
+			ClientCAs:  caCertPool,
+			ClientAuth: tls.RequireAndVerifyClientCert,
+			GetCertificate: func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				return cm.GetCertificate(nil)
+			},
+		}
+
+	}
+
+	err := server.ListenAndServeTLS("", "") // Start the HTTP server blocking thread for now.
+
 	if err != nil {
 		d.log.Crit("failed to start the API server", "error", err)
 	}
