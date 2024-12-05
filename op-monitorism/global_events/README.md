@@ -3,7 +3,7 @@
 This monitoring modules is made for to taking YAML rules as configuration.
 ![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
 
-Once the Yaml rules is configured correctly, we can listen to an event choosen to send the data through prometheus.
+Once the Yaml rules is configured correctly, we can listen to an event chosen to send the data through prometheus.
 
 ## CLI and Docs:
 

@@ -76,4 +76,4 @@ export FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE=1000
 go run ./cmd/monitorism faultproof_withdrawals
 ```
 
-Metrics will be avialable at [http://localhost:7300](http://localhost:7300)
+Metrics will be available at [http://localhost:7300](http://localhost:7300)
