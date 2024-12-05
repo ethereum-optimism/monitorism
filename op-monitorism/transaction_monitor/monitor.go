@@ -4,7 +4,6 @@ import (
 	"context"
 	"math/big"
 
-	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -12,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/prometheus/client_golang/prometheus"
+    "github.com/ethereum-optimism/optimism/op-service/metrics"
 )
 
 const (
@@ -30,6 +30,7 @@ type Monitor struct {
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
+
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	log.Info("creating transaction monitor")
 	client, err := ethclient.Dial(cfg.L1NodeUrl)
@@ -37,7 +38,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, err
 	}
 
-	// Create map for quick lookups
 	watchConfigs := make(map[common.Address]WatchConfig)
 	for _, config := range cfg.WatchConfigs {
 		watchConfigs[config.Address] = config
