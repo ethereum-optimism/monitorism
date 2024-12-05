@@ -4,8 +4,8 @@ import (
 	"context"
 	"math/big"
 
-	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -20,7 +20,7 @@ const (
 
 type Monitor struct {
 	log           log.Logger
-	rpc           client.RPC
+	client        *ethclient.Client
 	watchConfigs  map[common.Address]WatchConfig // map of watch address to its config
 
 	// metrics
@@ -32,7 +32,7 @@ type Monitor struct {
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	log.Info("creating transaction monitor")
-	rpc, err := client.NewRPC(ctx, log, cfg.L1NodeUrl)
+	client, err := ethclient.Dial(cfg.L1NodeUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 	return &Monitor{
 		log:          log,
-		rpc:          rpc,
+		client:       client,
 		watchConfigs: watchConfigs,
 
 		transactions: m.NewCounterVec(prometheus.CounterOpts{
@@ -78,16 +78,16 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 }
 
 func (m *Monitor) Run(ctx context.Context) {
-	latestBlock, err := m.rpc.BlockNumber(ctx)
+	blockNumber, err := m.client.BlockNumber(ctx)
 	if err != nil {
 		m.log.Error("failed to get latest block", "err", err)
 		m.unexpectedRpcErrors.WithLabelValues("monitor", "getBlockNumber").Inc()
 		return
 	}
 
-	block, err := m.rpc.BlockByNumber(ctx, big.NewInt(int64(latestBlock)))
+	block, err := m.client.BlockByNumber(ctx, big.NewInt(int64(blockNumber)))
 	if err != nil {
-		m.log.Error("failed to get block", "number", latestBlock, "err", err)
+		m.log.Error("failed to get block", "number", blockNumber, "err", err)
 		m.unexpectedRpcErrors.WithLabelValues("monitor", "getBlock").Inc()
 		return
 	}
@@ -156,6 +156,6 @@ func (m *Monitor) processTx(tx *types.Transaction, config WatchConfig) {
 }
 
 func (m *Monitor) Close(_ context.Context) error {
-	m.rpc.Close()
+	m.client.Close()
 	return nil
 }

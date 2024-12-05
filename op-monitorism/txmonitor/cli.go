@@ -2,8 +2,8 @@ package txmonitor
 
 import (
 	"fmt"
-	"strings"
-	"math/big"
+    "os"
+    "math/big"
 	"encoding/json"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
