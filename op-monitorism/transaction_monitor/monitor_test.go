@@ -32,7 +32,7 @@ var (
 	unauthorizedKey, _ = crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
 )
 
-func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client) {
+func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
 	anvil.Test(t)
 
 	ctx := context.Background()
@@ -49,16 +49,16 @@ func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client) {
 	client, err := ethclient.Dial(anvilRunner.RPCUrl())
 	require.NoError(t, err)
 
-	return anvilRunner, client
+	return anvilRunner, client, anvilRunner.RPCUrl()
 }
 
 func TestTransactionMonitoring(t *testing.T) {
 	ctx := context.Background()
-	_, client := setupAnvil(t)
+	_, client, rpc := setupAnvil(t)
 
 	threshold := big.NewInt(params.Ether)
 	cfg := CLIConfig{
-		L1NodeUrl: "http://localhost:8545",
+		L1NodeUrl: rpc,
 		WatchConfigs: []WatchConfig{{
 			Address:    watchedAddress,
 			AllowList:  []common.Address{allowedAddress},
