@@ -2,191 +2,121 @@ package transaction_monitor
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"math/big"
 	"testing"
+    "crypto/ecdsa"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
 
-    "github.com/ethereum/go-ethereum/consensus/ethash"
-    "github.com/ethereum/go-ethereum/core/rawdb"
-    "github.com/ethereum/go-ethereum/triedb"
-
+	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/ethereum-optimism/optimism/op-service/testutils/anvil"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-
-    "github.com/ethereum-optimism/optimism/op-service/metrics"
-    "github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-type testAccount struct {
-	key     *ecdsa.PrivateKey
-	address common.Address
-}
+var (
+	// Anvil test accounts
+	watchedAddress    = common.HexToAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+	allowedAddress    = common.HexToAddress("0x70997970C51812dc3A010C7d01b50e0d17dc79C8")
+	unauthorizedAddr  = common.HexToAddress("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")
+	
+	// Private keys
+	allowedKey, _     = crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
+	unauthorizedKey, _ = crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
+)
 
-func setupTestAccounts(t *testing.T) []testAccount {
-	accounts := make([]testAccount, 3)
-	for i := range accounts {
-		key, err := crypto.GenerateKey()
-		require.NoError(t, err)
-		accounts[i] = testAccount{
-			key:     key,
-			address: crypto.PubkeyToAddress(key.PublicKey),
-		}
-	}
-	return accounts
-}
+func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client) {
+	anvil.Test(t)
 
-func setupTestNode(t *testing.T, accounts []testAccount) (*node.Node, *ethclient.Client) {
-    alloc := make(core.GenesisAlloc)
-    fundAmount := new(big.Int).Mul(big.NewInt(1000), big.NewInt(params.Ether))
-    for _, acc := range accounts {
-        alloc[acc.address] = core.GenesisAccount{Balance: fundAmount}
-    }
+	ctx := context.Background()
+	logger := log.New()
+	anvilRunner, err := anvil.New("http://localhost:8545", logger)
+	require.NoError(t, err)
 
-    // Set genesis time to 100 minutes ago
-    genesisTime := uint64(time.Now().Unix()) / 2
+	err = anvilRunner.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = anvilRunner.Stop()
+	})
 
-    genesis := &core.Genesis{
-        Config:    params.AllEthashProtocolChanges,
-        Alloc:     alloc,
-        ExtraData: []byte("test genesis"),
-        Timestamp: genesisTime,
-        BaseFee:   big.NewInt(params.InitialBaseFee),
-    }
+	client, err := ethclient.Dial(anvilRunner.RPCUrl())
+	require.NoError(t, err)
 
-    db := rawdb.NewMemoryDatabase()
-    trieDB := triedb.NewDatabase(db, triedb.HashDefaults)
-    genesisBlock, err := genesis.Commit(db, trieDB)
-    require.NoError(t, err)
-
-    // Generate chain with block time of 12 seconds
-    blocks, _ := core.GenerateChain(genesis.Config, genesisBlock, ethash.NewFaker(), db, 10, func(i int, gen *core.BlockGen) {
-        gen.SetCoinbase(accounts[0].address)
-        gen.SetExtra([]byte("test"))
-        gen.OffsetTime(int64(i+1) * 12) // 12 second blocks
-    })
-
-    nodeConfig := &node.Config{
-        Name:    "test-node",
-        P2P:     p2p.Config{NoDiscovery: true},
-        HTTPHost: "127.0.0.1",
-        HTTPPort: 0,
-    }
-
-    n, err := node.New(nodeConfig)
-    require.NoError(t, err)
-
-    ethConfig := &ethconfig.Config{
-        Genesis: genesis,
-        RPCGasCap: 1000000,
-    }
-
-    ethservice, err := eth.New(n, ethConfig)
-    require.NoError(t, err)
-
-    err = n.Start()
-    require.NoError(t, err)
-
-    _, err = ethservice.BlockChain().InsertChain(blocks)
-    require.NoError(t, err)
-
-    client, err := ethclient.Dial(n.HTTPEndpoint())
-    require.NoError(t, err)
-
-    timeout := time.After(5 * time.Second)
-    ticker := time.NewTicker(100 * time.Millisecond)
-    defer ticker.Stop()
-    
-    for {
-        select {
-        case <-timeout:
-            t.Fatal("timeout waiting for tx indexing")
-        case <-ticker.C:
-            progress, err := ethservice.BlockChain().TxIndexProgress()
-            if err == nil && progress.Done() {
-                return n, client
-            }
-        }
-    }
+	return anvilRunner, client
 }
 
 func TestTransactionMonitoring(t *testing.T) {
 	ctx := context.Background()
-	accounts := setupTestAccounts(t)
-	watchedAddr := accounts[0].address
-	allowedAddr := accounts[1].address
-	unauthorizedAddr := accounts[2].address
-
-	node, client := setupTestNode(t, accounts)
-	defer node.Close()
+	_, client := setupAnvil(t)
 
 	threshold := big.NewInt(params.Ether)
 	cfg := CLIConfig{
-		L1NodeUrl: node.HTTPEndpoint(),
+		L1NodeUrl: "http://localhost:8545",
 		WatchConfigs: []WatchConfig{{
-			Address:    watchedAddr,
-			AllowList:  []common.Address{allowedAddr},
-			Thresholds: map[string]*big.Int{allowedAddr.Hex(): threshold},
+			Address:    watchedAddress,
+			AllowList:  []common.Address{allowedAddress},
+			Thresholds: map[string]*big.Int{allowedAddress.Hex(): threshold},
 		}},
 	}
 
-    registry := metrics.NewRegistry()
-    metricsFactory := metrics.With(registry)
+	registry := metrics.NewRegistry()
+	metricsFactory := metrics.With(registry)
 
 	monitor, err := NewMonitor(ctx, log.New(), metricsFactory, cfg)
 	require.NoError(t, err)
-	
-    defer monitor.Close(ctx)
+	defer monitor.Close(ctx)
 
-	sendTx := func(from *ecdsa.PrivateKey, to common.Address, value *big.Int) {
-		nonce, err := client.PendingNonceAt(ctx, crypto.PubkeyToAddress(from.PublicKey))
+	sendTx := func(key *ecdsa.PrivateKey, to common.Address, value *big.Int) {
+		nonce, err := client.PendingNonceAt(ctx, crypto.PubkeyToAddress(key.PublicKey))
 		require.NoError(t, err)
 
 		gasPrice, err := client.SuggestGasPrice(ctx)
 		require.NoError(t, err)
 
 		tx := types.NewTransaction(nonce, to, value, 21000, gasPrice, nil)
-		signedTx, err := types.SignTx(tx, types.NewLondonSigner(big.NewInt(1337)), from)
+		signedTx, err := types.SignTx(tx, types.NewLondonSigner(big.NewInt(31337)), key)
 		require.NoError(t, err)
 
 		err = client.SendTransaction(ctx, signedTx)
 		require.NoError(t, err)
 
-		receipt, err := client.TransactionReceipt(ctx, signedTx.Hash())
-		require.NoError(t, err)
-		require.Equal(t, uint64(1), receipt.Status)
+		// Wait for receipt
+		for i := 0; i < 50; i++ {
+			time.Sleep(100 * time.Millisecond)
+			receipt, err := client.TransactionReceipt(ctx, signedTx.Hash())
+			if err == nil {
+				require.Equal(t, uint64(1), receipt.Status, "transaction failed")
+				return
+			}
+		}
+		t.Fatal("timeout waiting for transaction receipt")
 	}
 
 	t.Run("allowed address below threshold", func(t *testing.T) {
-		sendTx(accounts[1].key, watchedAddr, big.NewInt(params.Ether/2))
+		sendTx(allowedKey, watchedAddress, big.NewInt(params.Ether/2))
 		monitor.Run(ctx)
-		require.Equal(t, float64(1), getCounterValue(t, monitor.transactions, watchedAddr.Hex(), allowedAddr.Hex(), watchedAddr.Hex(), "processed"))
-		require.Equal(t, float64(0), getCounterValue(t, monitor.thresholdExceededTx, watchedAddr.Hex(), allowedAddr.Hex(), threshold.String()))
+		require.Equal(t, float64(1), getCounterValue(t, monitor.transactions, watchedAddress.Hex(), allowedAddress.Hex(), watchedAddress.Hex(), "processed"))
+		require.Equal(t, float64(0), getCounterValue(t, monitor.thresholdExceededTx, watchedAddress.Hex(), allowedAddress.Hex(), threshold.String()))
 	})
 
 	t.Run("allowed address above threshold", func(t *testing.T) {
-		sendTx(accounts[1].key, watchedAddr, big.NewInt(params.Ether*2))
+		sendTx(allowedKey, watchedAddress, big.NewInt(params.Ether*2))
 		monitor.Run(ctx)
-		require.Equal(t, float64(2), getCounterValue(t, monitor.transactions, watchedAddr.Hex(), allowedAddr.Hex(), watchedAddr.Hex(), "processed"))
-		require.Equal(t, float64(1), getCounterValue(t, monitor.thresholdExceededTx, watchedAddr.Hex(), allowedAddr.Hex(), threshold.String()))
+		require.Equal(t, float64(2), getCounterValue(t, monitor.transactions, watchedAddress.Hex(), allowedAddress.Hex(), watchedAddress.Hex(), "processed"))
+		require.Equal(t, float64(1), getCounterValue(t, monitor.thresholdExceededTx, watchedAddress.Hex(), allowedAddress.Hex(), threshold.String()))
 	})
 
 	t.Run("unauthorized address", func(t *testing.T) {
-		sendTx(accounts[2].key, watchedAddr, big.NewInt(params.Ether/2))
+		sendTx(unauthorizedKey, watchedAddress, big.NewInt(params.Ether/2))
 		monitor.Run(ctx)
-		require.Equal(t, float64(1), getCounterValue(t, monitor.unauthorizedTx, watchedAddr.Hex(), unauthorizedAddr.Hex()))
+		require.Equal(t, float64(1), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex(), unauthorizedAddr.Hex()))
 	})
 }
 
