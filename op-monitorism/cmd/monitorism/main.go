@@ -6,8 +6,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opio "github.com/ethereum-optimism/optimism/op-service/ctxinterrupt"
+	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 )
 
 var (

@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/secrets"
-    "github.com/ethereum-optimism/monitorism/op-monitorism/transaction_monitor"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/transaction_monitor"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
@@ -100,13 +100,13 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Flags:       append(faultproof_withdrawals.CLIFlags("FAULTPROOF_WITHDRAWAL_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(FaultproofWithdrawalsMain),
 			},
-            {
-                Name:       "transaction_monitor",
-                Usage:      "Monitors transactions from specified addresses and alerts above a certain threshold",
-                Description: "Monitors transactions from specified addresses and alerts above a certain threshold",
-                Flags:      append(transaction_monitor.CLIFlags("TRANSACTION_MONITOR"), defaultFlags...),
-                Action:     cliapp.LifecycleCmd(TransactionMonitorMain),
-            },
+			{
+				Name:        "transaction_monitor",
+				Usage:       "Monitors transactions from specified addresses and alerts above a certain threshold",
+				Description: "Monitors transactions from specified addresses and alerts above a certain threshold",
+				Flags:       append(transaction_monitor.CLIFlags("TRANSACTION_MONITOR"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(TransactionMonitorMain),
+			},
 			{
 				Name:        "version",
 				Usage:       "Show version",
@@ -263,17 +263,17 @@ func SecretsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lif
 }
 
 func TransactionMonitorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
-    log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
-    cfg, err := transaction_monitor.ReadCLIFlags(ctx)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse transaction monitor config from flags: %w", err)
-    }
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := transaction_monitor.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse transaction monitor config from flags: %w", err)
+	}
 
-    metricsRegistry := opmetrics.NewRegistry()
-    monitor, err := transaction_monitor.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create transaction monitor: %w", err)
-    }
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := transaction_monitor.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transaction monitor: %w", err)
+	}
 
-    return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
 }
