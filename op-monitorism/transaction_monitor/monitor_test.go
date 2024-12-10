@@ -52,6 +52,32 @@ func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
 	return anvilRunner, client, anvilRunner.RPCUrl()
 }
 
+func sendTx(t *testing.T, ctx context.Context, client *ethclient.Client, key *ecdsa.PrivateKey, to common.Address, value *big.Int) {
+	nonce, err := client.PendingNonceAt(ctx, crypto.PubkeyToAddress(key.PublicKey))
+	require.NoError(t, err)
+
+	gasPrice, err := client.SuggestGasPrice(ctx)
+	require.NoError(t, err)
+
+	tx := types.NewTransaction(nonce, to, value, 21000, gasPrice, nil)
+	signedTx, err := types.SignTx(tx, types.NewLondonSigner(big.NewInt(31337)), key)
+	require.NoError(t, err)
+
+	err = client.SendTransaction(ctx, signedTx)
+	require.NoError(t, err)
+
+	// Wait for receipt
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		receipt, err := client.TransactionReceipt(ctx, signedTx.Hash())
+		if err == nil {
+			require.Equal(t, uint64(1), receipt.Status, "transaction failed")
+			return
+		}
+	}
+	t.Fatal("timeout waiting for transaction receipt")
+}
+
 func TestTransactionMonitoring(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -106,34 +132,8 @@ func TestTransactionMonitoring(t *testing.T) {
 		monitor.Close()
 	}()
 
-	sendTx := func(key *ecdsa.PrivateKey, to common.Address, value *big.Int) {
-		nonce, err := client.PendingNonceAt(ctx, crypto.PubkeyToAddress(key.PublicKey))
-		require.NoError(t, err)
-
-		gasPrice, err := client.SuggestGasPrice(ctx)
-		require.NoError(t, err)
-
-		tx := types.NewTransaction(nonce, to, value, 21000, gasPrice, nil)
-		signedTx, err := types.SignTx(tx, types.NewLondonSigner(big.NewInt(31337)), key)
-		require.NoError(t, err)
-
-		err = client.SendTransaction(ctx, signedTx)
-		require.NoError(t, err)
-
-		// Wait for receipt
-		for i := 0; i < 50; i++ {
-			time.Sleep(100 * time.Millisecond)
-			receipt, err := client.TransactionReceipt(ctx, signedTx.Hash())
-			if err == nil {
-				require.Equal(t, uint64(1), receipt.Status, "transaction failed")
-				return
-			}
-		}
-		t.Fatal("timeout waiting for transaction receipt")
-	}
-
 	t.Run("allowed address below threshold", func(t *testing.T) {
-		sendTx(allowedKey, watchedAddress, big.NewInt(params.Ether/2))
+		sendTx(t, ctx, client, allowedKey, watchedAddress, big.NewInt(params.Ether/2))
 		// Wait for monitor to process
 		time.Sleep(2 * time.Second)
 
@@ -143,7 +143,7 @@ func TestTransactionMonitoring(t *testing.T) {
 	})
 
 	t.Run("allowed address above threshold", func(t *testing.T) {
-		sendTx(allowedKey, watchedAddress, big.NewInt(params.Ether*2))
+		sendTx(t, ctx, client, allowedKey, watchedAddress, big.NewInt(params.Ether*2))
 		// Wait for monitor to process
 		time.Sleep(2 * time.Second)
 
@@ -153,7 +153,7 @@ func TestTransactionMonitoring(t *testing.T) {
 	})
 
 	t.Run("unauthorized address", func(t *testing.T) {
-		sendTx(unauthorizedKey, watchedAddress, big.NewInt(params.Ether/2))
+		sendTx(t, ctx, client, unauthorizedKey, watchedAddress, big.NewInt(params.Ether/2))
 		// Wait for monitor to process
 		time.Sleep(2 * time.Second)
 
@@ -164,7 +164,7 @@ func TestTransactionMonitoring(t *testing.T) {
 
 func TestDisputeGameWatcher(t *testing.T) {
 	ctx := context.Background()
-	_, client, rpc := setupAnvil(t)
+	_, _, rpc := setupAnvil(t) // Using blank identifiers for unused returns
 
 	factory := factoryAddress
 
