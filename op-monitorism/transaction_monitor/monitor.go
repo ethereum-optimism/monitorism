@@ -1,4 +1,3 @@
-// monitor.go
 package transaction_monitor
 
 import (
@@ -14,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ethereum-optimism/optimism/op-service/metrics"
 )
 
 const (
@@ -23,19 +23,19 @@ const (
 type CheckType string
 
 const (
-	ExactMatchCheck  CheckType = "exact_match"
-	DisputeGameCheck CheckType = "dispute_game"
+	ExactMatchCheck     CheckType = "exact_match"
+	DisputeGameCheck    CheckType = "dispute_game"
 )
 
 type CheckConfig struct {
-	Type   CheckType              `yaml:"type"`
-	Params map[string]interface{} `yaml:"params"`
+	Type   CheckType               `yaml:"type"`
+	Params map[string]interface{}  `yaml:"params"`
 }
 
 type WatchConfig struct {
-	Address    common.Address      `yaml:"address"`
-	Filters    []CheckConfig       `yaml:"filters"`
-	Thresholds map[string]*big.Int `yaml:"thresholds"`
+	Address    common.Address         `yaml:"address"`
+	Filters    []CheckConfig         `yaml:"filters"`
+	Thresholds map[string]*big.Int   `yaml:"thresholds"`
 }
 
 type DisputeGameWatcher struct {
@@ -55,7 +55,7 @@ type Monitor struct {
 	mu              sync.RWMutex
 
 	// metrics
-	transactions        *prometheus.CounterVec
+	transactions         *prometheus.CounterVec
 	unauthorizedTx      *prometheus.CounterVec
 	thresholdExceededTx *prometheus.CounterVec
 	ethSpent            *prometheus.CounterVec
@@ -85,7 +85,7 @@ var disputeGameFactoryABI = `[{
 	"type": "event"
 }]`
 
-func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cfg CLIConfig) (*Monitor, error) {
+func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	client, err := ethclient.Dial(cfg.L1NodeUrl)
 	if err != nil {
 		return nil, err
@@ -98,8 +98,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cf
 		allowedAddrs:    make(map[common.Address]bool),
 		factoryWatchers: make(map[common.Address]*DisputeGameWatcher),
 		startBlock:      cfg.StartBlock,
-
-		transactions: prometheus.NewCounterVec(
+		
+		transactions: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
 				Name:      "transactions_total",
@@ -107,8 +107,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cf
 			},
 			[]string{"watch_address", "from", "to", "status"},
 		),
-
-		unauthorizedTx: prometheus.NewCounterVec(
+		
+		unauthorizedTx: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
 				Name:      "unauthorized_transactions_total",
@@ -116,8 +116,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cf
 			},
 			[]string{"watch_address", "from"},
 		),
-
-		thresholdExceededTx: prometheus.NewCounterVec(
+		
+		thresholdExceededTx: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
 				Name:      "threshold_exceeded_transactions_total",
@@ -125,8 +125,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cf
 			},
 			[]string{"watch_address", "from", "threshold"},
 		),
-
-		ethSpent: prometheus.NewCounterVec(
+		
+		ethSpent: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
 				Name:      "eth_spent_total",
@@ -134,8 +134,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cf
 			},
 			[]string{"address"},
 		),
-
-		unexpectedRpcErrors: prometheus.NewCounterVec(
+		
+		unexpectedRpcErrors: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
 				Name:      "unexpected_rpc_errors_total",
@@ -145,17 +145,10 @@ func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cf
 		),
 	}
 
-	// Register metrics
-	m.MustRegister(mon.transactions)
-	m.MustRegister(mon.unauthorizedTx)
-	m.MustRegister(mon.thresholdExceededTx)
-	m.MustRegister(mon.ethSpent)
-	m.MustRegister(mon.unexpectedRpcErrors)
-
 	// Initialize filters and watchers
 	for _, config := range cfg.WatchConfigs {
 		mon.watchConfigs[config.Address] = config
-
+		
 		for _, filter := range config.Filters {
 			switch filter.Type {
 			case ExactMatchCheck:
@@ -178,26 +171,30 @@ func NewMonitor(ctx context.Context, log log.Logger, m prometheus.Registerer, cf
 	return mon, nil
 }
 
-func (m *Monitor) Run(ctx context.Context) error {
+func (m *Monitor) Run(ctx context.Context) {
 	currentBlock := m.startBlock
 	var err error
-
-	if currentBlock == 0 {
-		currentBlock, err = m.client.BlockNumber(ctx)
-		if err != nil {
-			return err
-		}
-	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			m.log.Info("monitor stopping")
+			return
 		default:
+			// Get current block if not specified
+			if currentBlock == 0 {
+				currentBlock, err = m.client.BlockNumber(ctx)
+				if err != nil {
+					m.log.Error("failed to get block number", "err", err)
+					continue
+				}
+			}
+
 			// Update dispute game watchers
 			for _, watcher := range m.factoryWatchers {
 				if err := m.updateDisputeGames(ctx, watcher, currentBlock); err != nil {
 					m.log.Error("failed to update dispute games", "err", err)
+					continue
 				}
 			}
 
@@ -212,7 +209,7 @@ func (m *Monitor) Run(ctx context.Context) error {
 				if tx.To() == nil {
 					continue
 				}
-
+				
 				if config, exists := m.watchConfigs[*tx.To()]; exists {
 					m.processTx(tx, config)
 				}
@@ -322,7 +319,7 @@ func (w *DisputeGameWatcher) isGameAllowed(addr common.Address) bool {
 	return w.allowedGames[addr]
 }
 
-func (m *Monitor) Close() error {
+func (m *Monitor) Close(ctx context.Context) error {
 	m.client.Close()
 	return nil
 }

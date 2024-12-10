@@ -2,9 +2,9 @@ package transaction_monitor
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"math/big"
 	"testing"
+	"crypto/ecdsa"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/ethereum-optimism/optimism/op-service/testutils/anvil"
+	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -22,13 +23,13 @@ import (
 
 var (
 	// Anvil test accounts
-	watchedAddress   = common.HexToAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
-	allowedAddress   = common.HexToAddress("0x70997970C51812dc3A010C7d01b50e0d17dc79C8")
-	unauthorizedAddr = common.HexToAddress("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")
-	factoryAddress   = common.HexToAddress("0x90F79bf6EB2c4f870365E785982E1f101E93b906")
-
+	watchedAddress     = common.HexToAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+	allowedAddress    = common.HexToAddress("0x70997970C51812dc3A010C7d01b50e0d17dc79C8")
+	unauthorizedAddr  = common.HexToAddress("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")
+	factoryAddress    = common.HexToAddress("0x90F79bf6EB2c4f870365E785982E1f101E93b906")
+	
 	// Private keys
-	allowedKey, _      = crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
+	allowedKey, _     = crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
 	unauthorizedKey, _ = crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
 )
 
@@ -88,7 +89,7 @@ func TestTransactionMonitoring(t *testing.T) {
 	factory := factoryAddress
 
 	cfg := CLIConfig{
-		L1NodeUrl:  rpc,
+		L1NodeUrl: rpc,
 		StartBlock: 0,
 		WatchConfigs: []WatchConfig{{
 			Address: watchedAddress,
@@ -112,31 +113,19 @@ func TestTransactionMonitoring(t *testing.T) {
 		}},
 	}
 
-	registry := prometheus.NewRegistry()
-	monitor, err := NewMonitor(ctx, log.New(), registry, cfg)
+	registry := opmetrics.NewRegistry()
+	monitor, err := NewMonitor(ctx, log.New(), opmetrics.With(registry), cfg)
 	require.NoError(t, err)
 
 	// Start monitor in background
-	monitorDone := make(chan error)
-	go func() {
-		monitorDone <- monitor.Run(ctx)
-	}()
-
-	// Cleanup at end of test
-	defer func() {
-		cancel()
-		err := <-monitorDone
-		if err != context.Canceled {
-			t.Errorf("monitor error: %v", err)
-		}
-		monitor.Close()
-	}()
+	go monitor.Run(ctx)
+	defer monitor.Close(ctx)
 
 	t.Run("allowed address below threshold", func(t *testing.T) {
 		sendTx(t, ctx, client, allowedKey, watchedAddress, big.NewInt(params.Ether/2))
 		// Wait for monitor to process
 		time.Sleep(2 * time.Second)
-
+		
 		require.Equal(t, float64(1), getCounterValue(t, monitor.transactions, watchedAddress.Hex(), allowedAddress.Hex(), watchedAddress.Hex(), "processed"))
 		require.Equal(t, float64(0), getCounterValue(t, monitor.thresholdExceededTx, watchedAddress.Hex(), allowedAddress.Hex(), threshold.String()))
 		require.Equal(t, float64(0.5), getCounterValue(t, monitor.ethSpent, allowedAddress.Hex()))
@@ -146,7 +135,7 @@ func TestTransactionMonitoring(t *testing.T) {
 		sendTx(t, ctx, client, allowedKey, watchedAddress, big.NewInt(params.Ether*2))
 		// Wait for monitor to process
 		time.Sleep(2 * time.Second)
-
+		
 		require.Equal(t, float64(2), getCounterValue(t, monitor.transactions, watchedAddress.Hex(), allowedAddress.Hex(), watchedAddress.Hex(), "processed"))
 		require.Equal(t, float64(1), getCounterValue(t, monitor.thresholdExceededTx, watchedAddress.Hex(), allowedAddress.Hex(), threshold.String()))
 		require.Equal(t, float64(2.5), getCounterValue(t, monitor.ethSpent, allowedAddress.Hex()))
@@ -156,7 +145,7 @@ func TestTransactionMonitoring(t *testing.T) {
 		sendTx(t, ctx, client, unauthorizedKey, watchedAddress, big.NewInt(params.Ether/2))
 		// Wait for monitor to process
 		time.Sleep(2 * time.Second)
-
+		
 		require.Equal(t, float64(1), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex(), unauthorizedAddr.Hex()))
 		require.Equal(t, float64(0.5), getCounterValue(t, monitor.ethSpent, unauthorizedAddr.Hex()))
 	})
@@ -164,12 +153,12 @@ func TestTransactionMonitoring(t *testing.T) {
 
 func TestDisputeGameWatcher(t *testing.T) {
 	ctx := context.Background()
-	_, _, rpc := setupAnvil(t) // Using blank identifiers for unused returns
+	_, _, rpc := setupAnvil(t)
 
 	factory := factoryAddress
 
 	cfg := CLIConfig{
-		L1NodeUrl:  rpc,
+		L1NodeUrl: rpc,
 		StartBlock: 0,
 		WatchConfigs: []WatchConfig{{
 			Address: watchedAddress,
@@ -182,10 +171,10 @@ func TestDisputeGameWatcher(t *testing.T) {
 		}},
 	}
 
-	registry := prometheus.NewRegistry()
-	monitor, err := NewMonitor(ctx, log.New(), registry, cfg)
+	registry := opmetrics.NewRegistry()
+	monitor, err := NewMonitor(ctx, log.New(), opmetrics.With(registry), cfg)
 	require.NoError(t, err)
-	defer monitor.Close()
+	defer monitor.Close(ctx)
 
 	// Verify the watcher is set up correctly
 	require.Contains(t, monitor.factoryWatchers, factory)
