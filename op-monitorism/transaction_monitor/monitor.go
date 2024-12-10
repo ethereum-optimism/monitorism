@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -13,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/ethereum-optimism/optimism/op-service/metrics"
 )
 
 const (
@@ -23,19 +23,19 @@ const (
 type CheckType string
 
 const (
-	ExactMatchCheck     CheckType = "exact_match"
-	DisputeGameCheck    CheckType = "dispute_game"
+	ExactMatchCheck  CheckType = "exact_match"
+	DisputeGameCheck CheckType = "dispute_game"
 )
 
 type CheckConfig struct {
-	Type   CheckType               `yaml:"type"`
-	Params map[string]interface{}  `yaml:"params"`
+	Type   CheckType              `yaml:"type"`
+	Params map[string]interface{} `yaml:"params"`
 }
 
 type WatchConfig struct {
-	Address    common.Address         `yaml:"address"`
-	Filters    []CheckConfig         `yaml:"filters"`
-	Thresholds map[string]*big.Int   `yaml:"thresholds"`
+	Address    common.Address      `yaml:"address"`
+	Filters    []CheckConfig       `yaml:"filters"`
+	Thresholds map[string]*big.Int `yaml:"thresholds"`
 }
 
 type DisputeGameWatcher struct {
@@ -55,7 +55,7 @@ type Monitor struct {
 	mu              sync.RWMutex
 
 	// metrics
-	transactions         *prometheus.CounterVec
+	transactions        *prometheus.CounterVec
 	unauthorizedTx      *prometheus.CounterVec
 	thresholdExceededTx *prometheus.CounterVec
 	ethSpent            *prometheus.CounterVec
@@ -98,7 +98,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		allowedAddrs:    make(map[common.Address]bool),
 		factoryWatchers: make(map[common.Address]*DisputeGameWatcher),
 		startBlock:      cfg.StartBlock,
-		
+
 		transactions: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
@@ -107,7 +107,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			},
 			[]string{"watch_address", "from", "to", "status"},
 		),
-		
+
 		unauthorizedTx: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
@@ -116,7 +116,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			},
 			[]string{"watch_address", "from"},
 		),
-		
+
 		thresholdExceededTx: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
@@ -125,7 +125,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			},
 			[]string{"watch_address", "from", "threshold"},
 		),
-		
+
 		ethSpent: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
@@ -134,7 +134,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			},
 			[]string{"address"},
 		),
-		
+
 		unexpectedRpcErrors: m.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: MetricsNamespace,
@@ -148,7 +148,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	// Initialize filters and watchers
 	for _, config := range cfg.WatchConfigs {
 		mon.watchConfigs[config.Address] = config
-		
+
 		for _, filter := range config.Filters {
 			switch filter.Type {
 			case ExactMatchCheck:
@@ -209,7 +209,7 @@ func (m *Monitor) Run(ctx context.Context) {
 				if tx.To() == nil {
 					continue
 				}
-				
+
 				if config, exists := m.watchConfigs[*tx.To()]; exists {
 					m.processTx(tx, config)
 				}
