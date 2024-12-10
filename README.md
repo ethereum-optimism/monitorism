@@ -9,6 +9,7 @@
     - [Multisig Monitor](#multisig-monitor)
     - [Drippie Monitor](#drippie-monitor)
     - [Secrets Monitor](#secrets-monitor)
+    - [Transaction Monitor](#transaction-monitor)
     - [Faultproof Withdrawals](#secrets-monitor)
   - [Defender Components](#defender-components)
     - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
@@ -127,6 +128,13 @@ The secrets monitor takes a Drippie contract as a parameter and monitors for any
 
 | `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/secrets/README.md) |
 | ----------------------- | --------------------------------------------------------------------------------------------------- |
+
+### Transaction Monitor
+
+The transaction monitor takes in a yaml config in order to run, and monitors transaction sent by a specific address, tracking both cumulative eth sent, as well as tunable thresholds for specific alerts. It is also configurable to support working against factory contracts, rught now just the `FaultDisputeGame` factory to ensure the addresses are only intereacting with valid fault dispute games.
+
+| `op-monitorism/transaction_monitor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/transaction_monitor/README.md) |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------- |
 
 ### Faultproof Withdrawal
 
