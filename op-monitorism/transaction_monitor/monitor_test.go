@@ -38,7 +38,7 @@ func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
 
 	ctx := context.Background()
 	logger := log.New()
-	anvilRunner, err := anvil.New("http://localhost:8545", logger)
+	anvilRunner, err := anvil.New("", logger)
 	require.NoError(t, err)
 
 	err = anvilRunner.Start(ctx)
