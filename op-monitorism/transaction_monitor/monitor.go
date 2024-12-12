@@ -2,13 +2,17 @@ package transaction_monitor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -38,66 +42,91 @@ type WatchConfig struct {
 	Thresholds map[string]*big.Int `yaml:"thresholds"`
 }
 
-type DisputeGameWatcher struct {
-	factory      common.Address
-	allowedGames map[common.Address]bool
-	mu           sync.RWMutex
-	lastBlock    uint64
+type DisputeGameVerifier struct {
+	factory    common.Address
+	factoryABI abi.ABI
+	gameABI    abi.ABI
+	cache      map[common.Address]bool
+	mu         sync.RWMutex
 }
 
 type Monitor struct {
-	log             log.Logger
-	client          *ethclient.Client
-	watchConfigs    map[common.Address]WatchConfig
-	allowedAddrs    map[common.Address]bool
-	factoryWatchers map[common.Address]*DisputeGameWatcher
-	startBlock      uint64
-	mu              sync.RWMutex
+	log           log.Logger
+	client        *ethclient.Client
+	watchConfigs  map[common.Address]WatchConfig
+	allowedAddrs  map[common.Address]bool
+	gameVerifiers map[common.Address]*DisputeGameVerifier
+	startBlock    uint64
+	mu            sync.RWMutex
 
 	// metrics
 	transactions        *prometheus.CounterVec
 	unauthorizedTx      *prometheus.CounterVec
 	thresholdExceededTx *prometheus.CounterVec
-	ethSpent            *prometheus.CounterVec
+	ethSpent           *prometheus.CounterVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
-var disputeGameFactoryABI = `[{
-	"anonymous": false,
-	"inputs": [
-		{
-			"indexed": true,
-			"name": "disputeProxy",
-			"type": "address"
-		},
-		{
-			"indexed": true,
-			"name": "gameType",
-			"type": "uint8"
-		},
-		{
-			"indexed": true,
-			"name": "rootClaim",
-			"type": "bytes32"
-		}
-	],
-	"name": "DisputeGameCreated",
-	"type": "event"
+// DisputeGameFactoryABI contains just the games() function we need
+const DisputeGameFactoryABI = `[{
+    "inputs": [
+        {"internalType": "uint32", "name": "_gameType", "type": "uint32"},
+        {"internalType": "bytes32", "name": "_rootClaim", "type": "bytes32"},
+        {"internalType": "bytes", "name": "_extraData", "type": "bytes"}
+    ],
+    "name": "games",
+    "outputs": [
+        {"internalType": "address", "name": "proxy_", "type": "address"},
+        {"internalType": "uint64", "name": "timestamp_", "type": "uint64"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+}]`
+
+// DisputeGameABI contains just the functions we need from the game contract
+const DisputeGameABI = `[{
+    "inputs": [],
+    "name": "gameType",
+    "outputs": [{"internalType": "uint32", "name": "", "type": "uint32"}],
+    "stateMutability": "view",
+    "type": "function"
+}, {
+    "inputs": [],
+    "name": "rootClaim",
+    "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
+    "stateMutability": "pure",
+    "type": "function"
+}, {
+    "inputs": [],
+    "name": "extraData",
+    "outputs": [{"internalType": "bytes", "name": "", "type": "bytes"}],
+    "stateMutability": "pure",
+    "type": "function"
 }]`
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	client, err := ethclient.Dial(cfg.L1NodeUrl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to dial L1 node: %w", err)
+	}
+
+	factoryABI, err := abi.JSON(strings.NewReader(DisputeGameFactoryABI))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse factory ABI: %w", err)
+	}
+
+	gameABI, err := abi.JSON(strings.NewReader(DisputeGameABI))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse game ABI: %w", err)
 	}
 
 	mon := &Monitor{
-		log:             log,
-		client:          client,
-		watchConfigs:    make(map[common.Address]WatchConfig),
-		allowedAddrs:    make(map[common.Address]bool),
-		factoryWatchers: make(map[common.Address]*DisputeGameWatcher),
-		startBlock:      cfg.StartBlock,
+		log:           log,
+		client:        client,
+		watchConfigs:  make(map[common.Address]WatchConfig),
+		allowedAddrs:  make(map[common.Address]bool),
+		gameVerifiers: make(map[common.Address]*DisputeGameVerifier),
+		startBlock:    cfg.StartBlock,
 
 		transactions: m.NewCounterVec(
 			prometheus.CounterOpts{
@@ -145,7 +174,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		),
 	}
 
-	// Initialize filters and watchers
+	// Initialize filters and verifiers
 	for _, config := range cfg.WatchConfigs {
 		mon.watchConfigs[config.Address] = config
 
@@ -158,11 +187,13 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			case DisputeGameCheck:
 				if factory, ok := filter.Params["disputeGameFactory"].(string); ok {
 					factoryAddr := common.HexToAddress(factory)
-					watcher := &DisputeGameWatcher{
-						factory:      factoryAddr,
-						allowedGames: make(map[common.Address]bool),
+					verifier := &DisputeGameVerifier{
+						factory:    factoryAddr,
+						factoryABI: factoryABI,
+						gameABI:    gameABI,
+						cache:      make(map[common.Address]bool),
 					}
-					mon.factoryWatchers[factoryAddr] = watcher
+					mon.gameVerifiers[factoryAddr] = verifier
 				}
 			}
 		}
@@ -171,93 +202,172 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	return mon, nil
 }
 
+func (v *DisputeGameVerifier) verifyGame(ctx context.Context, client *ethclient.Client, gameAddr common.Address) (bool, error) {
+	v.mu.RLock()
+	if cached, exists := v.cache[gameAddr]; exists {
+		v.mu.RUnlock()
+		return cached, nil
+	}
+	v.mu.RUnlock()
+
+	// Create contract bindings
+	game := bind.NewBoundContract(gameAddr, v.gameABI, client, client, client)
+	factory := bind.NewBoundContract(v.factory, v.factoryABI, client, client, client)
+
+	// Get game parameters
+	var gameTypeResult []interface{}
+	if err := game.Call(&bind.CallOpts{Context: ctx}, &gameTypeResult, "gameType"); err != nil {
+		return false, fmt.Errorf("failed to get game type: %w", err)
+	}
+	if len(gameTypeResult) != 1 {
+		return false, fmt.Errorf("unexpected number of return values for gameType")
+	}
+	gameType, ok := gameTypeResult[0].(uint32)
+	if !ok {
+		return false, fmt.Errorf("invalid game type returned")
+	}
+
+	var rootClaimResult []interface{}
+	if err := game.Call(&bind.CallOpts{Context: ctx}, &rootClaimResult, "rootClaim"); err != nil {
+		return false, fmt.Errorf("failed to get root claim: %w", err)
+	}
+	if len(rootClaimResult) != 1 {
+		return false, fmt.Errorf("unexpected number of return values for rootClaim")
+	}
+	rootClaim, ok := rootClaimResult[0].([32]byte)
+	if !ok {
+		return false, fmt.Errorf("invalid root claim returned")
+	}
+
+	var extraDataResult []interface{}
+	if err := game.Call(&bind.CallOpts{Context: ctx}, &extraDataResult, "extraData"); err != nil {
+		return false, fmt.Errorf("failed to get extra data: %w", err)
+	}
+	if len(extraDataResult) != 1 {
+		return false, fmt.Errorf("unexpected number of return values for extraData")
+	}
+	extraData, ok := extraDataResult[0].([]byte)
+	if !ok {
+		return false, fmt.Errorf("invalid extra data returned")
+	}
+
+	// Verify with factory
+	var factoryResult []interface{}
+	if err := factory.Call(&bind.CallOpts{Context: ctx}, &factoryResult, "games", gameType, rootClaim, extraData); err != nil {
+		return false, fmt.Errorf("failed to verify game with factory: %w", err)
+	}
+	if len(factoryResult) != 2 {
+		return false, fmt.Errorf("unexpected number of return values from factory")
+	}
+
+	proxy, ok := factoryResult[0].(common.Address)
+	if !ok {
+		return false, fmt.Errorf("invalid proxy address returned")
+	}
+
+	timestamp, ok := factoryResult[1].(uint64)
+	if !ok {
+		return false, fmt.Errorf("invalid timestamp returned")
+	}
+
+	isValid := proxy == gameAddr && timestamp > 0
+
+	// Cache the result
+	v.mu.Lock()
+	v.cache[gameAddr] = isValid
+	v.mu.Unlock()
+
+	return isValid, nil
+}
+
 func (m *Monitor) Run(ctx context.Context) {
+	// Initialize starting block
 	currentBlock := m.startBlock
-	var err error
+	if currentBlock == 0 {
+		var err error
+		currentBlock, err = m.client.BlockNumber(ctx)
+		if err != nil {
+			m.log.Error("failed to get initial block number", "err", err)
+			return
+		}
+		m.log.Info("starting from latest block", "number", currentBlock)
+	}
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			m.log.Info("monitor stopping")
 			return
-		default:
-			// Get current block if not specified
-			if currentBlock == 0 {
-				currentBlock, err = m.client.BlockNumber(ctx)
-				if err != nil {
-					m.log.Error("failed to get block number", "err", err)
-					continue
-				}
-			}
-
-			// Update dispute game watchers
-			for _, watcher := range m.factoryWatchers {
-				if err := m.updateDisputeGames(ctx, watcher, currentBlock); err != nil {
-					m.log.Error("failed to update dispute games", "err", err)
-					continue
-				}
-			}
-
-			block, err := m.client.BlockByNumber(ctx, big.NewInt(int64(currentBlock)))
+		case <-ticker.C:
+			// Get latest block number
+			latestBlock, err := m.client.BlockNumber(ctx)
 			if err != nil {
-				m.log.Error("failed to get block", "number", currentBlock, "err", err)
-				m.unexpectedRpcErrors.WithLabelValues("monitor", "getBlock").Inc()
+				m.log.Error("failed to get latest block number", "err", err)
 				continue
 			}
 
-			for _, tx := range block.Transactions() {
-				if tx.To() == nil {
-					continue
+			// Process blocks until we catch up to head
+			for currentBlock <= latestBlock {
+				if err := m.processBlock(ctx, currentBlock); err != nil {
+					m.log.Error("failed to process block", "number", currentBlock, "err", err)
+					// Only increment error counter for unexpected errors
+					if !errors.Is(err, ethereum.NotFound) {
+						m.unexpectedRpcErrors.WithLabelValues("monitor", "getBlock").Inc()
+					}
+					break
 				}
-
-				if config, exists := m.watchConfigs[*tx.To()]; exists {
-					m.processTx(tx, config)
-				}
+				currentBlock++
 			}
-
-			currentBlock++
 		}
 	}
 }
 
-func (m *Monitor) updateDisputeGames(ctx context.Context, watcher *DisputeGameWatcher, currentBlock uint64) error {
-	contractABI, err := abi.JSON(strings.NewReader(disputeGameFactoryABI))
+func (m *Monitor) processBlock(ctx context.Context, blockNum uint64) error {
+	block, err := m.client.BlockByNumber(ctx, big.NewInt(int64(blockNum)))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get block: %w", err)
 	}
 
-	// Query logs since last check
-	query := ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(watcher.lastBlock),
-		ToBlock:   new(big.Int).SetUint64(currentBlock),
-		Addresses: []common.Address{watcher.factory},
-	}
-
-	logs, err := m.client.FilterLogs(ctx, query)
-	if err != nil {
-		return err
-	}
-
-	for _, vLog := range logs {
-		event := struct {
-			DisputeProxy common.Address
-		}{}
-		err := contractABI.UnpackIntoInterface(&event, "DisputeGameCreated", vLog.Data)
-		if err != nil {
-			m.log.Error("failed to unpack event", "err", err)
+	for _, tx := range block.Transactions() {
+		if tx.To() == nil {
 			continue
 		}
 
-		watcher.mu.Lock()
-		watcher.allowedGames[event.DisputeProxy] = true
-		watcher.mu.Unlock()
+		if config, exists := m.watchConfigs[*tx.To()]; exists {
+			m.processTx(ctx, tx, config)
+		}
 	}
 
-	watcher.lastBlock = currentBlock
 	return nil
 }
 
-func (m *Monitor) processTx(tx *types.Transaction, config WatchConfig) {
+func (m *Monitor) isAddressAllowed(ctx context.Context, addr common.Address) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.allowedAddrs[addr] {
+		return true
+	}
+
+	// Check if address is an allowed dispute game
+	for _, verifier := range m.gameVerifiers {
+		isValid, err := verifier.verifyGame(ctx, m.client, addr)
+		if err != nil {
+			m.log.Error("failed to verify dispute game", "addr", addr, "err", err)
+			continue
+		}
+		if isValid {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m *Monitor) processTx(ctx context.Context, tx *types.Transaction, config WatchConfig) {
 	from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
 	if err != nil {
 		m.log.Error("failed to get transaction sender", "err", err)
@@ -273,7 +383,7 @@ func (m *Monitor) processTx(tx *types.Transaction, config WatchConfig) {
 	m.ethSpent.WithLabelValues(from.String()).Add(ethFloat)
 
 	// Check if sender is authorized
-	if !m.isAddressAllowed(from) {
+	if !m.isAddressAllowed(ctx, from) {
 		m.unauthorizedTx.WithLabelValues(
 			watchAddr.String(),
 			from.String()).Inc()
@@ -293,30 +403,6 @@ func (m *Monitor) processTx(tx *types.Transaction, config WatchConfig) {
 			from.String(),
 			threshold.String()).Inc()
 	}
-}
-
-func (m *Monitor) isAddressAllowed(addr common.Address) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	if m.allowedAddrs[addr] {
-		return true
-	}
-
-	// Check if address is an allowed dispute game
-	for _, watcher := range m.factoryWatchers {
-		if watcher.isGameAllowed(addr) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (w *DisputeGameWatcher) isGameAllowed(addr common.Address) bool {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.allowedGames[addr]
 }
 
 func (m *Monitor) Close(ctx context.Context) error {

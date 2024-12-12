@@ -9,7 +9,7 @@ replace github.com/ethereum/go-ethereum => github.com/ethereum-optimism/op-geth 
 require (
 	github.com/ethereum-optimism/optimism v1.10.0
 	github.com/ethereum-optimism/optimism/op-bindings v0.10.14
-	github.com/ethereum/go-ethereum v1.14.11
+	github.com/ethereum/go-ethereum v1.14.12
 	github.com/hashicorp/golang-lru v0.5.0
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.20.5

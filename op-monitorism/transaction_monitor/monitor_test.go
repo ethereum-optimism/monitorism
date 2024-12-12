@@ -38,7 +38,7 @@ func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
 
 	ctx := context.Background()
 	logger := log.New()
-	anvilRunner, err := anvil.New("", logger)
+	anvilRunner, err := anvil.New("http://localhost:8545", logger)
 	require.NoError(t, err)
 
 	err = anvilRunner.Start(ctx)
@@ -151,7 +151,7 @@ func TestTransactionMonitoring(t *testing.T) {
 	})
 }
 
-func TestDisputeGameWatcher(t *testing.T) {
+func TestDisputeGameVerifier(t *testing.T) {
 	ctx := context.Background()
 	_, _, rpc := setupAnvil(t)
 
@@ -176,10 +176,10 @@ func TestDisputeGameWatcher(t *testing.T) {
 	require.NoError(t, err)
 	defer monitor.Close(ctx)
 
-	// Verify the watcher is set up correctly
-	require.Contains(t, monitor.factoryWatchers, factory)
-	require.NotNil(t, monitor.factoryWatchers[factory].allowedGames)
-	require.Equal(t, factory, monitor.factoryWatchers[factory].factory)
+	// Verify the verifier is set up correctly
+	require.Contains(t, monitor.gameVerifiers, factory)
+	require.NotNil(t, monitor.gameVerifiers[factory].cache)
+	require.Equal(t, factory, monitor.gameVerifiers[factory].factory)
 }
 
 func getCounterValue(t *testing.T, counter *prometheus.CounterVec, labelValues ...string) float64 {
