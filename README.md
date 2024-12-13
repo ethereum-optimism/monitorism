@@ -9,7 +9,7 @@
     - [Multisig Monitor](#multisig-monitor)
     - [Drippie Monitor](#drippie-monitor)
     - [Secrets Monitor](#secrets-monitor)
-    - [Faultproof Withdrawals](#secrets-monitor)
+    - [Faultproof Withdrawals](#faultproof-withdrawal)
   - [Defender Components](#defender-components)
     - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
   - [CLI &amp; Docs](#cli--docs)
