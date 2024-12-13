@@ -39,7 +39,6 @@ type CheckConfig struct {
 type WatchConfig struct {
 	Address    common.Address      `yaml:"address"`
 	Filters    []CheckConfig       `yaml:"filters"`
-	Thresholds map[string]*big.Int `yaml:"thresholds"`
 }
 
 type DisputeGameVerifier struct {
@@ -62,8 +61,8 @@ type Monitor struct {
 	// metrics
 	transactions        *prometheus.CounterVec
 	unauthorizedTx      *prometheus.CounterVec
-	thresholdExceededTx *prometheus.CounterVec
 	ethSpent           *prometheus.CounterVec
+    blocksProcessed    *prometheus.CounterVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
@@ -105,9 +104,9 @@ const DisputeGameABI = `[{
 }]`
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
-	client, err := ethclient.Dial(cfg.L1NodeUrl)
+	client, err := ethclient.Dial(cfg.NodeUrl)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial L1 node: %w", err)
+		return nil, fmt.Errorf("failed to dial node: %w", err)
 	}
 
 	factoryABI, err := abi.JSON(strings.NewReader(DisputeGameFactoryABI))
@@ -134,7 +133,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 				Name:      "transactions_total",
 				Help:      "Total number of transactions",
 			},
-			[]string{"watch_address", "from", "to", "status"},
+			[]string{"from"},
 		),
 
 		unauthorizedTx: m.NewCounterVec(
@@ -143,16 +142,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 				Name:      "unauthorized_transactions_total",
 				Help:      "Number of transactions from unauthorized addresses",
 			},
-			[]string{"watch_address", "from"},
-		),
-
-		thresholdExceededTx: m.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: MetricsNamespace,
-				Name:      "threshold_exceeded_transactions_total",
-				Help:      "Number of transactions exceeding allowed threshold",
-			},
-			[]string{"watch_address", "from", "threshold"},
+			[]string{"from"},
 		),
 
 		ethSpent: m.NewCounterVec(
@@ -163,6 +153,15 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			},
 			[]string{"address"},
 		),
+
+        blocksProcessed: m.NewCounterVec(
+            prometheus.CounterOpts{
+                Namespace: MetricsNamespace,
+                Name:      "blocks_processed_total",
+                Help:      "Number of blocks processed",
+            },
+            []string{"number"},
+        ),
 
 		unexpectedRpcErrors: m.NewCounterVec(
 			prometheus.CounterOpts{
@@ -313,7 +312,6 @@ func (m *Monitor) Run(ctx context.Context) {
 			for currentBlock <= latestBlock {
 				if err := m.processBlock(ctx, currentBlock); err != nil {
 					m.log.Error("failed to process block", "number", currentBlock, "err", err)
-					// Only increment error counter for unexpected errors
 					if !errors.Is(err, ethereum.NotFound) {
 						m.unexpectedRpcErrors.WithLabelValues("monitor", "getBlock").Inc()
 					}
@@ -331,12 +329,15 @@ func (m *Monitor) processBlock(ctx context.Context, blockNum uint64) error {
 		return fmt.Errorf("failed to get block: %w", err)
 	}
 
-	for _, tx := range block.Transactions() {
-		if tx.To() == nil {
-			continue
-		}
+    m.blocksProcessed.WithLabelValues(fmt.Sprint(blockNum)).Inc()
 
-		if config, exists := m.watchConfigs[*tx.To()]; exists {
+	for _, tx := range block.Transactions() {
+        from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
+	    if err != nil {
+		    return fmt.Errorf("failed to find tx sender: %w", err)
+    	}
+
+		if config, exists := m.watchConfigs[from]; exists {
 			m.processTx(ctx, tx, config)
 		}
 	}
@@ -368,41 +369,31 @@ func (m *Monitor) isAddressAllowed(ctx context.Context, addr common.Address) boo
 }
 
 func (m *Monitor) processTx(ctx context.Context, tx *types.Transaction, config WatchConfig) {
-	from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
+	watchAddr, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
 	if err != nil {
 		m.log.Error("failed to get transaction sender", "err", err)
 		return
 	}
 
-	watchAddr := *tx.To()
+	toAddr := *tx.To()
 
 	// Track cumulative ETH spent
 	weiValue := new(big.Float).SetInt(tx.Value())
 	ethValue := new(big.Float).Quo(weiValue, big.NewFloat(1e18))
 	ethFloat, _ := ethValue.Float64()
-	m.ethSpent.WithLabelValues(from.String()).Add(ethFloat)
+	m.ethSpent.WithLabelValues(watchAddr.String()).Add(ethFloat)
 
 	// Check if sender is authorized
-	if !m.isAddressAllowed(ctx, from) {
+	if !m.isAddressAllowed(ctx, toAddr) {
 		m.unauthorizedTx.WithLabelValues(
-			watchAddr.String(),
-			from.String()).Inc()
+			watchAddr.String()).Inc()
 		return
 	}
 
 	m.transactions.WithLabelValues(
 		watchAddr.String(),
-		from.String(),
 		tx.To().String(),
 		"processed").Inc()
-
-	// Check threshold
-	if threshold, ok := config.Thresholds[from.Hex()]; ok && tx.Value().Cmp(threshold) > 0 {
-		m.thresholdExceededTx.WithLabelValues(
-			watchAddr.String(),
-			from.String(),
-			threshold.String()).Inc()
-	}
 }
 
 func (m *Monitor) Close(ctx context.Context) error {

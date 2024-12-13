@@ -29,6 +29,7 @@ var (
 	factoryAddress   = common.HexToAddress("0x90F79bf6EB2c4f870365E785982E1f101E93b906")
 
 	// Private keys
+    watchedKey, _      = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
 	allowedKey, _      = crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
 	unauthorizedKey, _ = crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
 )
@@ -85,11 +86,10 @@ func TestTransactionMonitoring(t *testing.T) {
 
 	_, client, rpc := setupAnvil(t)
 
-	threshold := big.NewInt(params.Ether)
 	factory := factoryAddress
 
 	cfg := CLIConfig{
-		L1NodeUrl:  rpc,
+		NodeUrl:  rpc,
 		StartBlock: 0,
 		WatchConfigs: []WatchConfig{{
 			Address: watchedAddress,
@@ -107,9 +107,6 @@ func TestTransactionMonitoring(t *testing.T) {
 					},
 				},
 			},
-			Thresholds: map[string]*big.Int{
-				allowedAddress.Hex(): threshold,
-			},
 		}},
 	}
 
@@ -121,33 +118,13 @@ func TestTransactionMonitoring(t *testing.T) {
 	go monitor.Run(ctx)
 	defer monitor.Close(ctx)
 
-	t.Run("allowed address below threshold", func(t *testing.T) {
-		sendTx(t, ctx, client, allowedKey, watchedAddress, big.NewInt(params.Ether/2))
-		// Wait for monitor to process
-		time.Sleep(2 * time.Second)
-
-		require.Equal(t, float64(1), getCounterValue(t, monitor.transactions, watchedAddress.Hex(), allowedAddress.Hex(), watchedAddress.Hex(), "processed"))
-		require.Equal(t, float64(0), getCounterValue(t, monitor.thresholdExceededTx, watchedAddress.Hex(), allowedAddress.Hex(), threshold.String()))
-		require.Equal(t, float64(0.5), getCounterValue(t, monitor.ethSpent, allowedAddress.Hex()))
-	})
-
-	t.Run("allowed address above threshold", func(t *testing.T) {
-		sendTx(t, ctx, client, allowedKey, watchedAddress, big.NewInt(params.Ether*2))
-		// Wait for monitor to process
-		time.Sleep(2 * time.Second)
-
-		require.Equal(t, float64(2), getCounterValue(t, monitor.transactions, watchedAddress.Hex(), allowedAddress.Hex(), watchedAddress.Hex(), "processed"))
-		require.Equal(t, float64(1), getCounterValue(t, monitor.thresholdExceededTx, watchedAddress.Hex(), allowedAddress.Hex(), threshold.String()))
-		require.Equal(t, float64(2.5), getCounterValue(t, monitor.ethSpent, allowedAddress.Hex()))
-	})
-
 	t.Run("unauthorized address", func(t *testing.T) {
-		sendTx(t, ctx, client, unauthorizedKey, watchedAddress, big.NewInt(params.Ether/2))
+		sendTx(t, ctx, client, watchedKey, unauthorizedAddr, big.NewInt(params.Ether/2))
 		// Wait for monitor to process
 		time.Sleep(2 * time.Second)
 
-		require.Equal(t, float64(1), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex(), unauthorizedAddr.Hex()))
-		require.Equal(t, float64(0.5), getCounterValue(t, monitor.ethSpent, unauthorizedAddr.Hex()))
+		require.Equal(t, float64(1), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex()))
+		require.Equal(t, float64(0.5), getCounterValue(t, monitor.ethSpent, watchedAddress.Hex()))
 	})
 }
 
@@ -158,7 +135,7 @@ func TestDisputeGameVerifier(t *testing.T) {
 	factory := factoryAddress
 
 	cfg := CLIConfig{
-		L1NodeUrl:  rpc,
+		NodeUrl:  rpc,
 		StartBlock: 0,
 		WatchConfigs: []WatchConfig{{
 			Address: watchedAddress,

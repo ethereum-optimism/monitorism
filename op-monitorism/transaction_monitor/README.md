@@ -17,7 +17,7 @@ A service that monitors Ethereum transactions for specific addresses and raises 
 Configuration is provided via YAML file. Example:
 
 ```yaml
-l1_node_url: "http://localhost:8545"
+node_url: "http://localhost:8545"
 start_block: 0
 watch_configs:
   - address: "0xAE0b5DF2dFaaCD6EB6c1c56Cc710f529F31C6C44"
@@ -48,7 +48,7 @@ The service exports the following Prometheus metrics:
 
 ```bash
 monitorism \
-  --l1.node.url=http://localhost:8545 \
+  --node.url=http://localhost:8545 \
   --config.file=config.yaml
 ```
 

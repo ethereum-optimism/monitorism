@@ -10,20 +10,20 @@ import (
 )
 
 const (
-	L1NodeURLFlagName  = "l1.node.url"
+	NodeURLFlagName  = "node.url"
 	ConfigFileFlagName = "config.file"
 	StartBlockFlagName = "start.block"
 )
 
 type CLIConfig struct {
-	L1NodeUrl    string        `yaml:"l1_node_url"`
+	NodeUrl    string        `yaml:"node_url"`
 	StartBlock   uint64        `yaml:"start_block"`
 	WatchConfigs []WatchConfig `yaml:"watch_configs"`
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		L1NodeUrl:  ctx.String(L1NodeURLFlagName),
+		NodeUrl:  ctx.String(NodeURLFlagName),
 		StartBlock: ctx.Uint64(StartBlockFlagName),
 	}
 
@@ -70,10 +70,10 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 func CLIFlags(envPrefix string) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
-			Name:    L1NodeURLFlagName,
-			Usage:   "L1 Node URL",
+			Name:    NodeURLFlagName,
+			Usage:   "Node URL",
 			Value:   "http://localhost:8545",
-			EnvVars: opservice.PrefixEnvVar(envPrefix, "L1_NODE_URL"),
+			EnvVars: opservice.PrefixEnvVar(envPrefix, "NODE_URL"),
 		},
 		&cli.StringFlag{
 			Name:     ConfigFileFlagName,
