@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 	"testing"
+    "fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -157,6 +158,156 @@ func TestDisputeGameVerifier(t *testing.T) {
 	require.Contains(t, monitor.gameVerifiers, factory)
 	require.NotNil(t, monitor.gameVerifiers[factory].cache)
 	require.Equal(t, factory, monitor.gameVerifiers[factory].factory)
+}
+
+func TestMonitorMetrics(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, client, rpc := setupAnvil(t)
+
+	factory := factoryAddress
+
+	cfg := CLIConfig{
+		NodeUrl:  rpc,
+		StartBlock: 0,
+		WatchConfigs: []WatchConfig{{
+			Address: watchedAddress,
+			Filters: []CheckConfig{
+				{
+					Type: ExactMatchCheck,
+					Params: map[string]interface{}{
+						"match": allowedAddress.Hex(),
+					},
+				},
+				{
+					Type: DisputeGameCheck,
+					Params: map[string]interface{}{
+						"disputeGameFactory": factory.Hex(),
+					},
+				},
+			},
+		}},
+	}
+
+	registry := opmetrics.NewRegistry()
+	monitor, err := NewMonitor(ctx, log.New(), opmetrics.With(registry), cfg)
+	require.NoError(t, err)
+
+	// Start monitor in background
+	go monitor.Run(ctx)
+	defer monitor.Close(ctx)
+
+	t.Run("allowed address transaction", func(t *testing.T) {
+		// Send transaction to allowed address
+		sendTx(t, ctx, client, watchedKey, allowedAddress, big.NewInt(params.Ether))
+		time.Sleep(2 * time.Second)
+
+		// Check metrics
+		require.Equal(t, float64(1), getCounterValue(t, monitor.transactions, watchedAddress.Hex()))
+		require.Equal(t, float64(1.0), getCounterValue(t, monitor.ethSpent, watchedAddress.Hex()))
+		require.Equal(t, float64(0), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex()))
+	})
+
+	t.Run("multiple blocks processed", func(t *testing.T) {
+		// Send multiple transactions to generate blocks
+		for i := 0; i < 3; i++ {
+			sendTx(t, ctx, client, watchedKey, allowedAddress, big.NewInt(params.Ether/10))
+			time.Sleep(500 * time.Millisecond)
+		}
+		time.Sleep(2 * time.Second)
+
+		// Get the latest block number
+		blockNum, err := client.BlockNumber(ctx)
+		require.NoError(t, err)
+
+		// Check if blocks were processed
+		total := float64(0)
+		for i := uint64(0); i <= blockNum; i++ {
+			total += getCounterValue(t, monitor.blocksProcessed, fmt.Sprint(i))
+		}
+		require.Greater(t, total, float64(0), "should have processed some blocks")
+	})
+
+	t.Run("RPC errors handling", func(t *testing.T) {
+		// Create a monitor with invalid RPC URL to trigger errors
+		badCfg := cfg
+		badCfg.NodeUrl = "http://nonexistent:8545"
+		
+		badMonitor, err := NewMonitor(ctx, log.New(), opmetrics.With(registry), badCfg)
+		require.NoError(t, err)
+		
+		go badMonitor.Run(ctx)
+		time.Sleep(2 * time.Second)
+		
+		// Should have recorded some RPC errors
+		require.Greater(t, 
+			getCounterValue(t, badMonitor.unexpectedRpcErrors, "monitor", "blockNumber"),
+			float64(0),
+			"should have recorded RPC errors")
+		
+		badMonitor.Close(ctx)
+	})
+
+	t.Run("multiple unauthorized transactions", func(t *testing.T) {
+		// Send multiple unauthorized transactions
+		for i := 0; i < 3; i++ {
+			sendTx(t, ctx, client, watchedKey, unauthorizedAddr, big.NewInt(params.Ether/4))
+			time.Sleep(500 * time.Millisecond)
+		}
+		time.Sleep(2 * time.Second)
+
+		require.Equal(t, float64(3), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex()))
+		require.Equal(t, float64(0.75), getCounterValue(t, monitor.ethSpent, watchedAddress.Hex()))
+	})
+}
+
+// TestDisputeGameVerifierComprehensive tests various scenarios for the dispute game verifier
+func TestDisputeGameVerifierComprehensive(t *testing.T) {
+	ctx := context.Background()
+	_, client, rpc := setupAnvil(t)
+
+	factory := factoryAddress
+
+	cfg := CLIConfig{
+		NodeUrl:  rpc,
+		StartBlock: 0,
+		WatchConfigs: []WatchConfig{{
+			Address: watchedAddress,
+			Filters: []CheckConfig{{
+				Type: DisputeGameCheck,
+				Params: map[string]interface{}{
+					"disputeGameFactory": factory.Hex(),
+				},
+			}},
+		}},
+	}
+
+	registry := opmetrics.NewRegistry()
+	monitor, err := NewMonitor(ctx, log.New(), opmetrics.With(registry), cfg)
+	require.NoError(t, err)
+	defer monitor.Close(ctx)
+
+	t.Run("cache behavior", func(t *testing.T) {
+		verifier := monitor.gameVerifiers[factory]
+		require.NotNil(t, verifier)
+
+		// First call should populate cache
+		gameAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+		isValid, err := verifier.verifyGame(ctx, client, gameAddr)
+		require.NoError(t, err)
+		
+		// Second call should use cache
+		cachedValid, err := verifier.verifyGame(ctx, client, gameAddr)
+		require.NoError(t, err)
+		require.Equal(t, isValid, cachedValid)
+
+		// Verify cache was used
+		verifier.mu.RLock()
+		_, exists := verifier.cache[gameAddr]
+		verifier.mu.RUnlock()
+		require.True(t, exists)
+	})
 }
 
 func getCounterValue(t *testing.T, counter *prometheus.CounterVec, labelValues ...string) float64 {

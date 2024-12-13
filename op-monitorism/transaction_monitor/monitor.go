@@ -249,6 +249,7 @@ func (m *Monitor) Run(ctx context.Context) {
 		currentBlock, err = m.client.BlockNumber(ctx)
 		if err != nil {
 			m.log.Error("failed to get initial block number", "err", err)
+            m.unexpectedRpcErrors.WithLabelValues("monitor", "blockNumber").Inc()
 			return
 		}
 		m.log.Info("starting from latest block", "number", currentBlock)
@@ -266,7 +267,7 @@ func (m *Monitor) Run(ctx context.Context) {
 			// Get latest block number
 			latestBlock, err := m.client.BlockNumber(ctx)
 			if err != nil {
-				m.log.Error("failed to get latest block number", "err", err)
+				m.unexpectedRpcErrors.WithLabelValues("monitor", "blockNumber").Inc()
 				continue
 			}
 
@@ -354,7 +355,7 @@ func (m *Monitor) processTx(ctx context.Context, tx *types.Transaction, config W
 
 	m.transactions.WithLabelValues(
 		watchAddr.String(),
-		tx.To().String(),
+		toAddr.String(),
 		"processed").Inc()
 }
 
