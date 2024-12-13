@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"sync"
 	"time"
 
@@ -66,57 +65,10 @@ type Monitor struct {
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
-// DisputeGameFactoryABI contains just the games() function we need
-const DisputeGameFactoryABI = `[{
-    "inputs": [
-        {"internalType": "uint32", "name": "_gameType", "type": "uint32"},
-        {"internalType": "bytes32", "name": "_rootClaim", "type": "bytes32"},
-        {"internalType": "bytes", "name": "_extraData", "type": "bytes"}
-    ],
-    "name": "games",
-    "outputs": [
-        {"internalType": "address", "name": "proxy_", "type": "address"},
-        {"internalType": "uint64", "name": "timestamp_", "type": "uint64"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-}]`
-
-// DisputeGameABI contains just the functions we need from the game contract
-const DisputeGameABI = `[{
-    "inputs": [],
-    "name": "gameType",
-    "outputs": [{"internalType": "uint32", "name": "", "type": "uint32"}],
-    "stateMutability": "view",
-    "type": "function"
-}, {
-    "inputs": [],
-    "name": "rootClaim",
-    "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
-    "stateMutability": "pure",
-    "type": "function"
-}, {
-    "inputs": [],
-    "name": "extraData",
-    "outputs": [{"internalType": "bytes", "name": "", "type": "bytes"}],
-    "stateMutability": "pure",
-    "type": "function"
-}]`
-
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	client, err := ethclient.Dial(cfg.NodeUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial node: %w", err)
-	}
-
-	factoryABI, err := abi.JSON(strings.NewReader(DisputeGameFactoryABI))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse factory ABI: %w", err)
-	}
-
-	gameABI, err := abi.JSON(strings.NewReader(DisputeGameABI))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse game ABI: %w", err)
 	}
 
 	mon := &Monitor{
@@ -188,8 +140,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 					factoryAddr := common.HexToAddress(factory)
 					verifier := &DisputeGameVerifier{
 						factory:    factoryAddr,
-						factoryABI: factoryABI,
-						gameABI:    gameABI,
 						cache:      make(map[common.Address]bool),
 					}
 					mon.gameVerifiers[factoryAddr] = verifier
@@ -210,8 +160,20 @@ func (v *DisputeGameVerifier) verifyGame(ctx context.Context, client *ethclient.
 	v.mu.RUnlock()
 
 	// Create contract bindings
-	game := bind.NewBoundContract(gameAddr, v.gameABI, client, client, client)
-	factory := bind.NewBoundContract(v.factory, v.factoryABI, client, client, client)
+	disputeGameABI, err := DisputeGameMetaData.GetAbi()
+    
+    if err != nil {
+        return false, fmt.Errorf("failed to get dispute game ABI: %w", err)
+    }
+
+    disputeGameFactoryABI, err := DisputeGameFactoryMetaData.GetAbi()
+
+    if err != nil {
+        return false, fmt.Errorf("failed to get dispute game factory ABI: %w", err)
+    }
+	
+    game := bind.NewBoundContract(gameAddr, *disputeGameABI, client, client, client)
+	factory := bind.NewBoundContract(v.factory, *disputeGameFactoryABI, client, client, client)
 
 	// Get game parameters
 	var gameTypeResult []interface{}
