@@ -36,8 +36,8 @@ type CheckConfig struct {
 }
 
 type WatchConfig struct {
-	Address    common.Address      `yaml:"address"`
-	Filters    []CheckConfig       `yaml:"filters"`
+	Address common.Address `yaml:"address"`
+	Filters []CheckConfig  `yaml:"filters"`
 }
 
 type DisputeGameVerifier struct {
@@ -61,7 +61,7 @@ type Monitor struct {
 	transactions        *prometheus.CounterVec
 	unauthorizedTx      *prometheus.CounterVec
 	ethSpent           *prometheus.CounterVec
-    blocksProcessed    *prometheus.CounterVec
+	blocksProcessed    *prometheus.CounterVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
@@ -85,7 +85,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 				Name:      "transactions_total",
 				Help:      "Total number of transactions",
 			},
-			[]string{"from"},
+			[]string{"from", "to", "status"},
 		),
 
 		unauthorizedTx: m.NewCounterVec(
@@ -106,14 +106,14 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			[]string{"address"},
 		),
 
-        blocksProcessed: m.NewCounterVec(
-            prometheus.CounterOpts{
-                Namespace: MetricsNamespace,
-                Name:      "blocks_processed_total",
-                Help:      "Number of blocks processed",
-            },
-            []string{"number"},
-        ),
+		blocksProcessed: m.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: MetricsNamespace,
+				Name:      "blocks_processed_total",
+				Help:      "Number of blocks processed",
+			},
+			[]string{"number"},
+		),
 
 		unexpectedRpcErrors: m.NewCounterVec(
 			prometheus.CounterOpts{
@@ -139,8 +139,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 				if factory, ok := filter.Params["disputeGameFactory"].(string); ok {
 					factoryAddr := common.HexToAddress(factory)
 					verifier := &DisputeGameVerifier{
-						factory:    factoryAddr,
-						cache:      make(map[common.Address]bool),
+						factory: factoryAddr,
+						cache:   make(map[common.Address]bool),
 					}
 					mon.gameVerifiers[factoryAddr] = verifier
 				}
@@ -161,18 +161,16 @@ func (v *DisputeGameVerifier) verifyGame(ctx context.Context, client *ethclient.
 
 	// Create contract bindings
 	disputeGameABI, err := DisputeGameMetaData.GetAbi()
-    
-    if err != nil {
-        return false, fmt.Errorf("failed to get dispute game ABI: %w", err)
-    }
+	if err != nil {
+		return false, fmt.Errorf("failed to get dispute game ABI: %w", err)
+	}
 
-    disputeGameFactoryABI, err := DisputeGameFactoryMetaData.GetAbi()
+	disputeGameFactoryABI, err := DisputeGameFactoryMetaData.GetAbi()
+	if err != nil {
+		return false, fmt.Errorf("failed to get dispute game factory ABI: %w", err)
+	}
 
-    if err != nil {
-        return false, fmt.Errorf("failed to get dispute game factory ABI: %w", err)
-    }
-	
-    game := bind.NewBoundContract(gameAddr, *disputeGameABI, client, client, client)
+	game := bind.NewBoundContract(gameAddr, *disputeGameABI, client, client, client)
 	factory := bind.NewBoundContract(v.factory, *disputeGameFactoryABI, client, client, client)
 
 	// Get game parameters
@@ -249,7 +247,7 @@ func (m *Monitor) Run(ctx context.Context) {
 		currentBlock, err = m.client.BlockNumber(ctx)
 		if err != nil {
 			m.log.Error("failed to get initial block number", "err", err)
-            m.unexpectedRpcErrors.WithLabelValues("monitor", "blockNumber").Inc()
+			m.unexpectedRpcErrors.WithLabelValues("monitor", "blockNumber").Inc()
 			return
 		}
 		m.log.Info("starting from latest block", "number", currentBlock)
@@ -292,13 +290,13 @@ func (m *Monitor) processBlock(ctx context.Context, blockNum uint64) error {
 		return fmt.Errorf("failed to get block: %w", err)
 	}
 
-    m.blocksProcessed.WithLabelValues(fmt.Sprint(blockNum)).Inc()
+	m.blocksProcessed.WithLabelValues(fmt.Sprint(blockNum)).Inc()
 
 	for _, tx := range block.Transactions() {
-        from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
-	    if err != nil {
-		    return fmt.Errorf("failed to find tx sender: %w", err)
-    	}
+		from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
+		if err != nil {
+			return fmt.Errorf("failed to find tx sender: %w", err)
+		}
 
 		if config, exists := m.watchConfigs[from]; exists {
 			m.processTx(ctx, tx, config)
@@ -348,8 +346,7 @@ func (m *Monitor) processTx(ctx context.Context, tx *types.Transaction, config W
 
 	// Check if sender is authorized
 	if !m.isAddressAllowed(ctx, toAddr) {
-		m.unauthorizedTx.WithLabelValues(
-			watchAddr.String()).Inc()
+		m.unauthorizedTx.WithLabelValues(watchAddr.String()).Inc()
 		return
 	}
 
