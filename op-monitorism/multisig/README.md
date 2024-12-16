@@ -1,6 +1,6 @@
 ### Multisig Monitor
 
-The multisig monitor reports the paused status of the `OptimismPortal` contract. If set, the latest nonce of the configued `Safe` address. And also if set, the latest presigned nonce stored in One Password. The latest presigned nonce is identifyed by looking for items in the configued vault that follow a `ready-<nonce>.json` name. The highest nonce of this item name format is reported.
+The multisig monitor reports the paused status of the `OptimismPortal` contract. If set, the latest nonce of the configured `Safe` address. And also if set, the latest presigned nonce stored in One Password. The latest presigned nonce is identified by looking for items in the configured vault that follow a `ready-<nonce>.json` name. The highest nonce of this item name format is reported.
 
 - **NOTE**: In order to read from one password, the `OP_SERVICE_ACCOUNT_TOKEN` environment variable must be set granting the process permission to access the specified vault.
 
