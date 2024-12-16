@@ -41,7 +41,7 @@ func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
 	ctx := context.Background()
 	logger := log.New()
 
-    anvilRunner, err := anvil.New("http://127.0.1:8545", logger)
+	anvilRunner, err := anvil.New("http://127.0.1:8545", logger)
 	require.NoError(t, err)
 
 	err = anvilRunner.Start(ctx)
@@ -195,38 +195,38 @@ func TestTransactionMonitoring(t *testing.T) {
 	})
 }
 
-func TestDisputeGameVerifier(t *testing.T) {
+func TestChecks(t *testing.T) {
 	ctx := context.Background()
-	_, _, rpc := setupAnvil(t)
+	_, client, _ := setupAnvil(t)
 
-	factory := factoryAddress
+	t.Run("ExactMatchCheck", func(t *testing.T) {
+		params := map[string]interface{}{
+			"match": allowedAddress.Hex(),
+		}
+		
+		// Test matching address
+		isValid, err := CheckExactMatch(ctx, client, allowedAddress, params)
+		require.NoError(t, err)
+		require.True(t, isValid)
 
-	cfg := CLIConfig{
-		NodeUrl:     rpc,
-		StartBlock:  0,
-		WatchConfigs: []WatchConfig{{
-			Address: watchedAddress,
-			Filters: []CheckConfig{{
-				Type: DisputeGameCheck,
-				Params: map[string]interface{}{
-					"disputeGameFactory": factory.Hex(),
-				},
-			}},
-		}},
-	}
+		// Test non-matching address
+		isValid, err = CheckExactMatch(ctx, client, unauthorizedAddr, params)
+		require.NoError(t, err)
+		require.False(t, isValid)
+	})
 
-	registry := opmetrics.NewRegistry()
-	monitor, err := NewMonitor(ctx, log.New(), opmetrics.With(registry), cfg)
-	require.NoError(t, err)
+	t.Run("DisputeGameCheck", func(t *testing.T) {
+		params := map[string]interface{}{
+			"disputeGameFactory": factoryAddress.Hex(),
+		}
 
-    go monitor.Run(ctx)
-	defer monitor.Close(ctx)
+		// Test the check with non-contract address (should return false)
+		isValid, err := CheckDisputeGame(ctx, client, allowedAddress, params)
+		require.NoError(t, err)
+		require.False(t, isValid)
 
-	t.Run("verifier setup", func(t *testing.T) {
-		// Verify the verifier is set up correctly
-		require.Contains(t, monitor.gameVerifiers, factory)
-		require.NotNil(t, monitor.gameVerifiers[factory].cache)
-		require.Equal(t, factory, monitor.gameVerifiers[factory].factory)
+		// Note: Testing with actual dispute game contract would require deploying
+		// contracts and is beyond the scope of this unit test
 	})
 }
 
