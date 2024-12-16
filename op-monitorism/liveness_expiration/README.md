@@ -1,7 +1,7 @@
 # Liveness Expiration Monitoring
 
-This Liveness expiration module is a monitoring dedicated for the safes of the Optimism network.
-Ensuring that owners that operates the safes and performs any important actions are still actives enough.
+This Liveness expiration module is a monitoring dedicated to the safes of the Optimism network.
+Ensuring that owners that operate the safes and perform any important actions are still active enough.
 
 ![ab27497cea05fbd51b7b1c2ecde5bc69307ac0f27349f6bba4f3f21423116071](https://github.com/ethereum-optimism/monitorism/assets/23560242/af7a7e29-fff5-4df3-82f0-94c2f28fde84)
 
@@ -35,7 +35,7 @@ OPTIONS:
 
 ### Informations
 
-This tools allows the monitoring of multiples metrics like:
+This tool allows the monitoring of multiple metrics like:
 
 `blockTimestamp`: The block Timestamp of the latest block number on L1.
 `highestBlockNumber`: The lastest block number height on L1.
