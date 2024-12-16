@@ -1,5 +1,5 @@
 # Purpose of the Service
-Withdrawal has the following purpose:
+`Withdrawals` has the following purpose:
 - Monitor Withdrawals: The service listens for WithdrawalProven events on the OptimismPortal contract on L1.
 - Validate Withdrawals: It verifies the validity of these withdrawals by checking the corresponding state on L2.
 - Detect Forgeries: The service identifies and reports any invalid withdrawals or potential forgeries.
