@@ -296,6 +296,7 @@ func (m *Monitor) processBlock(ctx context.Context, blockNum uint64) error {
 		from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
 		if err != nil {
 			return fmt.Errorf("failed to find tx sender: %w", err)
+			m.unexpectedRpcErrors.WithLabelValues("monitor", "no tx sender").Inc()
 		}
 
 		if config, exists := m.watchConfigs[from]; exists {
@@ -306,33 +307,47 @@ func (m *Monitor) processBlock(ctx context.Context, blockNum uint64) error {
 	return nil
 }
 
+
 func (m *Monitor) isAddressAllowed(ctx context.Context, addr common.Address) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    
+    if m.allowedAddrs[addr] {
+        return true
+    }
 
-	if m.allowedAddrs[addr] {
-		return true
-	}
+    // First check if there's any code at the address using eth_getCode
+    code, err := m.client.CodeAt(ctx, addr, nil)
+    if err != nil {
+        m.log.Error("failed to get code at address", "addr", addr, "err", err)
+			m.unexpectedRpcErrors.WithLabelValues("monitor", "failed to get code").Inc()
+        return false
+    }
+    if len(code) == 0 {
+        return false
+    }
 
-	// Check if address is an allowed dispute game
-	for _, verifier := range m.gameVerifiers {
-		isValid, err := verifier.verifyGame(ctx, m.client, addr)
-		if err != nil {
-			m.log.Error("failed to verify dispute game", "addr", addr, "err", err)
-			continue
-		}
-		if isValid {
-			return true
-		}
-	}
 
-	return false
+    // Only verify game if there's actual code at the address
+    for _, verifier := range m.gameVerifiers {
+        isValid, err := verifier.verifyGame(ctx, m.client, addr)
+        if err != nil {
+            m.log.Error("failed to verify dispute game", "addr", addr, "err", err)
+			m.unexpectedRpcErrors.WithLabelValues("monitor", "failed to verify disputeGame").Inc()
+            continue
+        }
+        if isValid {
+            return true
+        }
+    }
+    return false
 }
 
 func (m *Monitor) processTx(ctx context.Context, tx *types.Transaction, config WatchConfig) {
 	watchAddr, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
 	if err != nil {
 		m.log.Error("failed to get transaction sender", "err", err)
+			m.unexpectedRpcErrors.WithLabelValues("monitor", "failed to get sender").Inc()
 		return
 	}
 
