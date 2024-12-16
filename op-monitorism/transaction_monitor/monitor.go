@@ -53,8 +53,8 @@ type Monitor struct {
 	// metrics
 	transactions        *prometheus.CounterVec
 	unauthorizedTx      *prometheus.CounterVec
-	ethSpent           *prometheus.CounterVec
-	blocksProcessed    *prometheus.CounterVec
+	ethSpent            *prometheus.CounterVec
+	blocksProcessed     *prometheus.CounterVec
 	unexpectedRpcErrors *prometheus.CounterVec
 }
 
@@ -186,8 +186,8 @@ func (m *Monitor) processBlock(ctx context.Context, blockNum uint64) error {
 			m.processTx(ctx, tx, config)
 		}
 	}
-	
-    m.blocksProcessed.WithLabelValues(fmt.Sprint(blockNum)).Inc()
+
+	m.blocksProcessed.WithLabelValues(fmt.Sprint(blockNum)).Inc()
 
 	return nil
 }

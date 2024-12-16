@@ -30,9 +30,7 @@ var (
 	factoryAddress   = common.HexToAddress("0x90F79bf6EB2c4f870365E785982E1f101E93b906")
 
 	// Private keys
-	watchedKey, _      = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-	allowedKey, _      = crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
-	unauthorizedKey, _ = crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
+	watchedKey, _ = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
 )
 
 func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
@@ -91,8 +89,8 @@ func TestTransactionMonitoring(t *testing.T) {
 	factory := factoryAddress
 
 	cfg := CLIConfig{
-		NodeUrl:     rpc,
-		StartBlock:  0,
+		NodeUrl:    rpc,
+		StartBlock: 0,
 		WatchConfigs: []WatchConfig{{
 			Address: watchedAddress,
 			Filters: []CheckConfig{
@@ -162,23 +160,23 @@ func TestTransactionMonitoring(t *testing.T) {
 	t.Run("RPC errors handling", func(t *testing.T) {
 		// Create a new registry for the bad monitor
 		badRegistry := opmetrics.NewRegistry()
-		
+
 		// Create a monitor with invalid RPC URL to trigger errors
 		badCfg := cfg
 		badCfg.NodeUrl = "http://nonexistent:8545"
-		
+
 		badMonitor, err := NewMonitor(ctx, log.New(), opmetrics.With(badRegistry), badCfg)
 		require.NoError(t, err)
-		
+
 		go badMonitor.Run(ctx)
 		time.Sleep(2 * time.Second)
-		
+
 		// Should have recorded some RPC errors
-		require.Greater(t, 
+		require.Greater(t,
 			getCounterValue(t, badMonitor.unexpectedRpcErrors, "monitor", "blockNumber"),
 			float64(0),
 			"should have recorded RPC errors")
-		
+
 		badMonitor.Close(ctx)
 	})
 
@@ -203,7 +201,7 @@ func TestChecks(t *testing.T) {
 		params := map[string]interface{}{
 			"match": allowedAddress.Hex(),
 		}
-		
+
 		// Test matching address
 		isValid, err := CheckExactMatch(ctx, client, allowedAddress, params)
 		require.NoError(t, err)

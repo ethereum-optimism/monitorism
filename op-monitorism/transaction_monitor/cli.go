@@ -10,20 +10,20 @@ import (
 )
 
 const (
-	NodeURLFlagName  = "node.url"
+	NodeURLFlagName    = "node.url"
 	ConfigFileFlagName = "config.file"
 	StartBlockFlagName = "start.block"
 )
 
 type CLIConfig struct {
-	NodeUrl    string        `yaml:"node_url"`
+	NodeUrl      string        `yaml:"node_url"`
 	StartBlock   uint64        `yaml:"start_block"`
 	WatchConfigs []WatchConfig `yaml:"watch_configs"`
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		NodeUrl:  ctx.String(NodeURLFlagName),
+		NodeUrl:    ctx.String(NodeURLFlagName),
 		StartBlock: ctx.Uint64(StartBlockFlagName),
 	}
 
