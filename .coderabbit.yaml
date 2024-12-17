@@ -1,5 +1,5 @@
 language: en-US
-tone_instructions: ""
+tone_instructions: "Be concise and constructive. Focus on technical accuracy while maintaining a friendly tone."
 early_access: false
 enable_free_tier: true
 reviews:
@@ -29,7 +29,7 @@ reviews:
     ignore_title_keywords: []
     labels: []
     drafts: false
-    base_branches: []
+    base_branches: ["main", "master"]
   tools:
     shellcheck:
       enabled: false
