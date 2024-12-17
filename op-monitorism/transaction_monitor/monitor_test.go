@@ -31,6 +31,7 @@ var (
 
 	// Private keys
 	watchedKey, _ = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+    neutralKey, _ = crypto.HexToECDSA("0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6")
 )
 
 func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
@@ -91,6 +92,7 @@ func TestTransactionMonitoring(t *testing.T) {
 	cfg := CLIConfig{
 		NodeUrl:    rpc,
 		StartBlock: 0,
+        PollingInterval: 1,
 		WatchConfigs: []WatchConfig{{
 			Address: watchedAddress,
 			Filters: []CheckConfig{

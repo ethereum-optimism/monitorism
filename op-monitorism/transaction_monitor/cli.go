@@ -13,11 +13,13 @@ const (
 	NodeURLFlagName    = "node.url"
 	ConfigFileFlagName = "config.file"
 	StartBlockFlagName = "start.block"
+    PollingIntervalFlagName = "poll.interval"
 )
 
 type CLIConfig struct {
 	NodeUrl      string        `yaml:"node_url"`
 	StartBlock   uint64        `yaml:"start_block"`
+    PollingInterval uint64        `yaml:"poll_interval"`
 	WatchConfigs []WatchConfig `yaml:"watch_configs"`
 }
 
@@ -25,6 +27,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
 		NodeUrl:    ctx.String(NodeURLFlagName),
 		StartBlock: ctx.Uint64(StartBlockFlagName),
+        PollingInterval: ctx.Uint64(PollingIntervalFlagName),
 	}
 
 	// Read and parse config file
@@ -86,6 +89,12 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Usage:   "Starting block number (0 for latest)",
 			Value:   0,
 			EnvVars: opservice.PrefixEnvVar(envPrefix, "START_BLOCK"),
+		},
+		&cli.Uint64Flag{
+			Name:    PollingIntervalFlagName,
+			Usage:   "The polling interval (should be less than blocktime for safety) in seconds",
+			Value:   11,
+			EnvVars: opservice.PrefixEnvVar(envPrefix, "POLL_INTERVAL"),
 		},
 	}
 }
