@@ -10,12 +10,12 @@ reviews:
   auto_title_placeholder: "@coderabbitai"
   review_status: true
   commit_status: true
-  collapse_walkthrough: true
+  collapse_walkthrough: false
   changed_files_summary: true
-  sequence_diagrams: true
-  assess_linked_issues: true
-  related_issues: true
-  related_prs: true
+  sequence_diagrams: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
   suggested_labels: true
   suggested_reviewers: false
   poem: false
