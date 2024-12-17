@@ -1,9 +1,9 @@
 # Global Events Monitoring
 
-This monitoring modules is made for to taking YAML rules as configuration.
+This monitoring module is made for taking YAML rules as configuration.
 ![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
 
-Once the Yaml rules is configured correctly, we can listen to an event chosen to send the data through prometheus.
+Once the YAML rules are configured correctly, we can listen to an event chosen to send the data through prometheus.
 
 ## CLI and Docs:
 
@@ -40,7 +40,7 @@ The rules are located here: `op-monitorism/global_events/rules/`. Then we have m
 
 ```yaml
 # This is a TEMPLATE file please copy this one
-# This watches all contacts for OP, Mode, and Base mainnets for two logs.
+# This watches all contracts for OP, Mode, and Base mainnets for two logs.
 version: 1.0
 name: Template SafeExecution Events (Success/Failure) L1 # Please put the L1 or L2 at the end of the name.
 priority: P5 # This is a test, so it is a P5
