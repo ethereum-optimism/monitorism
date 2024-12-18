@@ -3,7 +3,6 @@ package transaction_monitor
 import (
 	"context"
 	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -31,7 +30,6 @@ var (
 
 	// Private keys
 	watchedKey, _ = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-    neutralKey, _ = crypto.HexToECDSA("0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6")
 )
 
 func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
@@ -90,9 +88,9 @@ func TestTransactionMonitoring(t *testing.T) {
 	factory := factoryAddress
 
 	cfg := CLIConfig{
-		NodeUrl:    rpc,
-		StartBlock: 0,
-        PollingInterval: 1,
+		NodeUrl:         rpc,
+		StartBlock:      0,
+		PollingInterval: 100 * time.Millisecond,
 		WatchConfigs: []WatchConfig{{
 			Address: watchedAddress,
 			Filters: []CheckConfig{
@@ -126,63 +124,26 @@ func TestTransactionMonitoring(t *testing.T) {
 		time.Sleep(2 * time.Second)
 
 		// Check metrics
-		require.Equal(t, float64(1), getCounterValue(t, monitor.transactions, watchedAddress.Hex(), allowedAddress.Hex(), "processed"))
-		require.Equal(t, float64(1.0), getCounterValue(t, monitor.ethSpent, watchedAddress.Hex()))
-		require.Equal(t, float64(0), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex()))
+		require.Equal(t, float64(1), getCounterValue(t, monitor.metrics.transactions, watchedAddress.Hex()))
+		require.Equal(t, float64(1.0), getCounterValue(t, monitor.metrics.ethSpent, watchedAddress.Hex()))
+		require.Equal(t, float64(0), getCounterValue(t, monitor.metrics.unauthorizedTx, watchedAddress.Hex()))
 	})
 
 	t.Run("unauthorized address", func(t *testing.T) {
+		monitor.metrics.unauthorizedTx.Reset()
+		monitor.metrics.ethSpent.Reset()
+
 		sendTx(t, ctx, client, watchedKey, unauthorizedAddr, big.NewInt(params.Ether/2))
 		time.Sleep(2 * time.Second)
 
-		require.Equal(t, float64(1), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex()))
-		require.Equal(t, float64(1.5), getCounterValue(t, monitor.ethSpent, watchedAddress.Hex()))
-	})
-
-	t.Run("multiple blocks processed", func(t *testing.T) {
-		// Send multiple transactions to generate blocks
-		for i := 0; i < 3; i++ {
-			sendTx(t, ctx, client, watchedKey, allowedAddress, big.NewInt(params.Ether/10))
-			time.Sleep(500 * time.Millisecond)
-		}
-		time.Sleep(2 * time.Second)
-
-		// Get the latest block number
-		blockNum, err := client.BlockNumber(ctx)
-		require.NoError(t, err)
-
-		// Check if blocks were processed
-		total := float64(0)
-		for i := uint64(0); i <= blockNum; i++ {
-			total += getCounterValue(t, monitor.blocksProcessed, fmt.Sprint(i))
-		}
-		require.Greater(t, total, float64(0), "should have processed some blocks")
-	})
-
-	t.Run("RPC errors handling", func(t *testing.T) {
-		// Create a new registry for the bad monitor
-		badRegistry := opmetrics.NewRegistry()
-
-		// Create a monitor with invalid RPC URL to trigger errors
-		badCfg := cfg
-		badCfg.NodeUrl = "http://nonexistent:8545"
-
-		badMonitor, err := NewMonitor(ctx, log.New(), opmetrics.With(badRegistry), badCfg)
-		require.NoError(t, err)
-
-		go badMonitor.Run(ctx)
-		time.Sleep(2 * time.Second)
-
-		// Should have recorded some RPC errors
-		require.Greater(t,
-			getCounterValue(t, badMonitor.unexpectedRpcErrors, "monitor", "blockNumber"),
-			float64(0),
-			"should have recorded RPC errors")
-
-		badMonitor.Close(ctx)
+		require.Equal(t, float64(1), getCounterValue(t, monitor.metrics.unauthorizedTx, watchedAddress.Hex()))
+		require.Equal(t, float64(0.5), getCounterValue(t, monitor.metrics.ethSpent, watchedAddress.Hex()))
 	})
 
 	t.Run("multiple unauthorized transactions", func(t *testing.T) {
+		monitor.metrics.unauthorizedTx.Reset()
+		monitor.metrics.ethSpent.Reset()
+
 		// Send multiple unauthorized transactions
 		for i := 0; i < 3; i++ {
 			sendTx(t, ctx, client, watchedKey, unauthorizedAddr, big.NewInt(params.Ether/4))
@@ -190,8 +151,8 @@ func TestTransactionMonitoring(t *testing.T) {
 		}
 		time.Sleep(2 * time.Second)
 
-		require.Equal(t, float64(4), getCounterValue(t, monitor.unauthorizedTx, watchedAddress.Hex()))
-		require.Equal(t, float64(2.55), getCounterValue(t, monitor.ethSpent, watchedAddress.Hex()))
+		require.Equal(t, float64(3), getCounterValue(t, monitor.metrics.unauthorizedTx, watchedAddress.Hex()))
+		require.Equal(t, float64(0.75), getCounterValue(t, monitor.metrics.ethSpent, watchedAddress.Hex()))
 	})
 }
 

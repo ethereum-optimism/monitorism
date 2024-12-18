@@ -3,6 +3,7 @@ package transaction_monitor
 import (
 	"fmt"
 	"os"
+	"time"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/urfave/cli/v2"
@@ -10,27 +11,26 @@ import (
 )
 
 const (
-	NodeURLFlagName    = "node.url"
-	ConfigFileFlagName = "config.file"
-	StartBlockFlagName = "start.block"
-    PollingIntervalFlagName = "poll.interval"
+	NodeURLFlagName         = "node.url"
+	ConfigFileFlagName      = "config.file"
+	StartBlockFlagName      = "start.block"
+	PollingIntervalFlagName = "poll.interval"
 )
 
 type CLIConfig struct {
-	NodeUrl      string        `yaml:"node_url"`
-	StartBlock   uint64        `yaml:"start_block"`
-    PollingInterval uint64        `yaml:"poll_interval"`
-	WatchConfigs []WatchConfig `yaml:"watch_configs"`
+	NodeUrl         string        `yaml:"node_url"`
+	StartBlock      uint64        `yaml:"start_block"`
+	PollingInterval time.Duration `yaml:"poll_interval"`
+	WatchConfigs    []WatchConfig `yaml:"watch_configs"`
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		NodeUrl:    ctx.String(NodeURLFlagName),
-		StartBlock: ctx.Uint64(StartBlockFlagName),
-        PollingInterval: ctx.Uint64(PollingIntervalFlagName),
+		NodeUrl:         ctx.String(NodeURLFlagName),
+		StartBlock:      ctx.Uint64(StartBlockFlagName),
+		PollingInterval: ctx.Duration(PollingIntervalFlagName),
 	}
 
-	// Read and parse config file
 	configFile := ctx.String(ConfigFileFlagName)
 	if configFile == "" {
 		return cfg, fmt.Errorf("config file must be specified")
@@ -47,24 +47,6 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 
 	if len(cfg.WatchConfigs) == 0 {
 		return cfg, fmt.Errorf("at least one watch config must be specified")
-	}
-
-	// Validate filters
-	for _, config := range cfg.WatchConfigs {
-		for _, filter := range config.Filters {
-			switch filter.Type {
-			case ExactMatchCheck:
-				if _, ok := filter.Params["match"].(string); !ok {
-					return cfg, fmt.Errorf("exact match check requires 'match' parameter")
-				}
-			case DisputeGameCheck:
-				if _, ok := filter.Params["disputeGameFactory"].(string); !ok {
-					return cfg, fmt.Errorf("dispute game check requires 'disputeGameFactory' parameter")
-				}
-			default:
-				return cfg, fmt.Errorf("unknown check type: %s", filter.Type)
-			}
-		}
 	}
 
 	return cfg, nil
@@ -90,10 +72,10 @@ func CLIFlags(envPrefix string) []cli.Flag {
 			Value:   0,
 			EnvVars: opservice.PrefixEnvVar(envPrefix, "START_BLOCK"),
 		},
-		&cli.Uint64Flag{
+		&cli.DurationFlag{
 			Name:    PollingIntervalFlagName,
 			Usage:   "The polling interval (should be less than blocktime for safety) in seconds",
-			Value:   11,
+			Value:   12 * time.Second,
 			EnvVars: opservice.PrefixEnvVar(envPrefix, "POLL_INTERVAL"),
 		},
 	}
