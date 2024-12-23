@@ -144,7 +144,7 @@ This component is designed to work exclusively with chains that are already util
 This is a new version of the deprecated [chain-mon faultproof-wd-mon](https://github.com/ethereum-optimism/optimism/tree/chain-mon/v1.2.1/packages/chain-mon/src/faultproof-wd-mon).
 For detailed information on how the component works and the algorithms used, please refer to the component README.
 
-| `op-monitorism/faultproof-withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof_withdrawals/README.md) |
+| `op-monitorism/faultproof_withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof_withdrawals/README.md) |
 | ----------------------- | --------------------------------------------------------------------------------------------------- |
 
 
