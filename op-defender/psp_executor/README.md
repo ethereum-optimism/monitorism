@@ -30,7 +30,7 @@ Explanation of the options:
 | Argument | Value | Explanation |
 | ---------------------------- | ------------------------------------------ | ------------------------------------ |
 | `--privatekey` | 2a[..]c6 | Private key for transaction signing |
-| `--safe.address` | 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E | Address of the Safe contract that presigned the transation|
+| `--safe.address` | 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E | Address of the Safe contract that presigned the transaction|
 | `--path` | /tmp/psps.json | Path to JSON file containing PSPs |
 | `--chainid` | 11155111 | Chain ID for the network |
 | `--superchainconfig.address` | 0xC2Be75506d5724086DEB7245bd260Cc9753911Be | Address of SuperchainConfig contract |
