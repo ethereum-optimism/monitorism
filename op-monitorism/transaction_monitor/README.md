@@ -32,7 +32,7 @@ watch_configs:
       "0x1234567890123456789012345678901234567890": "1000000000000000000"
 ```
 
-* A `start_block` set to `0` indicates latest block. 
+* A `start_block` set to `0` indicates the latest block. 
 
 ## Metrics
 
