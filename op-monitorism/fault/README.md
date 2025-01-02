@@ -2,7 +2,7 @@
 
 The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract. On change, reconstructing the output root from a trusted L2 source and looking for a match
 
-NOTE: Fault monitor only working against chains Pre-Faultproof. For chains using Faultproof system please check [dispute-mon service](https://github.com/ethereum-optimism/optimism/blob/develop/op-dispute-mon/README.md)
+NOTE: The fault monitor only works with chains that are Pre-Faultproof. For chains using Faultproof system please check [dispute-mon service](https://github.com/ethereum-optimism/optimism/blob/develop/op-dispute-mon/README.md)
 
 ```
 OPTIONS:
