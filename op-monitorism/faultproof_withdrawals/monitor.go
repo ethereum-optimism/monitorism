@@ -200,32 +200,6 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 	return left, nil
 }
 
-// GetLatestBlock retrieves the latest block number from the L1 Geth client.
-// It updates the state with the latest L1 height.
-func (m *Monitor) GetLatestBlock() (uint64, error) {
-	latestL1Height, err := m.l1GethClient.BlockNumber(m.ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to query latest block number: %w", err)
-	}
-	m.state.latestL1Height = latestL1Height
-	return latestL1Height, nil
-}
-
-// GetMaxBlock calculates the maximum block number to be processed.
-// It considers the next L1 height and the defined max block range.
-func (m *Monitor) GetMaxBlock() (uint64, error) {
-	latestL1Height, err := m.GetLatestBlock()
-	if err != nil {
-		return 0, fmt.Errorf("failed to query latest block number: %w", err)
-	}
-
-	stop := m.state.nextL1Height + m.maxBlockRange
-	if stop > latestL1Height {
-		stop = latestL1Height
-	}
-	return stop, nil
-}
-
 // Run executes the main monitoring loop.
 // It retrieves new events, processes them, and updates the state accordingly.
 func (m *Monitor) Run(ctx context.Context) {
@@ -235,11 +209,18 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	start := m.state.nextL1Height
 
-	stop, err := m.GetMaxBlock()
+	latestL1Height, err := m.l1GethClient.BlockNumber(m.ctx)
 	if err != nil {
 		m.state.nodeConnectionFailures++
-		m.log.Error("failed to get max block", "error", err)
+		m.log.Error("failed to query latest block number", "error", err)
+
 		return
+	}
+	m.state.latestL1Height = latestL1Height
+
+	stop := m.state.nextL1Height + m.maxBlockRange
+	if stop > latestL1Height {
+		stop = latestL1Height
 	}
 
 	// review previous invalidProposalWithdrawalsEvents
