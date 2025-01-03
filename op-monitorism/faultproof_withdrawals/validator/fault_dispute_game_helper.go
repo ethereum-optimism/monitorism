@@ -20,13 +20,16 @@ type FaultDisputeGameProxy struct {
 
 // DisputeGameData holds the details of a dispute game.
 type DisputeGameData struct {
-	ProxyAddress  common.Address // The address of the dispute game proxy.
-	RootClaim     [32]byte       // The root claim associated with the dispute game.
-	L2blockNumber *big.Int       // The L2 block number related to the game.
-	L2ChainID     *big.Int       // The L2 chain ID associated with the game.
-	Status        GameStatus     // The current status of the game.
-	CreatedAt     uint64         // Timestamp when the game was created.
-	ResolvedAt    uint64         // Timestamp when the game was resolved.
+	ProxyAddress                      common.Address // The address of the dispute game proxy.
+	RootClaim                         [32]byte       // The root claim associated with the dispute game.
+	L2blockNumber                     *big.Int       // The L2 block number related to the game.
+	L2ChainID                         *big.Int       // The L2 chain ID associated with the game.
+	Status                            GameStatus     // The current status of the game.
+	CreatedAt                         uint64         // Timestamp when the game was created.
+	ResolvedAt                        uint64         // Timestamp when the game was resolved.
+	IsL2BlockNumberKnownToTrustedNode bool           // Whether the L2 block number is known to a trusted node.
+	IsGameBlackListed                 bool           // Whether the game is blacklisted
+	TrustedNodeRootClaim              [32]byte       // The root claim known to the trusted node.
 }
 
 // FaultDisputeGameHelper assists in interacting with fault dispute games.
@@ -69,14 +72,17 @@ func (gs GameStatus) String() string {
 
 // String provides a string representation of DisputeGameData.
 func (d DisputeGameData) String() string {
-	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress: %v rootClaim: %s l2blockNumber: %s l2ChainID: %s status: %v createdAt: %v resolvedAt: %v ]",
+	return fmt.Sprintf("DisputeGame[ disputeGameProxyAddress: %v rootClaim: %s trustedNodeRootClaim: %s l2blockNumber: %s l2ChainID: %s status: %v createdAt: %v resolvedAt: %v isL2BlockNumberKnownToTrustedNode: %v isGameBlackListed: %v ]",
 		d.ProxyAddress,
 		common.BytesToHash(d.RootClaim[:]),
+		common.BytesToHash(d.TrustedNodeRootClaim[:]),
 		d.L2blockNumber.String(),
 		d.L2ChainID.String(),
 		d.Status,
 		Timestamp(d.CreatedAt),
 		Timestamp(d.ResolvedAt),
+		d.IsL2BlockNumberKnownToTrustedNode,
+		d.IsGameBlackListed,
 	)
 }
 
@@ -165,6 +171,10 @@ func (fd *FaultDisputeGameHelper) GetDisputeGameProxyFromAddress(disputeGameProx
 func (fd *FaultDisputeGameProxy) RefreshState() error {
 	if fd.FaultDisputeGame == nil {
 		return fmt.Errorf("dispute game is nil")
+	}
+
+	if fd.DisputeGameData.Status != IN_PROGRESS {
+		return nil
 	}
 
 	gameStatus, err := fd.FaultDisputeGame.Status(nil)

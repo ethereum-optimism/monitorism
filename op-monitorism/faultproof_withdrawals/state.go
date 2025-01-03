@@ -113,20 +113,23 @@ func (s *State) LogState() {
 }
 
 func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
-	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	event := enrichedWithdrawalEvent.Event
+	disputeGame := enrichedWithdrawalEvent.DisputeGame.DisputeGameData
+	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "event", event, "disputeGame", disputeGame)
 	s.withdrawalsProcessed++
 	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 }
 
 func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
-
-	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	event := enrichedWithdrawalEvent.Event
+	disputeGame := enrichedWithdrawalEvent.DisputeGame.DisputeGameData
+	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "event", event, "disputeGame", disputeGame)
 	s.potentialAttackOnDefenderWinsGames[key] = enrichedWithdrawalEvent
 	s.numberOfPotentialAttacksOnDefenderWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "event", event, "disputeGame", disputeGame)
 		delete(s.potentialAttackOnInProgressGames, key)
 		s.numberOfPotentialAttackOnInProgressGames--
 	}
@@ -139,10 +142,12 @@ func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEv
 func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
 	// check if key already exists
+	event := enrichedWithdrawalEvent.Event
+	disputeGame := enrichedWithdrawalEvent.DisputeGame.DisputeGameData
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "event", event, "disputeGame", disputeGame)
 	} else {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "event", event, "disputeGame", disputeGame)
 		s.numberOfPotentialAttackOnInProgressGames++
 		enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 
@@ -154,13 +159,14 @@ func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEven
 
 func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
 	key := enrichedWithdrawalEvent.Event.Raw.TxHash
-
-	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	event := enrichedWithdrawalEvent.Event
+	disputeGame := enrichedWithdrawalEvent.DisputeGame.DisputeGameData
+	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "event", event, "disputeGame", disputeGame)
 	s.suspiciousEventsOnChallengerWinsGames.Add(key, enrichedWithdrawalEvent)
 	s.numberOfSuspiciousEventsOnChallengerWinsGames++
 
 	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "event", event, "disputeGame", disputeGame)
 		delete(s.potentialAttackOnInProgressGames, key)
 		s.numberOfPotentialAttackOnInProgressGames--
 	}

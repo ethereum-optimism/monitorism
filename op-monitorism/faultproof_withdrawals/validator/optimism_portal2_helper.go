@@ -21,15 +21,10 @@ type SubmittedProofData struct {
 
 // WithdrawalProvenExtension1Event represents an event for a proven withdrawal.
 type WithdrawalProvenExtension1Event struct {
-	WithdrawalHash [32]byte       // Hash of the withdrawal.
-	ProofSubmitter common.Address // Address of the proof submitter.
-	Raw            Raw            // Raw event data.
-}
-
-// WithdrawalProvenEvent represents a withdrawal proven event.
-type WithdrawalProvenEvent struct {
-	WithdrawalHash [32]byte // Hash of the withdrawal.
-	Raw            Raw      // Raw event data.
+	WithdrawalHash                         [32]byte       // Hash of the withdrawal.
+	ProofSubmitter                         common.Address // Address of the proof submitter.
+	IsWithdrawalHashPresentOnL2TrustedNode bool           // Indicates if the withdrawal hash is present on L2 trusted node.
+	Raw                                    Raw            // Raw event data.
 }
 
 // OptimismPortal2Helper assists in interacting with the Optimism Portal 2.
@@ -42,12 +37,7 @@ type OptimismPortal2Helper struct {
 
 // String provides a string representation of WithdrawalProvenExtension1Event.
 func (e WithdrawalProvenExtension1Event) String() string {
-	return fmt.Sprintf("WithdrawalHash: %s, ProofSubmitter: %v, Raw: %v", common.BytesToHash(e.WithdrawalHash[:]), e.ProofSubmitter, e.Raw)
-}
-
-// String provides a string representation of WithdrawalProvenEvent.
-func (e WithdrawalProvenEvent) String() string {
-	return fmt.Sprintf("WithdrawalHash: %s, Raw: %v", common.BytesToHash(e.WithdrawalHash[:]), e.Raw)
+	return fmt.Sprintf("WithdrawalHash: %s, ProofSubmitter: %v, IsWithdrawalHashPresentOnL2TrustedNode:%v, Raw: %v", common.BytesToHash(e.WithdrawalHash[:]), e.ProofSubmitter, e.IsWithdrawalHashPresentOnL2TrustedNode, e.Raw)
 }
 
 // String provides a string representation of SubmittedProofData.
@@ -101,29 +91,6 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsEventsIterartor(start uint6
 	}
 
 	return iterator, nil
-}
-
-// GetProvenWithdrawalsEvents retrieves proven withdrawal events within the specified block range.
-// It returns a slice of WithdrawalProvenEvent along with any error encountered.
-func (op *OptimismPortal2Helper) GetProvenWithdrawalsEvents(start uint64, end *uint64) ([]WithdrawalProvenEvent, error) {
-	iterator, err := op.GetProvenWithdrawalsEventsIterartor(start, end)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
-	}
-
-	events := make([]WithdrawalProvenEvent, 0)
-	for iterator.Next() {
-		event := iterator.Event
-		events = append(events, WithdrawalProvenEvent{
-			WithdrawalHash: event.WithdrawalHash,
-			Raw: Raw{
-				BlockNumber: event.Raw.BlockNumber,
-				TxHash:      event.Raw.TxHash,
-			},
-		})
-	}
-
-	return events, nil
 }
 
 // GetProvenWithdrawalsExtension1EventsIterator creates an iterator for proven withdrawal extension 1 events within the specified block range.

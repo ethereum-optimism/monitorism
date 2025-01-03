@@ -199,20 +199,21 @@ func (m *Monitor) Run(ctx context.Context) {
 // ConsumeEvents processes a slice of enriched withdrawal events and updates their states.
 // It returns any events detected during the consumption that requires to be re-analysed again at a later stage (when the event referenced DisputeGame completes).
 func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*validator.EnrichedProvenWithdrawalEvent) error {
+
+	latestKnownL2BlockNumber, err := m.l2OpGethClient.BlockNumber(m.ctx)
+	if err != nil {
+		m.log.Error("failed to get latest known L2 block number", "error", err)
+		return err
+
+	}
+	m.state.latestL2Height = latestKnownL2BlockNumber
+
 	for _, enrichedWithdrawalEvent := range enrichedWithdrawalEvents {
 		if enrichedWithdrawalEvent == nil {
 			m.log.Error("WITHDRAWAL: enrichedWithdrawalEvent is nil in ConsumeEvents")
 			panic("WITHDRAWAL: enrichedWithdrawalEvent is nil in ConsumeEvents")
 		}
-		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
-
-		latestKnownL2BlockNumber, err := m.l2OpGethClient.BlockNumber(m.ctx)
-		if err != nil {
-			m.log.Error("failed to get latest known L2 block number", "error", err)
-			return err
-
-		}
-		m.state.latestL2Height = latestKnownL2BlockNumber
+		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent.Event)
 
 		err = m.ConsumeEvent(enrichedWithdrawalEvent)
 		if err != nil {
@@ -229,31 +230,58 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) error {
 	defer m.state.LogState()
 
-	err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
-	//upgrade state to the latest L2 height	after the event is processed
-
-	if err != nil || !enrichedWithdrawalEvent.Enriched {
-		m.log.Error("failed to update enriched withdrawal event", "error", err)
-		return err
+	err := enrichedWithdrawalEvent.DisputeGame.RefreshState()
+	if err != nil {
+		return fmt.Errorf("failed to refresh game state: %w", err)
 	}
 
 	disputeGameData := enrichedWithdrawalEvent.DisputeGame.DisputeGameData
 
 	if disputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", disputeGameData.L2ChainID))
+		return fmt.Errorf("l2ChainID mismatch")
 	}
 
-	valid := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == enrichedWithdrawalEvent.ExpectedRootClaim && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2
+	if !disputeGameData.IsL2BlockNumberKnownToTrustedNode {
+		// check if the L2 block number is known to the trusted node
+		if m.state.latestL2Height >= disputeGameData.L2blockNumber.Uint64() {
+			disputeGameData.IsL2BlockNumberKnownToTrustedNode = true
+			trustedRootClaim, err := m.withdrawalValidator.L2NodeHelper.GetOutputRootFromTrustedL2Node(disputeGameData.L2blockNumber)
+			if err != nil {
+				return fmt.Errorf("failed to get trustedRootClaim from Op-node: %w", err)
+			}
+			disputeGameData.TrustedNodeRootClaim = trustedRootClaim
+		} else {
+			disputeGameData.IsL2BlockNumberKnownToTrustedNode = false
+			m.log.Warn("L2 block number is not known to the trusted node", "L2 block number", disputeGameData.L2blockNumber, "latest known L2 block number", m.state.latestL2Height)
+			//TODO: set state avriable and metric for this as it may indicate there is an issue with the trusted node not in sync
+		}
+	}
+
+	event := enrichedWithdrawalEvent.Event
+	if !event.IsWithdrawalHashPresentOnL2TrustedNode {
+		withdrawalHashPresentOnL2, err := m.withdrawalValidator.L2ToL1MessagePasserHelper.WithdrawalExistsOnL2(event.WithdrawalHash)
+		if err != nil {
+			return fmt.Errorf("failed to check withdrawal existence on L2: %w", err)
+		}
+		event.IsWithdrawalHashPresentOnL2TrustedNode = withdrawalHashPresentOnL2
+	}
+
+	valid := disputeGameData.RootClaim == disputeGameData.TrustedNodeRootClaim && event.IsWithdrawalHashPresentOnL2TrustedNode && disputeGameData.IsL2BlockNumberKnownToTrustedNode
 
 	if !valid {
-		if !enrichedWithdrawalEvent.Blacklisted {
+		isGameBlackListed, err := m.withdrawalValidator.OptimismPortal2Helper.IsGameBlacklisted(enrichedWithdrawalEvent.DisputeGame)
+		if err != nil {
+			m.log.Error("failed to check if game is blacklisted", "error", err)
+			return err
+		}
+		if isGameBlackListed {
 			if disputeGameData.Status == validator.CHALLENGER_WINS {
 				m.state.IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent)
 			} else if disputeGameData.Status == validator.DEFENDER_WINS {
 				m.state.IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent)
 			} else if disputeGameData.Status == validator.IN_PROGRESS {
 				m.state.IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent)
-				// add to events to be re-processed
 			} else {
 				m.log.Error("WITHDRAWAL: is NOT valid, game status is unknown. UNKNOWN STATE SHOULD NEVER HAPPEN", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 			}
