@@ -205,8 +205,6 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 			panic("WITHDRAWAL: enrichedWithdrawalEvent is nil in ConsumeEvents")
 		}
 		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
-		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
-		//upgrade state to the latest L2 height	after the event is processed
 
 		latestKnownL2BlockNumber, err := m.l2OpGethClient.BlockNumber(m.ctx)
 		if err != nil {
@@ -215,6 +213,10 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 
 		}
 		m.state.latestL2Height = latestKnownL2BlockNumber
+
+		err = m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
+		//upgrade state to the latest L2 height	after the event is processed
+
 		if err != nil {
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
 			return err
