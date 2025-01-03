@@ -37,14 +37,13 @@ type Monitor struct {
 	withdrawalValidator validator.ProvenWithdrawalValidator
 
 	// state
-	state   State
-	metrics Metrics
+	state State
 }
 
 // NewMonitor creates a new Monitor instance with the provided configuration.
 // It establishes connections to the specified L1 and L2 Geth clients, initializes
 // the withdrawal validator, and sets up the initial state and metrics.
-func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
+func NewMonitor(ctx context.Context, log log.Logger, metricsFactory metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	log.Info("creating withdrawals monitor...")
 
 	l1GethClient, err := ethclient.Dial(cfg.L1GethURL)
@@ -79,8 +78,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
 	}
 
-	metrics := NewMetrics(m)
-
 	ret := &Monitor{
 		log: log,
 
@@ -96,8 +93,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 		maxBlockRange: cfg.EventBlockRange,
 
-		state:   State{},
-		metrics: *metrics,
+		state: State{},
 	}
 
 	// is starting block is set it takes precedence
@@ -124,7 +120,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
 	}
 
-	state, err := NewState(log, startingL1BlockHeight, latestL1Height, ret.withdrawalValidator.GetLatestL2Height())
+	state, err := NewState(log, startingL1BlockHeight, latestL1Height, ret.withdrawalValidator.GetLatestL2Height(), metricsFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create state: %w", err)
 	}
@@ -132,7 +128,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 	// log state and metrics
 	ret.state.LogState()
-	ret.metrics.UpdateMetricsFromState(&ret.state)
 
 	return ret, nil
 }
@@ -204,7 +199,6 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 // It retrieves new events, processes them, and updates the state accordingly.
 func (m *Monitor) Run(ctx context.Context) {
 	// Defer the update function
-	defer m.metrics.UpdateMetricsFromState(&m.state)
 	defer m.state.LogState()
 
 	start := m.state.nextL1Height
@@ -289,6 +283,8 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 // ConsumeEvent processes a single enriched withdrawal event.
 // It logs the event details and checks for any forgery detection.
 func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) error {
+	defer m.state.LogState()
+
 	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
 		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
 	}
@@ -318,7 +314,6 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 		m.state.IncrementWithdrawalsValidated(enrichedWithdrawalEvent)
 	}
 	m.state.eventsProcessed++
-	m.metrics.UpdateMetricsFromState(&m.state)
 	return nil
 }
 

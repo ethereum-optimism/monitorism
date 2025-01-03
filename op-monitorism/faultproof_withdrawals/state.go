@@ -19,7 +19,9 @@ const (
 )
 
 type State struct {
-	logger          log.Logger
+	logger  log.Logger
+	metrics *Metrics
+
 	nextL1Height    uint64
 	latestL1Height  uint64
 	initialL1Height uint64
@@ -47,7 +49,7 @@ type State struct {
 	numberOfSuspiciousEventsOnChallengerWinsGames uint64
 }
 
-func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64) (*State, error) {
+func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64, m metrics.Factory) (*State, error) {
 
 	if nextL1Height > latestL1Height {
 		logger.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", nextL1Height, "latestL1Height", latestL1Height)
@@ -80,6 +82,7 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 		initialL1Height: nextL1Height,
 		latestL2Height:  latestL2Height,
 		logger:          logger,
+		metrics:         NewMetrics(m),
 	}
 
 	return &ret, nil
@@ -105,6 +108,8 @@ func (s *State) LogState() {
 		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
 		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
 	)
+
+	s.metrics.UpdateMetricsFromState(s)
 }
 
 func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {

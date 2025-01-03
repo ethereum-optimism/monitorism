@@ -91,13 +91,13 @@ func TestRun5Cycle1000BlocksMainnet(t *testing.T) {
 		test_monitor.Run(test_monitor.ctx)
 	}
 
-	initialL1HeightGaugeValue, _ := GetGaugeValue(test_monitor.metrics.InitialL1HeightGauge)
-	nextL1HeightGaugeValue, _ := GetGaugeValue(test_monitor.metrics.NextL1HeightGauge)
+	initialL1HeightGaugeValue, _ := GetGaugeValue(test_monitor.state.metrics.InitialL1HeightGauge)
+	nextL1HeightGaugeValue, _ := GetGaugeValue(test_monitor.state.metrics.NextL1HeightGauge)
 
-	withdrawalsProcessedCounterValue, _ := GetCounterValue(test_monitor.metrics.WithdrawalsProcessedCounter)
-	eventsProcessedCounterValue, _ := GetCounterValue(test_monitor.metrics.EventsProcessedCounter)
+	withdrawalsProcessedCounterValue, _ := GetCounterValue(test_monitor.state.metrics.WithdrawalsProcessedCounter)
+	eventsProcessedCounterValue, _ := GetCounterValue(test_monitor.state.metrics.EventsProcessedCounter)
 
-	nodeConnectionFailuresCounterValue, _ := GetCounterValue(test_monitor.metrics.NodeConnectionFailuresCounter)
+	nodeConnectionFailuresCounterValue, _ := GetCounterValue(test_monitor.state.metrics.NodeConnectionFailuresCounter)
 
 	expected_end_block := blockIncrement*maxCycle + initialBlock
 	require.Equal(t, uint64(initialBlock), uint64(initialL1HeightGaugeValue))
@@ -107,8 +107,8 @@ func TestRun5Cycle1000BlocksMainnet(t *testing.T) {
 	require.Equal(t, uint64(0), uint64(withdrawalsProcessedCounterValue))
 	require.Equal(t, uint64(0), uint64(nodeConnectionFailuresCounterValue))
 
-	require.Equal(t, uint64(0), test_monitor.metrics.previousEventsProcessed)
-	require.Equal(t, uint64(0), test_monitor.metrics.previousWithdrawalsProcessed)
+	require.Equal(t, uint64(0), test_monitor.state.metrics.previousEventsProcessed)
+	require.Equal(t, uint64(0), test_monitor.state.metrics.previousWithdrawalsProcessed)
 
 }
 
