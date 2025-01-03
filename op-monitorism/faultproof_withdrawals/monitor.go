@@ -58,7 +58,7 @@ func NewMonitor(ctx context.Context, log log.Logger, metricsFactory metrics.Fact
 		return nil, fmt.Errorf("failed to dial l2: %w", err)
 	}
 
-	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, l1GethClient, l2OpGethClient, l2OpNodeClient, cfg.OptimismPortalAddress)
+	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, cfg.L1GethURL, cfg.L2OpGethURL, cfg.L2OpNodeURL, cfg.OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create withdrawal validator: %w", err)
 	}
@@ -119,7 +119,14 @@ func NewMonitor(ctx context.Context, log log.Logger, metricsFactory metrics.Fact
 		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
 	}
 
-	state, err := NewState(log, startingL1BlockHeight, latestL1Height, ret.withdrawalValidator.GetLatestL2Height(), metricsFactory)
+	latestKnownL2BlockNumber, err := ret.l2OpGethClient.BlockNumber(ret.ctx)
+	if err != nil {
+		ret.log.Error("failed to get latest known L2 block number", "error", err)
+		return nil, err
+
+	}
+
+	state, err := NewState(log, startingL1BlockHeight, latestL1Height, latestKnownL2BlockNumber, metricsFactory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create state: %w", err)
 	}
@@ -200,7 +207,14 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
 		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
 		//upgrade state to the latest L2 height	after the event is processed
-		m.state.latestL2Height = m.withdrawalValidator.GetLatestL2Height()
+
+		latestKnownL2BlockNumber, err := m.l2OpGethClient.BlockNumber(m.ctx)
+		if err != nil {
+			m.log.Error("failed to get latest known L2 block number", "error", err)
+			return err
+
+		}
+		m.state.latestL2Height = latestKnownL2BlockNumber
 		if err != nil {
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
 			return err

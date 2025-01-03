@@ -59,7 +59,21 @@ func (v ValidateProofWithdrawalState) String() string {
 
 // NewWithdrawalValidator initializes a new ProvenWithdrawalValidator.
 // It binds necessary helpers and returns the validator instance.
-func NewWithdrawalValidator(ctx context.Context, l1GethClient *ethclient.Client, l2OpGethClient *ethclient.Client, l2OpNodeClient *ethclient.Client, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
+func NewWithdrawalValidator(ctx context.Context, l1GethURL string, l2OpGethURL string, l2OpNodeURL string, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
+
+	l1GethClient, err := ethclient.Dial(l1GethURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial l1: %w", err)
+	}
+	l2OpGethClient, err := ethclient.Dial(l2OpGethURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial l2: %w", err)
+	}
+	l2OpNodeClient, err := ethclient.Dial(l2OpNodeURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial l2: %w", err)
+	}
+
 	optimismPortal2Helper, err := NewOptimismPortal2Helper(ctx, l1GethClient, OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
@@ -249,8 +263,4 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 	} else {
 		return false, nil
 	}
-}
-
-func (wv *ProvenWithdrawalValidator) GetLatestL2Height() uint64 {
-	return wv.l2NodeHelper.LatestKnownL2BlockNumber
 }

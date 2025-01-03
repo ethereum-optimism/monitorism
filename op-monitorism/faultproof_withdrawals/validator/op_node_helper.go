@@ -17,12 +17,11 @@ import (
 // OpNodeHelper assists in interacting with the op-node
 type OpNodeHelper struct {
 	// objects
-	l2OpNodeClient           *ethclient.Client // The op-node (consensus) client.
-	l2OpGethClient           *ethclient.Client // The op-geth client.
-	rpc_l2Client             *rpc.Client       // The RPC client for the L2 node.
-	ctx                      context.Context   // Context for managing cancellation and timeouts.
-	l2OutputRootCache        *lru.Cache        // Cache for storing L2 output roots.
-	LatestKnownL2BlockNumber uint64            // The latest known L2 block number.
+	l2OpNodeClient    *ethclient.Client // The op-node (consensus) client.
+	l2OpGethClient    *ethclient.Client // The op-geth client.
+	rpc_l2Client      *rpc.Client       // The RPC client for the L2 node.
+	ctx               context.Context   // Context for managing cancellation and timeouts.
+	l2OutputRootCache *lru.Cache        // Cache for storing L2 output roots.
 }
 
 const outputRootCacheSize = 1000 // Size of the output root cache.
@@ -37,21 +36,13 @@ func NewOpNodeHelper(ctx context.Context, l2OpNodeClient *ethclient.Client, l2Op
 	rpc_l2Client := l2OpNodeClient.Client()
 
 	ret := OpNodeHelper{
-		l2OpNodeClient:           l2OpNodeClient,
-		l2OpGethClient:           l2OpGethClient,
-		rpc_l2Client:             rpc_l2Client,
-		ctx:                      ctx,
-		l2OutputRootCache:        l2OutputRootCache,
-		LatestKnownL2BlockNumber: 0,
+		l2OpNodeClient:    l2OpNodeClient,
+		l2OpGethClient:    l2OpGethClient,
+		rpc_l2Client:      rpc_l2Client,
+		ctx:               ctx,
+		l2OutputRootCache: l2OutputRootCache,
 	}
 
-	//ignoring the return value as it is already stored in the struct by the method
-	latestBlockNumber, err := ret.GetLatestKnownL2BlockNumber()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest known L2 block number: %w", err)
-	}
-
-	ret.LatestKnownL2BlockNumber = latestBlockNumber
 	return &ret, nil
 
 }
@@ -62,7 +53,6 @@ func (on *OpNodeHelper) GetLatestKnownL2BlockNumber() (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to get latest known L2 block number: %w", err)
 	}
-	on.LatestKnownL2BlockNumber = LatestKnownL2BlockNumber
 	return LatestKnownL2BlockNumber, nil
 }
 
