@@ -214,14 +214,6 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 		}
 		m.state.latestL2Height = latestKnownL2BlockNumber
 
-		err = m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
-		//upgrade state to the latest L2 height	after the event is processed
-
-		if err != nil {
-			m.log.Error("failed to update enriched withdrawal event", "error", err)
-			return err
-		}
-
 		err = m.ConsumeEvent(enrichedWithdrawalEvent)
 		if err != nil {
 			m.log.Error("failed to consume event", "error", err)
@@ -237,22 +229,29 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) error {
 	defer m.state.LogState()
 
-	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
-		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
-	}
-	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(enrichedWithdrawalEvent)
-	if err != nil {
-		m.log.Error("failed to check if forgery detected", "error", err)
+	err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
+	//upgrade state to the latest L2 height	after the event is processed
+
+	if err != nil || !enrichedWithdrawalEvent.Enriched {
+		m.log.Error("failed to update enriched withdrawal event", "error", err)
 		return err
 	}
 
+	disputeGameData := enrichedWithdrawalEvent.DisputeGame.DisputeGameData
+
+	if disputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
+		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", disputeGameData.L2ChainID))
+	}
+
+	valid := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == enrichedWithdrawalEvent.ExpectedRootClaim && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2
+
 	if !valid {
 		if !enrichedWithdrawalEvent.Blacklisted {
-			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
+			if disputeGameData.Status == validator.CHALLENGER_WINS {
 				m.state.IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent)
-			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
+			} else if disputeGameData.Status == validator.DEFENDER_WINS {
 				m.state.IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent)
-			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.IN_PROGRESS {
+			} else if disputeGameData.Status == validator.IN_PROGRESS {
 				m.state.IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent)
 				// add to events to be re-processed
 			} else {

@@ -161,13 +161,10 @@ func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
 	// Expected L2 block number 1276288764
 	require.Equal(t, event.DisputeGame.DisputeGameData.L2blockNumber, big.NewInt(1276288764))
 
-	isValid, err := test_monitor.withdrawalValidator.IsWithdrawalEventValid(&event)
-	require.EqualError(t, err, "game not enriched")
-	require.False(t, isValid)
 	err = test_monitor.withdrawalValidator.UpdateEnrichedWithdrawalEvent(&event)
 	require.NoError(t, err)
-	isValid, err = test_monitor.withdrawalValidator.IsWithdrawalEventValid(&event)
-	require.NoError(t, err)
+	isValid := event.DisputeGame.DisputeGameData.RootClaim == event.ExpectedRootClaim && event.WithdrawalHashPresentOnL2
+
 	require.False(t, isValid)
 
 }

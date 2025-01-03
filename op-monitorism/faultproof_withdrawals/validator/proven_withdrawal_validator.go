@@ -249,18 +249,3 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint6
 
 	return enrichedProvenWithdrawalEvents, nil
 }
-
-// IsWithdrawalEventValid checks if the enriched withdrawal event is valid.
-// It returns true if the event is valid, otherwise returns false.
-func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEvent *EnrichedProvenWithdrawalEvent) (bool, error) {
-	if !enrichedWithdrawalEvent.Enriched {
-		return false, fmt.Errorf("game not enriched")
-	}
-	validGameRootClaim := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == enrichedWithdrawalEvent.ExpectedRootClaim
-
-	if validGameRootClaim && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2 {
-		return true, nil
-	} else {
-		return false, nil
-	}
-}
