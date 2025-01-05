@@ -77,6 +77,25 @@ func NewMonitor(ctx context.Context, log log.Logger, metricsFactory metrics.Fact
 		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
 	}
 
+	startingL1BlockHeight, err := GetStartingBlock(ctx, cfg, latestL1Height, l1GethClient, log)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get starting block: %w", err)
+	}
+
+	latestKnownL2BlockNumber, err := l2OpGethClient.BlockNumber(ctx)
+	if err != nil {
+		log.Error("failed to get latest known L2 block number", "error", err)
+		return nil, err
+
+	}
+
+	state, err := NewState(log, startingL1BlockHeight, latestL1Height, latestKnownL2BlockNumber, metricsFactory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create state: %w", err)
+	}
+
+	defer state.LogState()
+
 	ret := &Monitor{
 		log: log,
 
@@ -92,48 +111,8 @@ func NewMonitor(ctx context.Context, log log.Logger, metricsFactory metrics.Fact
 
 		maxBlockRange: cfg.EventBlockRange,
 
-		state: State{},
+		state: *state,
 	}
-
-	// is starting block is set it takes precedence
-
-	var startingL1BlockHeight uint64
-	hoursInThePastToStartFrom := cfg.HoursInThePastToStartFrom
-
-	// In this case StartingL1BlockHeight is not set
-	if cfg.StartingL1BlockHeight == -1 {
-		// in this case is not set how many hours in the past to start from, we use default value that is 14 days.
-		if hoursInThePastToStartFrom == 0 {
-			hoursInThePastToStartFrom = DefaultHoursInThePastToStartFrom
-		}
-
-		// get the block number closest to the timestamp from two weeks ago
-		latestL1HeightBigInt := new(big.Int).SetUint64(latestL1Height)
-		startingL1BlockHeightBigInt, err := GetBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)), log)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get block at approximate time: %w", err)
-		}
-		startingL1BlockHeight = startingL1BlockHeightBigInt.Uint64()
-
-	} else {
-		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
-	}
-
-	latestKnownL2BlockNumber, err := ret.l2OpGethClient.BlockNumber(ret.ctx)
-	if err != nil {
-		ret.log.Error("failed to get latest known L2 block number", "error", err)
-		return nil, err
-
-	}
-
-	state, err := NewState(log, startingL1BlockHeight, latestL1Height, latestKnownL2BlockNumber, metricsFactory)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create state: %w", err)
-	}
-	ret.state = *state
-
-	// log state and metrics
-	ret.state.LogState()
 
 	return ret, nil
 }

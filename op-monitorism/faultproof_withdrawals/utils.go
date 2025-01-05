@@ -72,3 +72,28 @@ func GetBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclien
 	// After exiting the loop, left should be the block number closest to the target time
 	return left, nil
 }
+
+func GetStartingBlock(ctx context.Context, cfg CLIConfig, latestL1Height uint64, l1GethClient *ethclient.Client, logger log.Logger) (uint64, error) {
+	var startingL1BlockHeight uint64
+	hoursInThePastToStartFrom := cfg.HoursInThePastToStartFrom
+
+	// In this case StartingL1BlockHeight is not set
+	if cfg.StartingL1BlockHeight == -1 {
+		// in this case is not set how many hours in the past to start from, we use default value that is 14 days.
+		if hoursInThePastToStartFrom == 0 {
+			hoursInThePastToStartFrom = DefaultHoursInThePastToStartFrom
+		}
+
+		// get the block number closest to the timestamp from two weeks ago
+		latestL1HeightBigInt := new(big.Int).SetUint64(latestL1Height)
+		startingL1BlockHeightBigInt, err := GetBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)), logger)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get block at approximate time: %w", err)
+		}
+		startingL1BlockHeight = startingL1BlockHeightBigInt.Uint64()
+
+	} else {
+		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
+	}
+	return startingL1BlockHeight, nil
+}

@@ -163,7 +163,7 @@ func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhash(withdr
 // GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress retrieves submitted proof data
 // for the specified withdrawal hash and proof submitter address.
 // It returns a pointer to SubmittedProofData along with any error encountered.
-func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
+func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address, blockNumber *big.Int) (*SubmittedProofData, error) {
 	gameProxyStruct, err := op.optimismPortal2.ProvenWithdrawals(nil, withdrawalHash, proofSubmitterAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x error:%w", withdrawalHash, proofSubmitterAddress, err)
