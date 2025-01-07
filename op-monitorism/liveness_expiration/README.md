@@ -33,7 +33,7 @@ OPTIONS:
    --help, -h                      show help
 ```
 
-### Informations
+### Information
 
 This tool allows the monitoring of multiple metrics like:
 
