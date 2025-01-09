@@ -5,7 +5,7 @@ FROM golang:1.22.2-alpine3.19 as builder
 WORKDIR /app
 
 # Install system dependencies including 'make'
-RUN apk update && apk add --no-cache make && apk add --no-cache ca-certificates
+RUN apk update && apk add --no-cache make
 
 # Copy the source code and Makefile into the container
 COPY . .
@@ -15,6 +15,9 @@ RUN make
 
 # Define the final base image
 FROM alpine:3.18
+
+# Install ca-certificates so that HTTPS works
+RUN apk update && apk add --no-cache ca-certificates
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/bin/monitorism /usr/local/bin/monitorism
