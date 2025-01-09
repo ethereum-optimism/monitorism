@@ -5,7 +5,7 @@ FROM golang:1.22.2-alpine3.19 as builder
 WORKDIR /app
 
 # Install system dependencies including 'make'
-RUN apk update && apk add --no-cache make
+RUN apk update && apk add --no-cache make && apk add --no-cache ca-certificates
 
 # Copy the source code and Makefile into the container
 COPY . .
