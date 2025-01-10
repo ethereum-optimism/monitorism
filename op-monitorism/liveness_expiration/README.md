@@ -38,7 +38,7 @@ OPTIONS:
 This tool allows the monitoring of multiple metrics like:
 
 `blockTimestamp`: The block Timestamp of the latest block number on L1.
-`highestBlockNumber`: The lastest block number height on L1.
+`highestBlockNumber`: The latest block number height on L1.
 `lastLiveOfAOwner`: Get the last activities for a given safe owner on L1.
 `intervalLiveness`: the interval (in seconds) from the LivenessModule on L1.
 
