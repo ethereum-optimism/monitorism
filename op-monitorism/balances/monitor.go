@@ -60,7 +60,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "unexpectedRpcErrors",
-			Help:      "number of unexpcted rpc errors",
+			Help:      "number of unexpected rpc errors",
 		}, []string{"section", "name"}),
 	}, nil
 }

@@ -2,12 +2,14 @@
 
 The fault monitor checks for changes in output roots posted to the `L2OutputOracle` contract. On change, reconstructing the output root from a trusted L2 source and looking for a match
 
+NOTE: Fault monitor only working against chains Pre-Faultproof. For chains using Faultproof system please check [dispute-mon service](https://github.com/ethereum-optimism/optimism/blob/develop/op-dispute-mon/README.md)
+
 ```
 OPTIONS:
-   --l1.node.url value             [$FAULT_MON_L1_NODE_URL]         Node URL of L1 peer (default: "127.0.0.1:8545")
-   --l2.node.url value             [$FAULT_MON_L2_NODE_URL]         Node URL of L2 peer (default: "127.0.0.1:9545")
-   --start.output.index value      [$FAULT_MON_START_OUTPUT_INDEX]  Output index to start from. -1 to find first unfinalized index (default: -1)
-   --optimismportal.address value  [$FAULT_MON_OPTIMISM_PORTAL]     Address of the OptimismPortal contract
+   --l1.node.url value             Node URL of L1 peer Geth node [$FAULT_MON_L1_NODE_URL]
+   --l2.node.url value             Node URL of L2 peer Op-Geth node [$FAULT_MON_L2_NODE_URL]
+   --start.output.index value      Output index to start from. -1 to find first unfinalized index (default: -1) [$FAULT_MON_START_OUTPUT_INDEX]
+   --optimismportal.address value  Address of the OptimismPortal contract [$FAULT_MON_OPTIMISM_PORTAL]
 ```
 
 On mismatch the `isCurrentlyMismatched` metrics is set to `1`.

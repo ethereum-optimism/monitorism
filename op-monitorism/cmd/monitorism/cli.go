@@ -8,10 +8,12 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/balances"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/drippie"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/fault"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/global_events"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/secrets"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/transaction_monitor"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
@@ -90,6 +92,20 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Description: "Monitor the liveness expiration on Gnosis Safe.",
 				Flags:       append(liveness_expiration.CLIFlags("LIVENESS_EXPIRATION_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(LivenessExpirationMain),
+			},
+			{
+				Name:        "faultproof_withdrawals",
+				Usage:       "Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.",
+				Description: "Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.",
+				Flags:       append(faultproof_withdrawals.CLIFlags("FAULTPROOF_WITHDRAWAL_MON"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(FaultproofWithdrawalsMain),
+			},
+			{
+				Name:        "transaction_monitor",
+				Usage:       "Monitors transactions from specified addresses and alerts above a certain threshold",
+				Description: "Monitors transactions from specified addresses and alerts above a certain threshold",
+				Flags:       append(transaction_monitor.CLIFlags("TRANSACTION_MONITOR"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(TransactionMonitorMain),
 			},
 			{
 				Name:        "version",
@@ -176,7 +192,23 @@ func WithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	metricsRegistry := opmetrics.NewRegistry()
 	monitor, err := withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create withdrawal monitor: %w", err)
+		return nil, fmt.Errorf("failed to create withdrawals monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+
+func FaultproofWithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := faultproof_withdrawals.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse faultproof withdrawals config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := faultproof_withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create faultproof withdrawals monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
@@ -225,6 +257,22 @@ func SecretsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lif
 	monitor, err := secrets.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secrets monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+
+func TransactionMonitorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := transaction_monitor.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse transaction monitor config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := transaction_monitor.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transaction monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)

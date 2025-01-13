@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -109,7 +109,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
 			Name:      "unexpectedRpcErrors",
-			Help:      "number of unexpcted rpc errors",
+			Help:      "number of unexpected rpc errors",
 		}, []string{"section", "name"}),
 	}, nil
 }

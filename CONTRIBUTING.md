@@ -36,7 +36,7 @@ Reviewers should submit their review with either `Approve` or `Request changes` 
 
 If the reviewer selects `Request changes`, they should clearly indicate which changes they require in order to approve.
 
-If the reviewer selects `Approves`, they should either:
+If the reviewer selects `Approve`, they should either:
 1. immediately merge it, or
 2. indicate what further review they deem necessary (and from whom).
 

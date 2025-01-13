@@ -49,7 +49,7 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 	}
 }
 
-// PSPExecutorMain() is a the entrypoint for the PSPExecutor API HTTP server.
+// PSPExecutorMain() is the entrypoint for the PSPExecutor API HTTP server.
 func PSPExecutorMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
 	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
 	cfg, err := psp_executor.ReadCLIFlags(ctx)

@@ -2,7 +2,7 @@
 
 _op-defender_ is an active security service allowing to provide automated defense for the OP Stack.
 
-The following the commands are currently available:
+The following commands are currently available:
 
 ```bash
 NAME:
@@ -27,7 +27,7 @@ GLOBAL OPTIONS:
    --version, -v  print the version
 ```
 
-Each _defenders_ has some common configuration, that are configurable both via CLI or environment variables with defaults values.
+Each _defender_ has some common configuration, that are configurable both via CLI or environment variables with default values.
 
 ### PSP Executor Service
 

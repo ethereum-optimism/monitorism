@@ -9,6 +9,8 @@
     - [Multisig Monitor](#multisig-monitor)
     - [Drippie Monitor](#drippie-monitor)
     - [Secrets Monitor](#secrets-monitor)
+    - [Transaction Monitor](#transaction-monitor)
+    - [Faultproof Withdrawals](#faultproof-withdrawal)
   - [Defender Components](#defender-components)
     - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
   - [CLI &amp; Docs](#cli--docs)
@@ -26,12 +28,17 @@ The suite is composed of two main components: `op-monitorism` and `op-defender`,
 ### Op-Monitorism
 Op-Monitorism Docker images are published with each release and build, ensuring you have access to the latest features and fixes.
 
-The latest release version for linux/amd64 can be found in the [release notes](https://github.com/ethereum-optimism/monitorism/releases/tag/op-monitorism%2Fv0.0.4)
+The latest release version for linux/amd64 can be found in the [release notes](https://github.com/ethereum-optimism/monitorism/releases)
 
 To pull the latest Docker image, run:
 ```bash
-docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:v0.0.4@sha256:be9aebdd44b5ef595986301d162d805f3cc6982291c37164000dc6671158b9bf
+docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:latest
 ``` 
+To pull a specific release version
+```bash
+docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:v0.0.4
+```
+
 Note: The --platform flag is necessary for Mac computers with ARM chips to ensure compatibility with the linux/amd64 architecture.
 
 
@@ -101,8 +108,8 @@ On change, reconstructing the output root from a trusted L2 source and looking f
 ![7dab260ee38122980274fee27b114c590405cff2e5a68e6090290ecb786b68f2](https://github.com/user-attachments/assets/0eeb161b-923a-40fd-b561-468df3d5091d)
 
 The multisig monitor reports the paused status of the `OptimismPortal` contract.
-If set, the latest nonce of the configued `Safe` address. And also if set, the latest presigned nonce stored in One Password.
-The latest presigned nonce is identifyed by looking for items in the configued vault that follow a `ready-<nonce>.json` name.
+If set, the latest nonce of the configured `Safe` address. And also if set, the latest presigned nonce stored in One Password.
+The latest presigned nonce is identified by looking for items in the configured vault that follow a `ready-<nonce>.json` name.
 The highest nonce of this item name format is reported.
 
 | `op-monitorism/multisig` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/multisig/README.md) |
@@ -117,10 +124,29 @@ The drippie monitor tracks the execution and executability of drips within a Dri
 
 ### Secrets Monitor
 
-The secrets monitor takes a Drippie contract as a parameter and monitors for any drips within that contract that use the CheckSecrets dripcheck contract. CheckSecrets is a dripcheck that allows a drip to begin once a specific secret has been revealed (after a delay period) and cancels the drip if a second secret is revealed. It's important to monitor for these secrets being revealed as this could be a sign that the secret storage platform has been compromised and someone is attempting to exflitrate the ETH controlled by that drip.
+The secrets monitor takes a Drippie contract as a parameter and monitors for any drips within that contract that use the CheckSecrets dripcheck contract. CheckSecrets is a dripcheck that allows a drip to begin once a specific secret has been revealed (after a delay period) and cancels the drip if a second secret is revealed. It's important to monitor for these secrets being revealed as this could be a sign that the secret storage platform has been compromised and someone is attempting to exfiltrate the ETH controlled by that drip.
 
 | `op-monitorism/secrets` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/secrets/README.md) |
 | ----------------------- | --------------------------------------------------------------------------------------------------- |
+
+### Transaction Monitor
+
+The transaction monitor takes in a yaml config in order to run, and monitors transaction sent by a specific address, tracking both cumulative eth sent, as well as tunable thresholds for specific alerts. It is also configurable to support working against factory contracts, right now just the `FaultDisputeGame` factory to ensure the addresses are only interacting with valid fault dispute games.
+
+| `op-monitorism/transaction_monitor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/transaction_monitor/README.md) |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------- |
+
+### Faultproof Withdrawal
+
+The Faultproof Withdrawal component monitors ProvenWithdrawals events on the [OptimismPortal](https://github.com/ethereum-optimism/superchain-registry/blob/d454618b6cf885417aa8cc8c760bd9ed0429c131/superchain/configs/mainnet/op.toml#L50) contract and performs checks to detect any violations of invariant conditions on the chain. If a violation is detected, it logs the issue and sets a Prometheus metric for the event.
+
+This component is designed to work exclusively with chains that are already utilizing the [Fault Proofs system](https://docs.optimism.io/stack/protocol/fault-proofs/explainer).
+This is a new version of the deprecated [chain-mon faultproof-wd-mon](https://github.com/ethereum-optimism/optimism/tree/chain-mon/v1.2.1/packages/chain-mon/src/faultproof-wd-mon).
+For detailed information on how the component works and the algorithms used, please refer to the component README.
+
+| `op-monitorism/faultproof_withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof_withdrawals/README.md) |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+
 
 ## Defender Components
 
@@ -146,15 +172,21 @@ After cloning, please run `./bootstrap.sh` to set up the development environment
 
 ### Command line Options
 
-The cli has the ability to spin up a monitor for varying activities, each emmitting metrics used to setup alerts.
+The cli has the ability to spin up a monitor for varying activities, each emitting metrics used to setup alerts.
 
 ```
 COMMANDS:
-   multisig     Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password
-   fault        Monitors output roots posted on L1 against L2
-   withdrawals  Monitors proven withdrawals on L1 against L2
-   balances     Monitors account balances
-   secrets      Monitors secrets revealed in the CheckSecrets dripcheck
+   multisig                Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password
+   fault                   Monitors output roots posted on L1 against L2
+   withdrawals             Monitors proven withdrawals on L1 against L2
+   balances                Monitors account balances
+   drippie                 Monitors Drippie contract
+   secrets                 Monitors secrets revealed in the CheckSecrets dripcheck
+   global_events           Monitors global events with YAML configuration
+   liveness_expiration     Monitor the liveness expiration on Gnosis Safe.
+   faultproof_withdrawals  Monitors withdrawals on the OptimismPortal in order to detect forgery. Note: Requires chains with Fault Proofs.
+   version                 Show version
+   help, h                 Shows a list of commands or help for one command
 ```
 
 Each monitor has some common configuration, configurable both via cli or env with defaults.

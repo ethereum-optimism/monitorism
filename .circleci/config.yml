@@ -3,7 +3,7 @@ version: 2.1
 parameters:
   ci_builder_image:
     type: string
-    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder:v0.48.0
+    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder:v0.55.0
   ci_builder_rust_image:
     type: string
     default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder-rust:latest
@@ -66,9 +66,8 @@ jobs:
         type: string
         default: ""
     shell: /bin/bash -eo pipefail
-    executor:
-      name: go/default # is based on cimg/go
-      tag: "1.21"
+    docker:
+      - image: <<pipeline.parameters.ci_builder_image>>
     steps:
       - checkout
       - run:
@@ -95,8 +94,6 @@ jobs:
       - run:
           name: run Go linter
           command: |
-            # Identify how many cores it defaults to
-            golangci-lint --help | grep concurrency
             make <<parameters.project_name>>-lint-go
           working_directory: .
       - save_cache:
@@ -193,11 +190,14 @@ jobs:
               else
                 export GIT_VERSION=$(echo "$full_release_tag" | tail -n 1)
               fi
+              if [ "<<parameters.release>>" == "true" ]; then
+                export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS,latest"
+              else
+                export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS"
+              fi
               
-              export IMAGE_TAGS="$GIT_VERSION,$IMAGE_TAGS"
               echo "Setting IMAGE_TAGS=$IMAGE_TAGS"
             fi
-
 
 
             # Create, start (bootstrap) and use a *named* docker builder
@@ -266,7 +266,7 @@ workflows:
           type: approval
           filters:
             tags:
-              only: (^op-monitorism\/v.*$|^op-defender\/v.*$)
+              only: /(^op-monitorism\/v.*$|^op-defender\/v.*$)/
             branches:
               ignore: /.*/
       - docker-build:
@@ -279,7 +279,7 @@ workflows:
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>
           requires: ["hold"]
-          platforms: "linux/amd64"
+          platforms: "linux/amd64,linux/arm64"
           publish: true
           release: true
           context:
@@ -294,11 +294,12 @@ workflows:
           docker_name: op-defender
           docker_tags: <<pipeline.git.revision>>
           requires: ["hold"]
-          platforms: "linux/amd64"
+          platforms: "linux/amd64,linux/arm64"
           publish: true
           release: true
           context:
             - oplabs-gcr
+
   main:
     when:
       and:

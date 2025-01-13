@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
+	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig/bindings"
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -84,7 +84,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		highestOutputIndex: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "highestOutputIndex",
-			Help:      "Highest output indicies (checked and known)",
+			Help:      "Highest output indices (checked and known)",
 		}, []string{"type"}),
 		isCurrentlyMismatched: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,

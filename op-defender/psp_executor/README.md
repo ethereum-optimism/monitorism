@@ -18,7 +18,7 @@ Settings of the HTTP API service:
 | Port           | API Path             | HTTP Method |
 | -------------- | -------------------- | ----------- |
 | 8080 (Default) | `/api/psp_execution` | POST        |
-| 8080 (Default) | `/api/healtcheck`    | GET         |
+| 8080 (Default) | `/api/healthcheck`    | GET         |
 
 To run the psp_executor service, you can use the following command:
 
@@ -35,8 +35,6 @@ Explanation of the options:
 | `--chainid` | 11155111 | Chain ID for the network |
 | `--superchainconfig.address` | 0xC2Be75506d5724086DEB7245bd260Cc9753911Be | Address of SuperchainConfig contract |
 | `--rpc.url` | http://localhost:8545 | URL of the RPC node |
-| `--port.api` | 8080 | Port for the HTTP API server |
-
 | `--port.api` | 8080 | Port for the HTTP API server |
 **PSPs Format**
 The PSPs are stored with a JSON format. The JSON file should contain an array of PSPs. Each PSP should have the following fields:
