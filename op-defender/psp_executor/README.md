@@ -23,7 +23,7 @@ Settings of the HTTP API service:
 To run the psp_executor service, you can use the following command:
 
 ```shell
-go run ../cmd/defender psp_executor --privatekey 2a[..]c6 --safe.address 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E --path /tmp/psps.json --chainid 11155111 --superchainconfig.address 0xC2Be75506d5724086DEB7245bd260Cc9753911Be --rpc.url http://localhost:8545 --port.api 8080
+go run ../cmd/defender psp_executor --privatekey 2a[..]c6 --safe.address 0x837DE453AD5F21E89771e3c06239d8236c0EFd5E --path /tmp/psps.json --chainid 11155111 --superchainconfig.address 0xC2Be75506d5724086DEB7245bd260Cc9753911Be --rpc.url http://localhost:8545 --port.api 8080 --tls.ca certs/ca-cert.pem --tls.cert certs/server-cert.pem --tls.key certs/server-key.pem
 ```
 
 Explanation of the options:
@@ -36,6 +36,9 @@ Explanation of the options:
 | `--superchainconfig.address` | 0xC2Be75506d5724086DEB7245bd260Cc9753911Be | Address of SuperchainConfig contract |
 | `--rpc.url` | http://localhost:8545 | URL of the RPC node |
 | `--port.api` | 8080 | Port for the HTTP API server |
+| `--tls.ca` | certs/ca-cert.pem | Certificate Authority's certificate |
+| `--tls.cert` | certs/server-cert.pem | Server's certificate |
+| `--tls.key` | certs/server-key.pem | Server's private key |
 **PSPs Format**
 The PSPs are stored with a JSON format. The JSON file should contain an array of PSPs. Each PSP should have the following fields:
 
@@ -75,7 +78,7 @@ The example above is starting by `[` and finishing by `]` as this is an array of
 To use the HTTP API you can use the following `curl` command with the following fields:
 
 ```bash
-curl -X POST http://localhost:8080/api/psp_execution \-H "Content-Type: application/json" \-d '{"Pause":true,"Timestamp":1596240000,"Operator":"tom"}'
+curl -X POST http://localhost:8080/api/psp_execution \-H "Content-Type: application/json" \-d '{"Pause":true,"Timestamp":1596240000,"Operator":"tom"}' --cert client-cert.pem --key client-key.pem
 ```
 
 Explanation of the _mandatory_ fields:
@@ -124,11 +127,13 @@ OPTIONS:
    --path value                      Absolute path to the JSON file containing the PSPs [$PSPEXECUTOR_PATH_TO_PSPS]
    --blockduration value             Block duration of the current chain that op-defender is running on (default: 12) [$PSPEXECUTOR_BLOCK_DURATION]
    --chainid value                   ChainID of the current chain that op-defender is running on (default: 0) [$PSPEXECUTOR_CHAIN_ID]
+   --tls.ca value                    tls ca cert path [$PSPEXECUTOR_TLS_CA]
+   --tls.cert value                  tls cert path [$PSPEXECUTOR_TLS_CERT]
+   --tls.key value                   tls key [$PSPEXECUTOR_TLS_KEY]
    --log.level value                 The lowest log level that will be output (default: INFO) [$DEFENDER_LOG_LEVEL]
    --log.format value                Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text) [$DEFENDER_LOG_FORMAT]
    --log.color                       Color the log output if in terminal mode (default: false) [$DEFENDER_LOG_COLOR]
    --metrics.enabled                 Enable the metrics server (default: false) [$DEFENDER_METRICS_ENABLED]
    --metrics.addr value              Metrics listening address (default: "0.0.0.0") [$DEFENDER_METRICS_ADDR]
    --metrics.port value              Metrics listening port (default: 7300) [$DEFENDER_METRICS_PORT]
-   --help, -h                        show help
-```
+   --help, -h                        show help```
