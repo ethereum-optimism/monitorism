@@ -26,15 +26,12 @@ type Monitor struct {
 	ctx context.Context
 
 	// user arguments
-	l1GethClient   *ethclient.Client
-	l2OpGethClient *ethclient.Client
-	l2OpNodeClient *ethclient.Client
-	l1ChainID      *big.Int
-	l2ChainID      *big.Int
-	maxBlockRange  uint64
-
-	// helpers
-	withdrawalValidator validator.ProvenWithdrawalValidator
+	L1Proxy       validator.L1ProxyInterface
+	l2Proxy       validator.L2ProxyInterface
+	validator     Validator
+	l1ChainID     *big.Int
+	l2ChainID     *big.Int
+	maxBlockRange uint64
 
 	// state
 	state   State
@@ -47,34 +44,31 @@ type Monitor struct {
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
 	log.Info("creating withdrawals monitor...")
 
-	l1GethClient, err := ethclient.Dial(cfg.L1GethURL)
+	l1Proxy, err := validator.NewL1Proxy(&ctx, cfg.L1GethURL, cfg.OptimismPortalAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial l1: %w", err)
-	}
-	l2OpGethClient, err := ethclient.Dial(cfg.L2OpGethURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial l2: %w", err)
-	}
-	l2OpNodeClient, err := ethclient.Dial(cfg.L2OpNodeURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial l2: %w", err)
+		return nil, fmt.Errorf("failed to create L1 proxy: %w", err)
 	}
 
-	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, l1GethClient, l2OpGethClient, l2OpNodeClient, cfg.OptimismPortalAddress)
+	l2Proxy, err := validator.NewL2Proxy(&ctx, cfg.L2OpGethURL, cfg.L2OpNodeURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create withdrawal validator: %w", err)
+		return nil, fmt.Errorf("failed to create L2 proxy: %w", err)
 	}
 
-	latestL1Height, err := l1GethClient.BlockNumber(ctx)
+	validator, err := NewValidator(&ctx, l1Proxy, l2Proxy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create validator: %w", err)
+	}
+
+	latestL1Height, err := l1Proxy.LatestHeight()
 	if err != nil {
 		return nil, fmt.Errorf("failed to query latest block number: %w", err)
 	}
 
-	l1ChainID, err := l1GethClient.ChainID(ctx)
+	l1ChainID, err := l1Proxy.ChainID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get l1 chain id: %w", err)
 	}
-	l2ChainID, err := l2OpGethClient.ChainID(ctx)
+	l2ChainID, err := l2Proxy.ChainID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
 	}
@@ -84,15 +78,14 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	ret := &Monitor{
 		log: log,
 
-		ctx:            ctx,
-		l1GethClient:   l1GethClient,
-		l2OpGethClient: l2OpGethClient,
-		l2OpNodeClient: l2OpNodeClient,
+		ctx: ctx,
+
+		L1Proxy:   l1Proxy,
+		l2Proxy:   l2Proxy,
+		validator: *validator,
 
 		l1ChainID: l1ChainID,
 		l2ChainID: l2ChainID,
-
-		withdrawalValidator: *withdrawalValidator,
 
 		maxBlockRange: cfg.EventBlockRange,
 

@@ -141,3 +141,25 @@ func (l2Proxy *L2Proxy) getOutputRootFromCalculation(blockNumber *big.Int) ([32]
 	outputRoot := eth.OutputRoot(&eth.OutputV0{StateRoot: [32]byte(block.Root()), MessagePasserStorageRoot: [32]byte(proof.StorageHash), BlockHash: block.Hash()})
 	return outputRoot, nil
 }
+
+func (l2Proxy *L2Proxy) LatestHeight() (uint64, error) {
+	l2Proxy.ConnectionState.ProxyConnection++
+	block, err := l2Proxy.l2GethClient.BlockByNumber(*l2Proxy.ctx, nil)
+	if err != nil {
+		l2Proxy.ConnectionState.ProxyConnectionFailed++
+		return 0, fmt.Errorf("failed to get latest block: %w", err)
+	}
+
+	return block.NumberU64(), nil
+}
+
+func (l2Proxy *L2Proxy) ChainID() (*big.Int, error) {
+	l2Proxy.ConnectionState.ProxyConnection++
+	chainID, err := l2Proxy.l2GethClient.ChainID(*l2Proxy.ctx)
+	if err != nil {
+		l2Proxy.ConnectionState.ProxyConnectionFailed++
+		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	return chainID, nil
+}

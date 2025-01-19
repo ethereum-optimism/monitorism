@@ -264,3 +264,25 @@ func (l1Proxy *L1Proxy) GetDisputeGameProxyUpdates(disputeGame *DisputeGame) (*D
 
 	return disputeGame, nil
 }
+
+func (l1Proxy *L1Proxy) LatestHeight() (uint64, error) {
+	l1Proxy.ConnectionState.ProxyConnection++
+	block, err := l1Proxy.l1GethClient.BlockByNumber(*l1Proxy.ctx, nil)
+	if err != nil {
+		l1Proxy.ConnectionState.ProxyConnectionFailed++
+		return 0, fmt.Errorf("failed to get latest block: %w", err)
+	}
+
+	return block.NumberU64(), nil
+}
+
+func (l1Proxy *L1Proxy) ChainID() (*big.Int, error) {
+	l1Proxy.ConnectionState.ProxyConnection++
+	chainID, err := l1Proxy.l1GethClient.ChainID(*l1Proxy.ctx)
+	if err != nil {
+		l1Proxy.ConnectionState.ProxyConnectionFailed++
+		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	return chainID, nil
+}
