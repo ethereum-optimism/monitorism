@@ -1,6 +1,10 @@
 package validator
 
-import "math/big"
+import (
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/core/types"
+)
 
 // L1ProxyInterface defines the interface for L1 chain interactions
 type L1ProxyInterface interface {
@@ -15,6 +19,9 @@ type L1ProxyInterface interface {
 
 	// Gets the latest block height
 	LatestHeight() (uint64, error)
+
+	// Gets a block by number
+	BlockByNumber(blockNumber *big.Int) (*types.Block, error)
 
 	// Gets the chain ID
 	ChainID() (*big.Int, error)
@@ -33,6 +40,9 @@ type L2ProxyInterface interface {
 
 	// Gets the latest block height
 	LatestHeight() (uint64, error)
+
+	// Gets a block by number
+	BlockByNumber(blockNumber *big.Int) (*types.Block, error)
 
 	// Gets the chain ID
 	ChainID() (*big.Int, error)

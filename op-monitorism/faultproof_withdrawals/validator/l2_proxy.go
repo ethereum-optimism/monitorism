@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -151,6 +152,17 @@ func (l2Proxy *L2Proxy) LatestHeight() (uint64, error) {
 	}
 
 	return block.NumberU64(), nil
+}
+
+func (l2Proxy *L2Proxy) BlockByNumber(blockNumber *big.Int) (*types.Block, error) {
+	l2Proxy.ConnectionState.ProxyConnection++
+	block, err := l2Proxy.l2GethClient.BlockByNumber(*l2Proxy.ctx, blockNumber)
+	if err != nil {
+		l2Proxy.ConnectionState.ProxyConnectionFailed++
+		return nil, fmt.Errorf("failed to get block by number: %w", err)
+	}
+
+	return block, nil
 }
 
 func (l2Proxy *L2Proxy) ChainID() (*big.Int, error) {

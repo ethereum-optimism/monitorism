@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -274,6 +275,17 @@ func (l1Proxy *L1Proxy) LatestHeight() (uint64, error) {
 	}
 
 	return block.NumberU64(), nil
+}
+
+func (l1Proxy *L1Proxy) BlockByNumber(blockNumber *big.Int) (*types.Block, error) {
+	l1Proxy.ConnectionState.ProxyConnection++
+	block, err := l1Proxy.l1GethClient.BlockByNumber(*l1Proxy.ctx, blockNumber)
+	if err != nil {
+		l1Proxy.ConnectionState.ProxyConnectionFailed++
+		return nil, fmt.Errorf("failed to get block by number: %w", err)
+	}
+
+	return block, nil
 }
 
 func (l1Proxy *L1Proxy) ChainID() (*big.Int, error) {
