@@ -18,6 +18,9 @@ type L1ProxyInterface interface {
 
 	// Gets the chain ID
 	ChainID() (*big.Int, error)
+
+	// Close the L1 proxy
+	Close()
 }
 
 // L2ProxyInterface defines the interface for L2 chain interactions
@@ -33,6 +36,9 @@ type L2ProxyInterface interface {
 
 	// Gets the chain ID
 	ChainID() (*big.Int, error)
+
+	// Close the L2 proxy
+	Close()
 }
 
 // Ensure L1Proxy and L2Proxy implement their respective interfaces

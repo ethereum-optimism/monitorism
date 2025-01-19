@@ -27,7 +27,7 @@ type Monitor struct {
 
 	// user arguments
 	L1Proxy       validator.L1ProxyInterface
-	l2Proxy       validator.L2ProxyInterface
+	L2Proxy       validator.L2ProxyInterface
 	validator     Validator
 	l1ChainID     *big.Int
 	l2ChainID     *big.Int
@@ -81,7 +81,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		ctx: ctx,
 
 		L1Proxy:   l1Proxy,
-		l2Proxy:   l2Proxy,
+		L2Proxy:   l2Proxy,
 		validator: *validator,
 
 		l1ChainID: l1ChainID,
@@ -336,7 +336,7 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 
 // Close gracefully shuts down the Monitor by closing the Geth clients.
 func (m *Monitor) Close(_ context.Context) error {
-	m.l1GethClient.Close()
-	m.l2OpGethClient.Close()
+	m.L1Proxy.Close()
+	m.L2Proxy.Close()
 	return nil
 }

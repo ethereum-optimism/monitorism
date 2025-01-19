@@ -163,3 +163,7 @@ func (l2Proxy *L2Proxy) ChainID() (*big.Int, error) {
 
 	return chainID, nil
 }
+
+func (l2Proxy *L2Proxy) Close() {
+	l2Proxy.l2GethClient.Close()
+}
