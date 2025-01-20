@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 
@@ -16,11 +17,15 @@ import (
 )
 
 type WithdrawalValidation struct {
-	DisputeGame                            *DisputeGame
-	TrustedRoots                           *[32]byte
+	DisputeGameEvent                       DisputeGameEvent
+	TrustedRoots                           [32]byte
 	WithdrawalPresentOnL2ToL1MessagePasser bool
 	BlockPresentOnL2                       bool
 	IsWithdrawalValid                      bool
+}
+
+func (dgcd *WithdrawalValidation) String() string {
+	return fmt.Sprintf("DisputeGameEvent: %v, TrustedRoots: 0x%v, WithdrawalPresentOnL2ToL1MessagePasser: %v, BlockPresentOnL2: %v, IsWithdrawalValid: %v", dgcd.DisputeGameEvent, hex.EncodeToString(dgcd.TrustedRoots[:]), dgcd.WithdrawalPresentOnL2ToL1MessagePasser, dgcd.BlockPresentOnL2, dgcd.IsWithdrawalValid)
 }
 
 type L2Proxy struct {
@@ -35,6 +40,12 @@ type L2Proxy struct {
 type L2ConnectionState struct {
 	ProxyConnection       uint64
 	ProxyConnectionFailed uint64
+}
+
+// OutputResponse represents the response structure for output-related data.
+type OutputResponse struct {
+	Version    string `json:"version"`    // The version of the output.
+	OutputRoot string `json:"outputRoot"` // The output root associated with the response.
 }
 
 func NewL2Proxy(ctx *context.Context, l2GethURL string, l2NodeURL string) (*L2Proxy, error) {
@@ -71,9 +82,10 @@ func NewL2Proxy(ctx *context.Context, l2GethURL string, l2NodeURL string) (*L2Pr
 	}, nil
 }
 
-func (l2Proxy *L2Proxy) GetWithdrawalValidation(disputeGame *DisputeGame) (*WithdrawalValidation, error) {
+func (l2Proxy *L2Proxy) GetWithdrawalValidation(disputeGameEvent DisputeGameEvent) (*WithdrawalValidation, error) {
 
-	withdrawalHash := disputeGame.DisputeGameRef.event.WithdrawalHash
+	// fmt.Print("Game: ", disputeGame, "\n")
+	withdrawalHash := disputeGameEvent.EventRef.WithdrawalHash
 
 	l2Proxy.ConnectionState.ProxyConnection++
 	withdrawalPresentOnL2ToL1MessagePasser, err := l2Proxy.l2ToL1MessagePasser.L2ToL1MessagePasserCaller.SentMessages(nil, withdrawalHash)
@@ -82,27 +94,25 @@ func (l2Proxy *L2Proxy) GetWithdrawalValidation(disputeGame *DisputeGame) (*With
 		return nil, fmt.Errorf("failed to check if withdrawal exists on L2: %w", err)
 	}
 
-	blockNumber := disputeGame.DisputeGameClaimData.L2blockNumber
+	blockNumber := disputeGameEvent.DisputeGame.DisputeGameClaimData.L2blockNumber
 	l2Proxy.ConnectionState.ProxyConnection++
-	blockPresentOnL2, err := l2Proxy.l2GethClient.BlockByNumber(*l2Proxy.ctx, blockNumber)
+	blockPresentOnL2, err := l2Proxy.BlockByNumber(blockNumber)
 	if err != nil {
 		l2Proxy.ConnectionState.ProxyConnectionFailed++
-		return nil, fmt.Errorf("failed to get block by number: %w", err)
 	}
 
 	l2Proxy.ConnectionState.ProxyConnection++
 	trustedRootProof, err := l2Proxy.getOutputRootFromTrustedL2Node(blockNumber)
 	if err != nil {
 		l2Proxy.ConnectionState.ProxyConnectionFailed++
-		return nil, fmt.Errorf("failed to get output root from trusted L2 node: %w", err)
 	}
 
 	return &WithdrawalValidation{
-		DisputeGame:                            disputeGame,
-		TrustedRoots:                           &trustedRootProof,
+		DisputeGameEvent:                       disputeGameEvent,
+		TrustedRoots:                           trustedRootProof,
 		WithdrawalPresentOnL2ToL1MessagePasser: withdrawalPresentOnL2ToL1MessagePasser,
 		BlockPresentOnL2:                       blockPresentOnL2 != nil,
-		IsWithdrawalValid:                      withdrawalPresentOnL2ToL1MessagePasser && blockPresentOnL2 != nil && trustedRootProof == disputeGame.DisputeGameClaimData.RootClaim,
+		IsWithdrawalValid:                      withdrawalPresentOnL2ToL1MessagePasser && blockPresentOnL2 != nil && trustedRootProof == disputeGameEvent.DisputeGame.DisputeGameClaimData.RootClaim,
 	}, nil
 }
 
@@ -130,7 +140,7 @@ func (l2Proxy *L2Proxy) getOutputRootFromTrustedL2Node(l2blockNumber *big.Int) (
 func (l2Proxy *L2Proxy) getOutputRootFromCalculation(blockNumber *big.Int) ([32]byte, error) {
 	block, err := l2Proxy.l2GethClient.BlockByNumber(*l2Proxy.ctx, blockNumber)
 	if err != nil {
-		return [32]byte{}, fmt.Errorf("failed to get block by number: %w", err)
+		return [32]byte{}, fmt.Errorf("failed to get block by number: %d %w", blockNumber, err)
 	}
 
 	proof := struct{ StorageHash common.Hash }{}
@@ -159,7 +169,7 @@ func (l2Proxy *L2Proxy) BlockByNumber(blockNumber *big.Int) (*types.Block, error
 	block, err := l2Proxy.l2GethClient.BlockByNumber(*l2Proxy.ctx, blockNumber)
 	if err != nil {
 		l2Proxy.ConnectionState.ProxyConnectionFailed++
-		return nil, fmt.Errorf("failed to get block by number: %w", err)
+		return nil, fmt.Errorf("L2Proxy failed to get block by number: :%d %w", blockNumber, err)
 	}
 
 	return block, nil

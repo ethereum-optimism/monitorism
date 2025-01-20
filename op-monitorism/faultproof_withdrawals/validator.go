@@ -22,15 +22,15 @@ func NewValidator(ctx *context.Context, l1Proxy validator.L1ProxyInterface, l2Pr
 }
 
 func (v *Validator) GetRange(blockStart uint64, blockEnd uint64) ([]validator.WithdrawalValidation, error) {
-	getDisputeGamesForWithdrawalsEvents, err := v.L1Proxy.GetDisputeGamesForWithdrawalsEvents(blockStart, &blockEnd)
+	disputeGamesEvents, err := v.L1Proxy.GetDisputeGamesEvents(blockStart, blockEnd)
 	if err != nil {
 		return nil, err
 	}
 
 	withdrawalValidations := make([]validator.WithdrawalValidation, 0)
-	for _, disputeGame := range getDisputeGamesForWithdrawalsEvents {
+	for _, disputeGameEvent := range disputeGamesEvents {
 
-		withdrawalValidation, err := v.L2Proxy.GetWithdrawalValidation(&disputeGame)
+		withdrawalValidation, err := v.L2Proxy.GetWithdrawalValidation(disputeGameEvent)
 		if err != nil {
 			return nil, err
 		}

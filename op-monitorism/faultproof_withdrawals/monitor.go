@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -37,6 +38,11 @@ type Monitor struct {
 	startingL1Height uint64
 	latestL1Height   uint64
 	latestL2Height   uint64
+	nextL1Height     uint64
+
+	// currentWithdrawalsQueue map[common.Hash]*validator.WithdrawalProvenExtensionEvent
+	currentWithdrawalsQueue map[common.Hash]*validator.WithdrawalProvenExtensionEvent
+
 	// state
 	state   State
 	metrics Metrics
@@ -105,6 +111,7 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 		latestL1Height:   latestL1Height,
 		latestL2Height:   latestL2Height,
 		startingL1Height: startingL1Height,
+		nextL1Height:     startingL1Height,
 
 		maxBlockRange: cfg.EventBlockRange,
 
@@ -116,76 +123,81 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 // It retrieves new events, processes them, and updates the state accordingly.
 func (m *Monitor) Run(ctx context.Context) {
 	// Defer the update function
-	defer m.state.LogState()
+	// defer m.state.LogState()
 
-	start := m.state.nextL1Height
+	start := m.nextL1Height
 
-	latestL1Height, err := m.l1GethClient.BlockNumber(m.ctx)
+	latestL1Height, err := m.L1Proxy.LatestHeight()
 	if err != nil {
-		m.state.l1NodeConnectionFailures++
 		m.logger.Error("failed to query latest block number", "error", err)
-
 		return
 	}
-	m.state.latestL1Height = latestL1Height
+	m.latestL1Height = latestL1Height
 
-	stop := m.state.nextL1Height + m.maxBlockRange
+	stop := m.nextL1Height + m.maxBlockRange
 	if stop > latestL1Height {
 		stop = latestL1Height
 	}
 
-	latestKnownL2BlockNumber, err := m.l2OpGethClient.BlockNumber(m.ctx)
+	latestKnownL2BlockNumber, err := m.L2Proxy.LatestHeight()
 	if err != nil {
-		m.state.l2NodeConnectionFailures++
 		m.logger.Error("failed to get latest known L2 block number", "error", err)
 		return
 	}
 
 	m.state.latestL2Height = latestKnownL2BlockNumber
 
-	extractedEvents, err := m.ExtractWithdrawals(start, stop)
+	extractedEvents, err := m.validator.GetRange(start, stop)
 	if err != nil {
-		m.state.l1NodeConnectionFailures++
 		m.logger.Error("failed to extract withdrawals", "error", err)
 		return
 	}
 
-	m.logger.Info("Withdrawals Extracted", "count", len(extractedEvents), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
-
+	// In here we review the extracted events and add to currentWithdrawalsQueue the one that needs to be reviewed again later
 	for key, withdrawal := range extractedEvents {
-		m.state.currentWithdrawalsQueue[key] = withdrawal
+		m.logger.Info("Withdrawals Extracted", "count", len(extractedEvents), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
+		m.logger.Info("Reviewing newly extracted event", "key", key, "withdrawal", &withdrawal)
+
+		// if !withdrawal.IsWithdrawalValid {
+		// 	// We need to keep track only of games that are not valid
+		// 	m.currentWithdrawalsQueue[withdrawal.] = withdrawal
+		// }
 	}
 
-	m.logger.Info("Withdrawals Queue", "count", len(m.state.currentWithdrawalsQueue), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
+	// m.logger.Info("Withdrawals Extracted", "count", len(extractedEvents), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
 
-	for key, withdrawal := range m.state.currentWithdrawalsQueue {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
+	// for key, withdrawal := range extractedEvents {
+	// 	m.state.currentWithdrawalsQueue[key] = withdrawal
+	// }
 
-		err = m.enrichWithL2Data(withdrawal)
-		if err != nil {
-			m.state.l2NodeConnectionFailures++
-			m.logger.Error("failed to consume event", "error", err)
-			return
-		}
+	// m.logger.Info("Withdrawals Queue", "count", len(m.state.currentWithdrawalsQueue), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
 
-		m.logger.Info("Withdrawal enriched with L2 data", "key", key)
-		err = m.FaultDisputeGameHelper.RefreshState(withdrawal.DisputeGame)
-		if err != nil {
-			m.state.l1NodeConnectionFailures++
-			m.logger.Error("failed to refresh game state", "error", err)
-			return
-		}
-		// m.log.Info("PROCESSING WITHDRAWAL: L2 data present", "WithdrawalHash", withdrawal.WithdrawalProvenExtension1Event.WithdrawalHash, "ProofSubmitter", withdrawal.WithdrawalProvenExtension1Event.ProofSubmitter, "Status", withdrawal.WithdrawalProcessingStatus, "DisputeGameProxyAddress", withdrawal.DisputeGame.ProxyAddress)
-	}
+	// for key, withdrawal := range m.state.currentWithdrawalsQueue {
+	// 	select {
+	// 	case <-ctx.Done():
+	// 		return
+	// 	default:
+	// 	}
 
-	m.WithdrawalHelper.ProcessWithdrawals()
+	// 	err = m.enrichWithL2Data(withdrawal)
+	// 	if err != nil {
+	// 		m.state.l2NodeConnectionFailures++
+	// 		m.logger.Error("failed to consume event", "error", err)
+	// 		return
+	// 	}
+
+	// 	m.logger.Info("Withdrawal enriched with L2 data", "key", key)
+	// 	err = m.FaultDisputeGameHelper.RefreshState(withdrawal.DisputeGame)
+	// 	if err != nil {
+	// 		m.state.l1NodeConnectionFailures++
+	// 		m.logger.Error("failed to refresh game state", "error", err)
+	// 		return
+	// 	}
+	// 	// m.log.Info("PROCESSING WITHDRAWAL: L2 data present", "WithdrawalHash", withdrawal.WithdrawalProvenExtension1Event.WithdrawalHash, "ProofSubmitter", withdrawal.WithdrawalProvenExtension1Event.ProofSubmitter, "Status", withdrawal.WithdrawalProcessingStatus, "DisputeGameProxyAddress", withdrawal.DisputeGame.ProxyAddress)
+	// }
 
 	// update state
-	m.state.nextL1Height = stop
+	m.nextL1Height = stop
 }
 
 // Close gracefully shuts down the Monitor by closing the Geth clients.

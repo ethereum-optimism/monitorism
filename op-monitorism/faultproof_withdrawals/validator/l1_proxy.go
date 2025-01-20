@@ -20,17 +20,61 @@ type WithdrawalProvenExtensionEvent struct {
 	Raw            Raw            // Raw event data.
 }
 
+func (wpee *WithdrawalProvenExtensionEvent) String() string {
+	return fmt.Sprintf("WithdrawalProvenExtensionEvent{ WithdrawalHash: 0x%x, ProofSubmitter: 0x%x, Raw: %v}", wpee.WithdrawalHash, wpee.ProofSubmitter, wpee.Raw)
+}
+
+type DisputeGameEvent struct {
+	EventRef    *WithdrawalProvenExtensionEvent
+	DisputeGame *DisputeGame
+}
+
+func (dge *DisputeGameEvent) String() string {
+	return fmt.Sprintf("DisputeGameEvents{EventRef: %v, DisputeGame: %v}", dge.EventRef, dge.DisputeGame)
+}
+
 // DisputeGameRef holds data about a submitted proof.
 type DisputeGameRef struct {
-	event                     *WithdrawalProvenExtensionEvent
 	disputeGameProxyAddress   common.Address // Address of the dispute game proxy.
 	disputeGameProxyTimestamp uint64         // Timestamp of the dispute game proxy.
+}
+
+func (dgr *DisputeGameRef) String() string {
+	return fmt.Sprintf("DisputeGameRef{disputeGameProxyAddress: 0x%x, disputeGameProxyTimestamp: %d}", dgr.disputeGameProxyAddress, dgr.disputeGameProxyTimestamp)
 }
 
 type DisputeGameClaimData struct {
 	RootClaim     [32]byte // The root claim associated with the dispute game.
 	L2blockNumber *big.Int // The L2 block number related to the game.
 	L2ChainID     *big.Int // The L2 chain ID associated with the game.
+}
+
+func (dgcd *DisputeGameClaimData) String() string {
+	return fmt.Sprintf("DisputeGameClaimData{RootClaim: 0x%x, L2blockNumber: %d, L2ChainID: %d}", dgcd.RootClaim, dgcd.L2blockNumber, dgcd.L2ChainID)
+}
+
+// GameStatus represents the status of a dispute game.
+type GameStatus uint8
+
+// Define constants for the GameStatus using iota.
+const (
+	IN_PROGRESS     GameStatus = iota // The game is currently in progress and has not been resolved.
+	CHALLENGER_WINS                   // The game has concluded, and the root claim was challenged successfully.
+	DEFENDER_WINS                     // The game has concluded, and the root claim could not be contested.
+)
+
+// String implements the Stringer interface for pretty printing the GameStatus.
+func (gs GameStatus) String() string {
+	switch gs {
+	case IN_PROGRESS:
+		return "IN_PROGRESS"
+	case CHALLENGER_WINS:
+		return "CHALLENGER_WINS"
+	case DEFENDER_WINS:
+		return "DEFENDER_WINS"
+	default:
+		return "UNKNOWN"
+	}
 }
 
 type DisputeGame struct {
@@ -40,6 +84,10 @@ type DisputeGame struct {
 	ResolvedAt           uint64 // Timestamp when the game was resolved.
 	GameStatus           GameStatus
 	IsGameBlacklisted    bool
+}
+
+func (dg *DisputeGame) String() string {
+	return fmt.Sprintf("DisputeGame{DisputeGameRef: %v, DisputeGameClaimData: %v, CreatedAt: %d, ResolvedAt: %d, GameStatus: %v, IsGameBlacklisted: %v}", dg.DisputeGameRef, dg.DisputeGameClaimData, dg.CreatedAt, dg.ResolvedAt, dg.GameStatus, dg.IsGameBlacklisted)
 }
 
 type L1Proxy struct {
@@ -80,13 +128,13 @@ func NewL1Proxy(ctx *context.Context, l1GethURL string, optimismPortalAddress co
 	}, nil
 }
 
-func (l1Proxy *L1Proxy) GetDisputeGamesForWithdrawalsEvents(start uint64, end *uint64) ([]DisputeGame, error) {
-	provenWithdrawalsExtension1Events, err := l1Proxy.getProvenWithdrawalsExtension1Events(start, end)
+func (l1Proxy *L1Proxy) GetDisputeGamesEvents(start uint64, end uint64) ([]DisputeGameEvent, error) {
+	provenWithdrawalsExtension1Events, err := l1Proxy.getProvenWithdrawalsExtension1Events(start, &end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 events error:%w", err)
 	}
 
-	disputeGames := make([]DisputeGame, 0)
+	disputeGamesEvents := make([]DisputeGameEvent, 0)
 	for _, event := range provenWithdrawalsExtension1Events {
 		disputeGameRef, err := l1Proxy.getSubmittedProofsDataFromWithdrawalProvenExtensionEvent(&event)
 		if err != nil {
@@ -98,10 +146,13 @@ func (l1Proxy *L1Proxy) GetDisputeGamesForWithdrawalsEvents(start uint64, end *u
 			return nil, fmt.Errorf("failed to get dispute game proxy from address error:%w", err)
 		}
 
-		disputeGames = append(disputeGames, *disputeGame)
+		disputeGamesEvents = append(disputeGamesEvents, DisputeGameEvent{
+			EventRef:    &event,
+			DisputeGame: disputeGame,
+		})
 	}
 
-	return disputeGames, nil
+	return disputeGamesEvents, nil
 }
 
 // GetProvenWithdrawalsExtension1Events retrieves proven withdrawal extension 1 events within the specified block range.
@@ -146,7 +197,6 @@ func (l1Proxy *L1Proxy) getSubmittedProofsDataFromWithdrawalProvenExtensionEvent
 	}
 
 	return &DisputeGameRef{
-		event:                     event,
 		disputeGameProxyAddress:   gameProxyStruct.DisputeGameProxy,
 		disputeGameProxyTimestamp: gameProxyStruct.Timestamp,
 	}, nil
@@ -282,7 +332,7 @@ func (l1Proxy *L1Proxy) BlockByNumber(blockNumber *big.Int) (*types.Block, error
 	block, err := l1Proxy.l1GethClient.BlockByNumber(*l1Proxy.ctx, blockNumber)
 	if err != nil {
 		l1Proxy.ConnectionState.ProxyConnectionFailed++
-		return nil, fmt.Errorf("failed to get block by number: %w", err)
+		return nil, fmt.Errorf("L1Proxy failed to get block by number: %d %w", blockNumber, err)
 	}
 
 	return block, nil

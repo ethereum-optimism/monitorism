@@ -9,7 +9,7 @@ import (
 // L1ProxyInterface defines the interface for L1 chain interactions
 type L1ProxyInterface interface {
 	// Gets dispute games for withdrawal events within a block range
-	GetDisputeGamesForWithdrawalsEvents(start uint64, end *uint64) ([]DisputeGame, error)
+	GetDisputeGamesEvents(start uint64, end uint64) ([]DisputeGameEvent, error)
 
 	// Gets updates for a specific dispute game
 	GetDisputeGameProxyUpdates(disputeGame *DisputeGame) (*DisputeGame, error)
@@ -33,7 +33,7 @@ type L1ProxyInterface interface {
 // L2ProxyInterface defines the interface for L2 chain interactions
 type L2ProxyInterface interface {
 	// Validates a withdrawal based on a dispute game
-	GetWithdrawalValidation(disputeGame *DisputeGame) (*WithdrawalValidation, error)
+	GetWithdrawalValidation(disputeGameEvent DisputeGameEvent) (*WithdrawalValidation, error)
 
 	// Returns the current connection state
 	GetConnectionState() *L2ConnectionState
