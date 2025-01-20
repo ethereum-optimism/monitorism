@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -17,11 +16,12 @@ import (
 type WithdrawalProvenExtensionEvent struct {
 	WithdrawalHash [32]byte       // Hash of the withdrawal.
 	ProofSubmitter common.Address // Address of the proof submitter.
-	Raw            Raw            // Raw event data.
+	TxHash         common.Hash    // The hash of the transaction.
+	BlockInfo      BlockInfo      // Block information.
 }
 
 func (wpee *WithdrawalProvenExtensionEvent) String() string {
-	return fmt.Sprintf("WithdrawalProvenExtensionEvent{ WithdrawalHash: 0x%x, ProofSubmitter: 0x%x, Raw: %v}", wpee.WithdrawalHash, wpee.ProofSubmitter, wpee.Raw)
+	return fmt.Sprintf("WithdrawalProvenExtensionEvent{ WithdrawalHash: 0x%x, ProofSubmitter: 0x%x, TxHash: %v, BlockInfo: %v }", wpee.WithdrawalHash, wpee.ProofSubmitter, wpee.TxHash, wpee.BlockInfo)
 }
 
 type DisputeGameEvent struct {
@@ -170,13 +170,17 @@ func (l1Proxy *L1Proxy) getProvenWithdrawalsExtension1Events(start uint64, end *
 	events := make([]WithdrawalProvenExtensionEvent, 0)
 	for iterator.Next() {
 		event := iterator.Event
+		blockNumber := new(big.Int).SetUint64(event.Raw.BlockNumber)
+		blockInfo, err := l1Proxy.BlockByNumber(blockNumber)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get block by number: %w", err)
+		}
+
 		events = append(events, WithdrawalProvenExtensionEvent{
 			WithdrawalHash: event.WithdrawalHash,
 			ProofSubmitter: event.ProofSubmitter,
-			Raw: Raw{
-				BlockNumber: event.Raw.BlockNumber,
-				TxHash:      event.Raw.TxHash,
-			},
+			BlockInfo:      blockInfo,
+			TxHash:         event.Raw.TxHash,
 		})
 	}
 
@@ -316,26 +320,32 @@ func (l1Proxy *L1Proxy) GetDisputeGameProxyUpdates(disputeGame *DisputeGame) (*D
 	return disputeGame, nil
 }
 
-func (l1Proxy *L1Proxy) LatestHeight() (uint64, error) {
+func (l1Proxy *L1Proxy) LatestHeight() (BlockInfo, error) {
 	l1Proxy.ConnectionState.ProxyConnection++
 	block, err := l1Proxy.l1GethClient.BlockByNumber(*l1Proxy.ctx, nil)
 	if err != nil {
 		l1Proxy.ConnectionState.ProxyConnectionFailed++
-		return 0, fmt.Errorf("failed to get latest block: %w", err)
+		return BlockInfo{}, fmt.Errorf("failed to get latest block: %w", err)
 	}
 
-	return block.NumberU64(), nil
+	return BlockInfo{
+		BlockNumber: block.NumberU64(),
+		BlockTime:   Timestamp(block.Time()),
+	}, nil
 }
 
-func (l1Proxy *L1Proxy) BlockByNumber(blockNumber *big.Int) (*types.Block, error) {
+func (l1Proxy *L1Proxy) BlockByNumber(blockNumber *big.Int) (BlockInfo, error) {
 	l1Proxy.ConnectionState.ProxyConnection++
 	block, err := l1Proxy.l1GethClient.BlockByNumber(*l1Proxy.ctx, blockNumber)
 	if err != nil {
 		l1Proxy.ConnectionState.ProxyConnectionFailed++
-		return nil, fmt.Errorf("L1Proxy failed to get block by number: %d %w", blockNumber, err)
+		return BlockInfo{}, fmt.Errorf("L1Proxy failed to get block by number: %d %w", blockNumber, err)
 	}
 
-	return block, nil
+	return BlockInfo{
+		BlockNumber: block.NumberU64(),
+		BlockTime:   Timestamp(block.Time()),
+	}, nil
 }
 
 func (l1Proxy *L1Proxy) ChainID() (*big.Int, error) {

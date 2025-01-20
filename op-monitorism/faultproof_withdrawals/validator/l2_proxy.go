@@ -11,12 +11,11 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-type WithdrawalValidation struct {
+type WithdrawalValidationRef struct {
 	DisputeGameEvent                       DisputeGameEvent
 	TrustedRoots                           [32]byte
 	WithdrawalPresentOnL2ToL1MessagePasser bool
@@ -24,7 +23,7 @@ type WithdrawalValidation struct {
 	IsWithdrawalValid                      bool
 }
 
-func (dgcd *WithdrawalValidation) String() string {
+func (dgcd *WithdrawalValidationRef) String() string {
 	return fmt.Sprintf("DisputeGameEvent: %v, TrustedRoots: 0x%v, WithdrawalPresentOnL2ToL1MessagePasser: %v, BlockPresentOnL2: %v, IsWithdrawalValid: %v", dgcd.DisputeGameEvent, hex.EncodeToString(dgcd.TrustedRoots[:]), dgcd.WithdrawalPresentOnL2ToL1MessagePasser, dgcd.BlockPresentOnL2, dgcd.IsWithdrawalValid)
 }
 
@@ -82,7 +81,7 @@ func NewL2Proxy(ctx *context.Context, l2GethURL string, l2NodeURL string) (*L2Pr
 	}, nil
 }
 
-func (l2Proxy *L2Proxy) GetWithdrawalValidation(disputeGameEvent DisputeGameEvent) (*WithdrawalValidation, error) {
+func (l2Proxy *L2Proxy) GetWithdrawalValidation(disputeGameEvent DisputeGameEvent) (*WithdrawalValidationRef, error) {
 
 	// fmt.Print("Game: ", disputeGame, "\n")
 	withdrawalHash := disputeGameEvent.EventRef.WithdrawalHash
@@ -107,12 +106,13 @@ func (l2Proxy *L2Proxy) GetWithdrawalValidation(disputeGameEvent DisputeGameEven
 		l2Proxy.ConnectionState.ProxyConnectionFailed++
 	}
 
-	return &WithdrawalValidation{
+	BlockPresentOnL2Bool := blockPresentOnL2 != BlockInfo{}
+	return &WithdrawalValidationRef{
 		DisputeGameEvent:                       disputeGameEvent,
 		TrustedRoots:                           trustedRootProof,
 		WithdrawalPresentOnL2ToL1MessagePasser: withdrawalPresentOnL2ToL1MessagePasser,
-		BlockPresentOnL2:                       blockPresentOnL2 != nil,
-		IsWithdrawalValid:                      withdrawalPresentOnL2ToL1MessagePasser && blockPresentOnL2 != nil && trustedRootProof == disputeGameEvent.DisputeGame.DisputeGameClaimData.RootClaim,
+		BlockPresentOnL2:                       BlockPresentOnL2Bool,
+		IsWithdrawalValid:                      withdrawalPresentOnL2ToL1MessagePasser && BlockPresentOnL2Bool && trustedRootProof == disputeGameEvent.DisputeGame.DisputeGameClaimData.RootClaim,
 	}, nil
 }
 
@@ -153,26 +153,32 @@ func (l2Proxy *L2Proxy) getOutputRootFromCalculation(blockNumber *big.Int) ([32]
 	return outputRoot, nil
 }
 
-func (l2Proxy *L2Proxy) LatestHeight() (uint64, error) {
+func (l2Proxy *L2Proxy) LatestHeight() (BlockInfo, error) {
 	l2Proxy.ConnectionState.ProxyConnection++
 	block, err := l2Proxy.l2GethClient.BlockByNumber(*l2Proxy.ctx, nil)
 	if err != nil {
 		l2Proxy.ConnectionState.ProxyConnectionFailed++
-		return 0, fmt.Errorf("failed to get latest block: %w", err)
+		return BlockInfo{}, fmt.Errorf("failed to get latest block: %w", err)
 	}
 
-	return block.NumberU64(), nil
+	return BlockInfo{
+		BlockNumber: block.NumberU64(),
+		BlockTime:   Timestamp(block.Time()),
+	}, nil
 }
 
-func (l2Proxy *L2Proxy) BlockByNumber(blockNumber *big.Int) (*types.Block, error) {
+func (l2Proxy *L2Proxy) BlockByNumber(blockNumber *big.Int) (BlockInfo, error) {
 	l2Proxy.ConnectionState.ProxyConnection++
 	block, err := l2Proxy.l2GethClient.BlockByNumber(*l2Proxy.ctx, blockNumber)
 	if err != nil {
 		l2Proxy.ConnectionState.ProxyConnectionFailed++
-		return nil, fmt.Errorf("L2Proxy failed to get block by number: :%d %w", blockNumber, err)
+		return BlockInfo{}, fmt.Errorf("l2Proxy failed to get block by number: %d %w", blockNumber, err)
 	}
 
-	return block, nil
+	return BlockInfo{
+		BlockNumber: block.NumberU64(),
+		BlockTime:   Timestamp(block.Time()),
+	}, nil
 }
 
 func (l2Proxy *L2Proxy) ChainID() (*big.Int, error) {

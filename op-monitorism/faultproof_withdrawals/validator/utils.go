@@ -5,19 +5,28 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // Raw represents raw event data associated with a blockchain transaction.
-type Raw struct {
-	BlockNumber uint64      // The block number in which the transaction is included.
-	TxHash      common.Hash // The hash of the transaction.
+// type Raw struct {
+// 	BlockNumber uint64      // The block number in which the transaction is included.
+// 	TxHash      common.Hash // The hash of the transaction.
+// }
+
+// // String provides a string representation of Raw.
+// func (r Raw) String() string {
+// 	return fmt.Sprintf("{BlockNumber: %d, TxHash: %s}", r.BlockNumber, r.TxHash.String())
+// }
+
+// Raw represents raw event data associated with a blockchain transaction.
+type BlockInfo struct {
+	BlockNumber uint64    // The block number in which the transaction is included.
+	BlockTime   Timestamp // The timestamp of the block.
 }
 
-// String provides a string representation of Raw.
-func (r Raw) String() string {
-	return fmt.Sprintf("{BlockNumber: %d, TxHash: %s}", r.BlockNumber, r.TxHash.String())
+// String provides a string representation of BlockInfo.
+func (b BlockInfo) String() string {
+	return fmt.Sprintf("{BlockNumber: %d, BlockTime: %s}", b.BlockNumber, b.BlockTime.String())
 }
 
 // Timestamp represents a Unix timestamp.

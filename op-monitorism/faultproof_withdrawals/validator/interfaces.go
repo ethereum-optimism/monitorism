@@ -2,8 +2,6 @@ package validator
 
 import (
 	"math/big"
-
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // L1ProxyInterface defines the interface for L1 chain interactions
@@ -17,11 +15,11 @@ type L1ProxyInterface interface {
 	// Returns the current connection state
 	GetConnectionState() *L1ConnectionState
 
-	// Gets the latest block height
-	LatestHeight() (uint64, error)
+	// Gets the latest block height and timestamp
+	LatestHeight() (BlockInfo, error)
 
 	// Gets a block by number
-	BlockByNumber(blockNumber *big.Int) (*types.Block, error)
+	BlockByNumber(blockNumber *big.Int) (BlockInfo, error)
 
 	// Gets the chain ID
 	ChainID() (*big.Int, error)
@@ -33,16 +31,16 @@ type L1ProxyInterface interface {
 // L2ProxyInterface defines the interface for L2 chain interactions
 type L2ProxyInterface interface {
 	// Validates a withdrawal based on a dispute game
-	GetWithdrawalValidation(disputeGameEvent DisputeGameEvent) (*WithdrawalValidation, error)
+	GetWithdrawalValidation(disputeGameEvent DisputeGameEvent) (*WithdrawalValidationRef, error)
 
 	// Returns the current connection state
 	GetConnectionState() *L2ConnectionState
 
-	// Gets the latest block height
-	LatestHeight() (uint64, error)
+	// Gets the latest block height and timestamp
+	LatestHeight() (BlockInfo, error)
 
 	// Gets a block by number
-	BlockByNumber(blockNumber *big.Int) (*types.Block, error)
+	BlockByNumber(blockNumber *big.Int) (BlockInfo, error)
 
 	// Gets the chain ID
 	ChainID() (*big.Int, error)

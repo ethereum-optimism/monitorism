@@ -27,21 +27,23 @@ type Monitor struct {
 	maxBlockRange uint64
 
 	// dependencies
-	L1Proxy   validator.L1ProxyInterface
-	L2Proxy   validator.L2ProxyInterface
-	validator *Validator
+	L1Proxy             validator.L1ProxyInterface
+	L2Proxy             validator.L2ProxyInterface
+	WithdrawalValidator *WithdrawalValidator
 
 	// state
 	l1ChainID *big.Int
 	l2ChainID *big.Int
 
 	startingL1Height uint64
-	latestL1Height   uint64
-	latestL2Height   uint64
 	nextL1Height     uint64
 
-	// currentWithdrawalsQueue map[common.Hash]*validator.WithdrawalProvenExtensionEvent
-	currentWithdrawalsQueue map[common.Hash]*validator.WithdrawalProvenExtensionEvent
+	// currentWithdrawalsQueue map[common.Hash]*validator.WithdrawalValidationRef
+	currentWithdrawalsQueue map[common.Hash]validator.WithdrawalValidationRef
+
+	// SECURITY NODE: for now this is a map, but in the future to avoid exausting memory we should consider a cache. For now is an aceptable solution.
+	// Using a database to store the data would be a better solution also for future scalability and traceability.
+	currentWithdrawalsQueueAttacks map[common.Hash]validator.WithdrawalValidationRef
 
 	// state
 	state   State
@@ -64,7 +66,7 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 		return nil, fmt.Errorf("failed to create L2 proxy: %w", err)
 	}
 
-	validator, err := NewValidator(&ctx, l1Proxy, l2Proxy)
+	withdrawalValidator, err := NewWithdrawalValidator(&ctx, l1Proxy, l2Proxy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create validator: %w", err)
 	}
@@ -79,13 +81,6 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 		return nil, fmt.Errorf("failed to get starting block: %w", err)
 	}
 
-	latestL2Height, err := l2Proxy.LatestHeight()
-	if err != nil {
-		logger.Error("failed to get latest known L2 block number", "error", err)
-		return nil, err
-
-	}
-
 	l1ChainID, err := l1Proxy.ChainID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get l1 chain id: %w", err)
@@ -95,6 +90,9 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
 	}
 
+	currentWithdrawalsQueue := make(map[common.Hash]validator.WithdrawalValidationRef)
+	currentWithdrawalsQueueAttacks := make(map[common.Hash]validator.WithdrawalValidationRef)
+
 	metrics := NewMetrics(m)
 
 	return &Monitor{
@@ -102,16 +100,17 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 
 		ctx: ctx,
 
-		L1Proxy:   l1Proxy,
-		L2Proxy:   l2Proxy,
-		validator: validator,
+		L1Proxy:             l1Proxy,
+		L2Proxy:             l2Proxy,
+		WithdrawalValidator: withdrawalValidator,
 
 		l1ChainID:        l1ChainID,
 		l2ChainID:        l2ChainID,
-		latestL1Height:   latestL1Height,
-		latestL2Height:   latestL2Height,
-		startingL1Height: startingL1Height,
-		nextL1Height:     startingL1Height,
+		startingL1Height: startingL1Height.BlockNumber,
+		nextL1Height:     startingL1Height.BlockNumber,
+
+		currentWithdrawalsQueue:        currentWithdrawalsQueue,
+		currentWithdrawalsQueueAttacks: currentWithdrawalsQueueAttacks,
 
 		maxBlockRange: cfg.EventBlockRange,
 
@@ -122,79 +121,100 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 
 // It retrieves new events, processes them, and updates the state accordingly.
 func (m *Monitor) Run(ctx context.Context) {
-	// Defer the update function
-	// defer m.state.LogState()
 
+	// -- Section where we set the new block range to be reviewed --
 	start := m.nextL1Height
 
-	latestL1Height, err := m.L1Proxy.LatestHeight()
+	latestL1HeightBlock, err := m.L1Proxy.LatestHeight()
 	if err != nil {
-		m.logger.Error("failed to query latest block number", "error", err)
+		m.logger.Error("RUN PANIC", "error", err, "start", start)
 		return
 	}
-	m.latestL1Height = latestL1Height
-
+	latestL1Height := latestL1HeightBlock.BlockNumber
 	stop := m.nextL1Height + m.maxBlockRange
 	if stop > latestL1Height {
 		stop = latestL1Height
 	}
 
-	latestKnownL2BlockNumber, err := m.L2Proxy.LatestHeight()
+	l2TrustedNodeHeight, err := m.L2Proxy.LatestHeight()
+	// -- Section where we review events in  currentWithdrawalsQueue--
+	for _, withdrawalRef := range m.currentWithdrawalsQueue {
+		m.logger.Info("QUEUE: REVIEW", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
+
+		if withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus == validator.IN_PROGRESS {
+			// update the game if it is still in progress, so that we get new fresh data for this game
+			m.L1Proxy.GetDisputeGameProxyUpdates(withdrawalRef.DisputeGameEvent.DisputeGame)
+			// if the game is still in progress, we do nothing and keep it in the queue for the next iteration
+			if withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus == validator.IN_PROGRESS {
+				continue
+			} else {
+				// if the game is not in progress anymore, we need to get the withdrawal validation again
+				withdrawalValidationRef, err := m.L2Proxy.GetWithdrawalValidation(withdrawalRef.DisputeGameEvent)
+				if err != nil {
+					m.logger.Error("RUN PANIC", "error", err, "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), &withdrawalRef, "BlockPresentOnL2")
+					return
+				}
+				if withdrawalValidationRef.IsWithdrawalValid {
+					m.logger.Info("QUEUE: REMOVE", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
+					// if the withdrawal is valid, we remove it from the queue
+					delete(m.currentWithdrawalsQueue, withdrawalRef.DisputeGameEvent.EventRef.TxHash)
+				} else {
+					m.logger.Warn("QUEUE: RE-ADD", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
+					// if the withdrawal is not valid, we keep it in the queue for the next iteration
+					m.currentWithdrawalsQueue[withdrawalRef.DisputeGameEvent.EventRef.TxHash] = *withdrawalValidationRef
+				}
+			}
+		} else if !withdrawalRef.BlockPresentOnL2 {
+			/** this is the second case in which we need to get the withdrawal validation again. In this case, the game is not in progress anymore, but the block is not present on L2.This means that the game was finalized, but the block was not submitted to L2 or we are missing the block because the Trusted Node is not yet in sync with the L2 chain.
+			 */
+
+			// if the event timestamp is before the current l2TrustedNodeHeight, we delete the event from the queue and add to the attacks queue
+			if uint64(withdrawalRef.DisputeGameEvent.EventRef.BlockInfo.BlockTime) < uint64(l2TrustedNodeHeight.BlockTime) {
+				m.logger.Warn("QUEUE: REMOVE", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
+				// if the withdrawal is valid, we remove it from the queue
+				delete(m.currentWithdrawalsQueue, withdrawalRef.DisputeGameEvent.EventRef.TxHash)
+				m.currentWithdrawalsQueueAttacks[withdrawalRef.DisputeGameEvent.EventRef.TxHash] = withdrawalRef
+
+			} else {
+				// in this case, we need to get the withdrawal validation again
+				withdrawalValidationRef, err := m.L2Proxy.GetWithdrawalValidation(withdrawalRef.DisputeGameEvent)
+				if err != nil {
+					m.logger.Error("RUN PANIC", "error", err, "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), &withdrawalRef, "BlockPresentOnL2")
+					return
+				}
+				if withdrawalValidationRef.IsWithdrawalValid {
+					m.logger.Info("QUEUE: REMOVE", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
+					// if the withdrawal is valid, we remove it from the queue
+					delete(m.currentWithdrawalsQueue, withdrawalRef.DisputeGameEvent.EventRef.TxHash)
+				} else {
+					m.logger.Warn("QUEUE: RE-ADD", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
+					// if the withdrawal is not valid, we keep it in the queue for the next iteration
+					m.currentWithdrawalsQueue[withdrawalRef.DisputeGameEvent.EventRef.TxHash] = *withdrawalValidationRef
+				}
+			}
+		}
+		// Nothing to do in this case, the event is in the queue and should stay there for
+	}
+
+	// -- Section where we review new events --
+	// In case of exception we want to stop and not update the state
+	extractedEvents, err := m.WithdrawalValidator.GetRange(start, stop)
 	if err != nil {
-		m.logger.Error("failed to get latest known L2 block number", "error", err)
+		m.logger.Error("RUN PANIC", "error", err, "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
 		return
 	}
 
-	m.state.latestL2Height = latestKnownL2BlockNumber
-
-	extractedEvents, err := m.validator.GetRange(start, stop)
-	if err != nil {
-		m.logger.Error("failed to extract withdrawals", "error", err)
-		return
-	}
-
+	m.logger.Info("WITHDRAWALS: EXTRACT", "count", len(extractedEvents), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
 	// In here we review the extracted events and add to currentWithdrawalsQueue the one that needs to be reviewed again later
-	for key, withdrawal := range extractedEvents {
-		m.logger.Info("Withdrawals Extracted", "count", len(extractedEvents), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
-		m.logger.Info("Reviewing newly extracted event", "key", key, "withdrawal", &withdrawal)
+	for key, withdrawalRef := range extractedEvents {
+		m.logger.Info("WITHDRAWAL: REVIEW", "key", key, "withdrawalRef", &withdrawalRef)
 
-		// if !withdrawal.IsWithdrawalValid {
-		// 	// We need to keep track only of games that are not valid
-		// 	m.currentWithdrawalsQueue[withdrawal.] = withdrawal
-		// }
+		if !withdrawalRef.IsWithdrawalValid {
+			// We need to keep track only of games that are not valid
+			m.logger.Warn("QUEUE: ADD", "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
+			m.currentWithdrawalsQueue[withdrawalRef.DisputeGameEvent.EventRef.TxHash] = withdrawalRef
+		}
 	}
-
-	// m.logger.Info("Withdrawals Extracted", "count", len(extractedEvents), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
-
-	// for key, withdrawal := range extractedEvents {
-	// 	m.state.currentWithdrawalsQueue[key] = withdrawal
-	// }
-
-	// m.logger.Info("Withdrawals Queue", "count", len(m.state.currentWithdrawalsQueue), "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
-
-	// for key, withdrawal := range m.state.currentWithdrawalsQueue {
-	// 	select {
-	// 	case <-ctx.Done():
-	// 		return
-	// 	default:
-	// 	}
-
-	// 	err = m.enrichWithL2Data(withdrawal)
-	// 	if err != nil {
-	// 		m.state.l2NodeConnectionFailures++
-	// 		m.logger.Error("failed to consume event", "error", err)
-	// 		return
-	// 	}
-
-	// 	m.logger.Info("Withdrawal enriched with L2 data", "key", key)
-	// 	err = m.FaultDisputeGameHelper.RefreshState(withdrawal.DisputeGame)
-	// 	if err != nil {
-	// 		m.state.l1NodeConnectionFailures++
-	// 		m.logger.Error("failed to refresh game state", "error", err)
-	// 		return
-	// 	}
-	// 	// m.log.Info("PROCESSING WITHDRAWAL: L2 data present", "WithdrawalHash", withdrawal.WithdrawalProvenExtension1Event.WithdrawalHash, "ProofSubmitter", withdrawal.WithdrawalProvenExtension1Event.ProofSubmitter, "Status", withdrawal.WithdrawalProcessingStatus, "DisputeGameProxyAddress", withdrawal.DisputeGame.ProxyAddress)
-	// }
 
 	// update state
 	m.nextL1Height = stop
