@@ -3,7 +3,6 @@ package faultproof_withdrawals
 import (
 	"context"
 	"fmt"
-	"math/big"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -32,9 +31,6 @@ type Monitor struct {
 	WithdrawalValidator *WithdrawalValidator
 
 	// state
-	l1ChainID *big.Int
-	l2ChainID *big.Int
-
 	startingL1Height uint64
 	nextL1Height     uint64
 
@@ -81,15 +77,6 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 		return nil, fmt.Errorf("failed to get starting block: %w", err)
 	}
 
-	l1ChainID, err := l1Proxy.ChainID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get l1 chain id: %w", err)
-	}
-	l2ChainID, err := l2Proxy.ChainID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
-	}
-
 	currentWithdrawalsQueue := make(map[common.Hash]validator.WithdrawalValidationRef)
 	currentWithdrawalsQueueAttacks := make(map[common.Hash]validator.WithdrawalValidationRef)
 
@@ -104,8 +91,6 @@ func NewMonitor(ctx context.Context, logger log.Logger, m metrics.Factory, cfg C
 		L2Proxy:             l2Proxy,
 		WithdrawalValidator: withdrawalValidator,
 
-		l1ChainID:        l1ChainID,
-		l2ChainID:        l2ChainID,
 		startingL1Height: startingL1Height.BlockNumber,
 		nextL1Height:     startingL1Height.BlockNumber,
 
@@ -137,6 +122,10 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 
 	l2TrustedNodeHeight, err := m.L2Proxy.LatestHeight()
+	if err != nil {
+		m.logger.Error("RUN PANIC", "error", err, "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
+		return
+	}
 	// -- Section where we review events in  currentWithdrawalsQueue--
 	for _, withdrawalRef := range m.currentWithdrawalsQueue {
 		m.logger.Info("QUEUE: REVIEW", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop), "withdrawalRef", &withdrawalRef, "BlockPresentOnL2", withdrawalRef.BlockPresentOnL2, "WithdrawalPresentOnL2ToL1MessagePasser", withdrawalRef.WithdrawalPresentOnL2ToL1MessagePasser, "GameStatus", withdrawalRef.DisputeGameEvent.DisputeGame.GameStatus)
