@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 const (
@@ -18,7 +19,9 @@ const (
 )
 
 type State struct {
-	logger          log.Logger
+	logger  log.Logger
+	metrics *Metrics
+
 	nextL1Height    uint64
 	latestL1Height  uint64
 	initialL1Height uint64
@@ -27,29 +30,59 @@ type State struct {
 	eventsProcessed      uint64 // This counts the events that we have taken care of, and we are aware of.
 	withdrawalsProcessed uint64 // This counts the withdrawals that have being completed and processed and we are not tracking anymore. eventProcessed >= withdrawalsProcessed. withdrawalsProcessed does not includes potential attacks with games in progress.
 
-	L1Connection         uint64
-	L1ConnectionFailures uint64
-	L2Connection         uint64
-	L2ConnectionFailures uint64
+	l1NodeConnection         uint64
+	l1NodeConnectionFailures uint64
+
+	l2NodeConnection         uint64
+	l2NodeConnectionFailures uint64
+
+	latestEventsProcessed          *validator.WithdrawalValidationRef
+	latestEventsProcessedTimestamp float64
 
 	// possible attacks detected
-
 	// Forgeries detected on games that are already resolved
-	forgeryDetected         map[common.Hash]*validator.WithdrawalProvenExtensionEvent
-	numberOfForgeryDetected uint64
+	potentialAttackOnDefenderWinsGames          map[common.Hash]*validator.WithdrawalValidationRef
+	numberOfPotentialAttacksOnDefenderWinsGames uint64
 
 	// Forgeries detected on games that are still in progress
 	// Faultproof system should make them invalid
-	invalidWithdrawalsInProgress         map[common.Hash]*validator.WithdrawalProvenExtensionEvent
-	numberOfInvalidWithdrawalsInProgress uint64
+	potentialAttackOnInProgressGames         map[common.Hash]*validator.WithdrawalValidationRef
+	numberOfPotentialAttackOnInProgressGames uint64
 
 	// Suspicious events
 	// It is unlikely that someone is going to use a withdrawal hash on a games that resolved with ChallengerWins. If this happens, maybe there is a bug somewhere in the UI used by the users or it is a malicious attack that failed
-	invalidWithdrawals         *lru.Cache
-	numberOfinvalidWithdrawals uint64
+	suspiciousEventsOnChallengerWinsGames         *lru.Cache
+	numberOfSuspiciousEventsOnChallengerWinsGames uint64
 }
 
-func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64) (*State, error) {
+type Metrics struct {
+	InitialL1HeightGauge prometheus.Gauge
+	NextL1HeightGauge    prometheus.Gauge
+	LatestL1HeightGauge  prometheus.Gauge
+	LatestL2HeightGauge  prometheus.Gauge
+
+	EventsProcessedCounter      prometheus.Counter
+	WithdrawalsProcessedCounter prometheus.Counter
+
+	L1NodeConnectionFailuresCounter prometheus.Counter
+	L2NodeConnectionFailuresCounter prometheus.Counter
+
+	PotentialAttackOnDefenderWinsGamesGauge    prometheus.Gauge
+	PotentialAttackOnInProgressGamesGauge      prometheus.Gauge
+	SuspiciousEventsOnChallengerWinsGamesGauge prometheus.Gauge
+
+	PotentialAttackOnDefenderWinsGamesGaugeVec    *prometheus.GaugeVec
+	PotentialAttackOnInProgressGamesGaugeVec      *prometheus.GaugeVec
+	SuspiciousEventsOnChallengerWinsGamesGaugeVec *prometheus.GaugeVec
+
+	// Previous values for counters
+	previousEventsProcessed          uint64
+	previousWithdrawalsProcessed     uint64
+	previousl1NodeConnectionFailures uint64
+	previousl2NodeConnectionFailures uint64
+}
+
+func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64, m metrics.Factory) (*State, error) {
 
 	if nextL1Height > latestL1Height {
 		logger.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", nextL1Height, "latestL1Height", latestL1Height)
@@ -57,9 +90,9 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 	}
 
 	ret := State{
-		forgeryDetected:         make(map[common.Hash]*validator.WithdrawalProvenExtensionEvent),
-		numberOfForgeryDetected: 0,
-		invalidWithdrawals: func() *lru.Cache {
+		potentialAttackOnDefenderWinsGames:          make(map[common.Hash]*validator.WithdrawalValidationRef),
+		numberOfPotentialAttacksOnDefenderWinsGames: 0,
+		suspiciousEventsOnChallengerWinsGames: func() *lru.Cache {
 			cache, err := lru.New(suspiciousEventsOnChallengerWinsGamesCacheSize)
 			if err != nil {
 				logger.Error("Failed to create LRU cache", "error", err)
@@ -67,24 +100,23 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 			}
 			return cache
 		}(),
-		numberOfinvalidWithdrawals: 0,
+		numberOfSuspiciousEventsOnChallengerWinsGames: 0,
 
-		invalidWithdrawalsInProgress:         make(map[common.Hash]*validator.WithdrawalProvenExtensionEvent),
-		numberOfInvalidWithdrawalsInProgress: 0,
+		potentialAttackOnInProgressGames:         make(map[common.Hash]*validator.WithdrawalValidationRef),
+		numberOfPotentialAttackOnInProgressGames: 0,
 
 		eventsProcessed: 0,
 
-		withdrawalsProcessed: 0,
-		L1Connection:         0,
-		L1ConnectionFailures: 0,
-		L2Connection:         0,
-		L2ConnectionFailures: 0,
+		withdrawalsProcessed:     0,
+		l1NodeConnectionFailures: 0,
+		l2NodeConnectionFailures: 0,
 
 		nextL1Height:    nextL1Height,
 		latestL1Height:  latestL1Height,
 		initialL1Height: nextL1Height,
 		latestL2Height:  latestL2Height,
 		logger:          logger,
+		metrics:         NewMetrics(m),
 	}
 
 	return &ret, nil
@@ -104,69 +136,73 @@ func (s *State) LogState() {
 		"syncPercentage", fmt.Sprintf("%d%%", syncPercentage),
 
 		"eventsProcessed", fmt.Sprintf("%d", s.eventsProcessed),
-		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
 
-		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfForgeryDetected),
-		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfInvalidWithdrawalsInProgress),
-		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfinvalidWithdrawals),
+		"l1NodeConnectionFailures", fmt.Sprintf("%d", s.l1NodeConnectionFailures),
+		"l1NodeConnection", fmt.Sprintf("%d", s.l1NodeConnection),
+		"l2NodeConnectionFailures", fmt.Sprintf("%d", s.l2NodeConnectionFailures),
+		"l2NodeConnection", fmt.Sprintf("%d", s.l2NodeConnection),
+
+		"latestEventsProcessed", fmt.Sprintf("%v", s.latestEventsProcessed),
+		"latestEventsProcessedTimestamp", fmt.Sprintf("%f", s.latestEventsProcessedTimestamp),
+
+		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfPotentialAttacksOnDefenderWinsGames),
+		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
+		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
 	)
+
+	s.metrics.UpdateMetricsFromState(s)
 }
 
-func (s *State) IncrementWithdrawalsValidated(enrichedWithdrawalEvent *validator.WithdrawalProvenExtensionEvent) {
-	s.logger.Info("STATE WITHDRAWAL: valid", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+func (s *State) IncrementWithdrawalsValidated(withdrawalValidationRef *validator.WithdrawalValidationRef) {
 	s.withdrawalsProcessed++
-	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
+	s.latestEventsProcessed = withdrawalValidationRef
+	s.latestEventsProcessedTimestamp = float64(time.Now().Unix())
 }
 
-func (s *State) IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent *validator.WithdrawalProvenExtensionEvent) {
-	key := enrichedWithdrawalEvent.Event.Raw.TxHash
+func (s *State) IncrementPotentialAttackOnDefenderWinsGames(withdrawalValidationRef *validator.WithdrawalValidationRef) {
+	key := withdrawalValidationRef.DisputeGameEvent.EventRef.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL: is NOT valid, forgery detected", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-	s.forgeryDetected[key] = enrichedWithdrawalEvent
-	s.numberOfForgeryDetected++
+	s.potentialAttackOnDefenderWinsGames[key] = withdrawalValidationRef
+	s.numberOfPotentialAttacksOnDefenderWinsGames++
 
-	if _, ok := s.invalidWithdrawalsInProgress[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to potential attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		delete(s.invalidWithdrawalsInProgress, key)
-		s.numberOfInvalidWithdrawalsInProgress--
+	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
+		delete(s.potentialAttackOnInProgressGames, key)
+		s.numberOfPotentialAttackOnInProgressGames--
 	}
 
+	s.latestEventsProcessed = withdrawalValidationRef
+	s.latestEventsProcessedTimestamp = float64(time.Now().Unix())
 	s.withdrawalsProcessed++
-	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 
 }
 
-func (s *State) IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent *validator.WithdrawalProvenExtensionEvent) {
-	key := enrichedWithdrawalEvent.Event.Raw.TxHash
+func (s *State) IncrementPotentialAttackOnInProgressGames(withdrawalValidationRef *validator.WithdrawalValidationRef) {
+	key := withdrawalValidationRef.DisputeGameEvent.EventRef.TxHash
 	// check if key already exists
-	if _, ok := s.invalidWithdrawalsInProgress[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-	} else {
-		s.logger.Error("STATE WITHDRAWAL:is NOT valid, game is still in progress. New game found In Progress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		s.numberOfInvalidWithdrawalsInProgress++
-		enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
-
+	if _, ok := s.potentialAttackOnInProgressGames[key]; !ok {
+		s.numberOfPotentialAttackOnInProgressGames++
+		s.latestEventsProcessed = withdrawalValidationRef
+		s.latestEventsProcessedTimestamp = float64(time.Now().Unix())
 	}
 
-	// eventually update the map with the new enrichedWithdrawalEvent
-	s.invalidWithdrawalsInProgress[key] = enrichedWithdrawalEvent
+	// eventually update the map with the new withdrawalValidationRef
+	s.potentialAttackOnInProgressGames[key] = withdrawalValidationRef
 }
 
-func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent *validator.WithdrawalProvenExtensionEvent) {
-	key := enrichedWithdrawalEvent.Event.Raw.TxHash
+func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(withdrawalValidationRef *validator.WithdrawalValidationRef) {
+	key := withdrawalValidationRef.DisputeGameEvent.EventRef.TxHash
 
-	s.logger.Error("STATE WITHDRAWAL:is NOT valid, but the game is correctly resolved", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-	s.invalidWithdrawals.Add(key, enrichedWithdrawalEvent)
-	s.numberOfinvalidWithdrawals++
+	s.suspiciousEventsOnChallengerWinsGames.Add(key, withdrawalValidationRef)
+	s.numberOfSuspiciousEventsOnChallengerWinsGames++
 
-	if _, ok := s.invalidWithdrawalsInProgress[key]; ok {
-		s.logger.Error("STATE WITHDRAWAL: added to suspicious attacks. Removing from inProgress", "TxHash", fmt.Sprintf("%v", enrichedWithdrawalEvent.Event.Raw.TxHash), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-		delete(s.invalidWithdrawalsInProgress, key)
-		s.numberOfInvalidWithdrawalsInProgress--
+	if _, ok := s.potentialAttackOnInProgressGames[key]; ok {
+		delete(s.potentialAttackOnInProgressGames, key)
+		s.numberOfPotentialAttackOnInProgressGames--
 	}
 
 	s.withdrawalsProcessed++
-	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
+	s.latestEventsProcessed = withdrawalValidationRef
+	s.latestEventsProcessedTimestamp = float64(time.Now().Unix())
 }
 
 func (s *State) GetPercentages() (uint64, uint64) {
@@ -180,31 +216,6 @@ func (s *State) GetPercentages() (uint64, uint64) {
 	return blockToProcess, syncPercentage
 }
 
-type Metrics struct {
-	InitialL1HeightGauge prometheus.Gauge
-	NextL1HeightGauge    prometheus.Gauge
-	LatestL1HeightGauge  prometheus.Gauge
-	LatestL2HeightGauge  prometheus.Gauge
-
-	EventsProcessedCounter      prometheus.Counter
-	WithdrawalsProcessedCounter prometheus.Counter
-
-	NodeConnectionFailuresCounter prometheus.Counter
-
-	PotentialAttackOnDefenderWinsGamesGauge    prometheus.Gauge
-	PotentialAttackOnInProgressGamesGauge      prometheus.Gauge
-	SuspiciousEventsOnChallengerWinsGamesGauge prometheus.Gauge
-
-	PotentialAttackOnDefenderWinsGamesGaugeVec    *prometheus.GaugeVec
-	PotentialAttackOnInProgressGamesGaugeVec      *prometheus.GaugeVec
-	SuspiciousEventsOnChallengerWinsGamesGaugeVec *prometheus.GaugeVec
-
-	// Previous values for counters
-	previousEventsProcessed        uint64
-	previousWithdrawalsProcessed   uint64
-	previousNodeConnectionFailures uint64
-}
-
 func (m *Metrics) String() string {
 	initialL1HeightGaugeValue, _ := GetGaugeValue(m.InitialL1HeightGauge)
 	nextL1HeightGaugeValue, _ := GetGaugeValue(m.NextL1HeightGauge)
@@ -214,7 +225,8 @@ func (m *Metrics) String() string {
 	withdrawalsProcessedCounterValue, _ := GetCounterValue(m.WithdrawalsProcessedCounter)
 	eventsProcessedCounterValue, _ := GetCounterValue(m.EventsProcessedCounter)
 
-	nodeConnectionFailuresCounterValue, _ := GetCounterValue(m.NodeConnectionFailuresCounter)
+	l1NodeConnectionFailuresCounterValue, _ := GetCounterValue(m.L1NodeConnectionFailuresCounter)
+	l2NodeConnectionFailuresCounterValue, _ := GetCounterValue(m.L2NodeConnectionFailuresCounter)
 
 	potentialAttackOnDefenderWinsGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnDefenderWinsGamesGauge)
 	potentialAttackOnInProgressGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnInProgressGamesGauge)
@@ -223,21 +235,23 @@ func (m *Metrics) String() string {
 	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnInProgressGamesGaugeVec, prometheus.Labels{})
 
 	return fmt.Sprintf(
-		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
+		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nl1NodeConnectionFailuresCounterValue: %d\nl2NodeConnectionFailuresCounterValue: %d \n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousl1NodeConnectionFailures: %d\n previousl2NodeConnectionFailures: %d",
 		uint64(initialL1HeightGaugeValue),
 		uint64(nextL1HeightGaugeValue),
 		uint64(latestL1HeightGaugeValue),
 		uint64(latestL2HeightGaugeValue),
 		uint64(eventsProcessedCounterValue),
 		uint64(withdrawalsProcessedCounterValue),
-		uint64(nodeConnectionFailuresCounterValue),
+		uint64(l1NodeConnectionFailuresCounterValue),
+		uint64(l2NodeConnectionFailuresCounterValue),
 		uint64(potentialAttackOnDefenderWinsGamesGaugeValue),
 		uint64(potentialAttackOnInProgressGamesGaugeValue),
 		uint64(forgeriesWithdrawalsEventsGaugeVecValue),
 		uint64(invalidProposalWithdrawalsEventsGaugeVecValue),
 		m.previousEventsProcessed,
 		m.previousWithdrawalsProcessed,
-		m.previousNodeConnectionFailures,
+		m.previousl1NodeConnectionFailures,
+		m.previousl2NodeConnectionFailures,
 	)
 }
 
@@ -308,10 +322,15 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Name:      "withdrawals_processed_total",
 			Help:      "Total number of withdrawals processed",
 		}),
-		NodeConnectionFailuresCounter: m.NewCounter(prometheus.CounterOpts{
+		L1NodeConnectionFailuresCounter: m.NewCounter(prometheus.CounterOpts{
 			Namespace: MetricsNamespace,
-			Name:      "node_connection_failures_total",
-			Help:      "Total number of node connection failures",
+			Name:      "l1_node_connection_failures_total",
+			Help:      "Total number of L1 node connection failures",
+		}),
+		L2NodeConnectionFailuresCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "l2_node_connection_failures_total",
+			Help:      "Total number of L2 node connection failures",
 		}),
 		PotentialAttackOnDefenderWinsGamesGauge: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
@@ -365,9 +384,9 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.LatestL1HeightGauge.Set(float64(state.latestL1Height))
 	m.LatestL2HeightGauge.Set(float64(state.latestL2Height))
 
-	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfForgeryDetected))
-	m.PotentialAttackOnInProgressGamesGauge.Set(float64(state.numberOfInvalidWithdrawalsInProgress))
-	m.SuspiciousEventsOnChallengerWinsGamesGauge.Set(float64(state.numberOfinvalidWithdrawals))
+	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfPotentialAttacksOnDefenderWinsGames))
+	m.PotentialAttackOnInProgressGamesGauge.Set(float64(state.numberOfPotentialAttackOnInProgressGames))
+	m.SuspiciousEventsOnChallengerWinsGamesGauge.Set(float64(state.numberOfSuspiciousEventsOnChallengerWinsGames))
 
 	// Update Counters by calculating deltas
 	// Processed Withdrawals
@@ -385,75 +404,82 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.previousWithdrawalsProcessed = state.withdrawalsProcessed
 
 	// Node Connection Failures
-	nodeConnectionFailuresDelta := state.nodeConnectionFailures - m.previousNodeConnectionFailures
-	if nodeConnectionFailuresDelta > 0 {
-		m.NodeConnectionFailuresCounter.Add(float64(nodeConnectionFailuresDelta))
+	l1NodeConnectionFailuresDelta := state.l1NodeConnectionFailures - m.previousl1NodeConnectionFailures
+	if l1NodeConnectionFailuresDelta > 0 {
+		m.L1NodeConnectionFailuresCounter.Add(float64(l1NodeConnectionFailuresDelta))
 	}
-	m.previousNodeConnectionFailures = state.nodeConnectionFailures
+	m.previousl1NodeConnectionFailures = state.l1NodeConnectionFailures
+
+	l2NodeConnectionFailuresDelta := state.l2NodeConnectionFailures - m.previousl2NodeConnectionFailures
+	if l2NodeConnectionFailuresDelta > 0 {
+		m.L2NodeConnectionFailuresCounter.Add(float64(l2NodeConnectionFailuresDelta))
+	}
+	m.previousl2NodeConnectionFailures = state.l2NodeConnectionFailures
 
 	// Clear the previous values
 	m.PotentialAttackOnDefenderWinsGamesGaugeVec.Reset()
 
 	// Update metrics for forgeries withdrawals events
-	for _, event := range state.forgeryDetected {
-		withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
-		proofSubmitter := event.Event.ProofSubmitter.String()
-		status := event.DisputeGame.DisputeGameData.Status.String()
+	for _, event := range state.potentialAttackOnDefenderWinsGames {
+		withdrawalHash := common.BytesToHash(event.DisputeGameEvent.EventRef.WithdrawalHash[:]).Hex()
+		proofSubmitter := event.DisputeGameEvent.EventRef.ProofSubmitter.String()
+		status := event.DisputeGameEvent.DisputeGame.GameStatus.String()
 
 		m.PotentialAttackOnDefenderWinsGamesGaugeVec.WithLabelValues(
 			withdrawalHash,
 			proofSubmitter,
 			status,
-			fmt.Sprintf("%v", event.Blacklisted),
-			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
-			fmt.Sprintf("%v", event.Enriched),
-			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
-			event.Event.Raw.TxHash.String(),
-		).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
+			fmt.Sprintf("%v", event.DisputeGameEvent.DisputeGame.IsGameBlacklisted),
+			fmt.Sprintf("%v", event.WithdrawalPresentOnL2ToL1MessagePasser),
+			fmt.Sprintf("%v", event.DisputeGameEvent.EventRef.BlockInfo.BlockNumber),
+			fmt.Sprintf("%v", event.DisputeGameEvent.EventRef.BlockInfo.BlockTime),
+			event.String(),
+		).Set(1)
 	}
 
 	// Clear the previous values
 	m.PotentialAttackOnInProgressGamesGaugeVec.Reset()
 
 	// Update metrics for invalid proposal withdrawals events
-	for _, event := range state.invalidWithdrawalsInProgress {
-		withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
-		proofSubmitter := event.Event.ProofSubmitter.String()
-		status := event.DisputeGame.DisputeGameData.Status.String()
+	for _, event := range state.potentialAttackOnInProgressGames {
+		withdrawalHash := common.BytesToHash(event.DisputeGameEvent.EventRef.WithdrawalHash[:]).Hex()
+		proofSubmitter := event.DisputeGameEvent.EventRef.ProofSubmitter.String()
+		status := event.DisputeGameEvent.DisputeGame.GameStatus.String()
 
 		m.PotentialAttackOnInProgressGamesGaugeVec.WithLabelValues(
 			withdrawalHash,
 			proofSubmitter,
 			status,
-			fmt.Sprintf("%v", event.Blacklisted),
-			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
-			fmt.Sprintf("%v", event.Enriched),
-			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
-			event.Event.Raw.TxHash.String(),
-		).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
+			fmt.Sprintf("%v", event.DisputeGameEvent.DisputeGame.IsGameBlacklisted),
+			fmt.Sprintf("%v", event.WithdrawalPresentOnL2ToL1MessagePasser),
+			fmt.Sprintf("%v", event.DisputeGameEvent.EventRef.BlockInfo.BlockNumber),
+			fmt.Sprintf("%v", event.DisputeGameEvent.EventRef.BlockInfo.BlockTime),
+			event.String(),
+		).Set(1)
 	}
 
 	// Clear the previous values
 	m.SuspiciousEventsOnChallengerWinsGamesGaugeVec.Reset()
 	// Update metrics for invalid proposal withdrawals events
-	for _, key := range state.invalidWithdrawals.Keys() {
-		enrichedEvent, ok := state.invalidWithdrawals.Get(key)
+	for _, key := range state.suspiciousEventsOnChallengerWinsGames.Keys() {
+		enrichedEvent, ok := state.suspiciousEventsOnChallengerWinsGames.Get(key)
 		if ok {
-			event := enrichedEvent.(*validator.WithdrawalProvenExtensionEvent)
-			withdrawalHash := common.BytesToHash(event.Event.WithdrawalHash[:]).Hex()
-			proofSubmitter := event.Event.ProofSubmitter.String()
-			status := event.DisputeGame.DisputeGameData.Status.String()
+			event := enrichedEvent.(*validator.WithdrawalValidationRef)
+			withdrawalHash := common.BytesToHash(event.DisputeGameEvent.EventRef.WithdrawalHash[:]).Hex()
+			proofSubmitter := event.DisputeGameEvent.EventRef.ProofSubmitter.String()
+			status := event.DisputeGameEvent.DisputeGame.GameStatus.String()
 
-			m.SuspiciousEventsOnChallengerWinsGamesGaugeVec.WithLabelValues(
+			m.PotentialAttackOnInProgressGamesGaugeVec.WithLabelValues(
 				withdrawalHash,
 				proofSubmitter,
 				status,
-				fmt.Sprintf("%v", event.Blacklisted),
-				fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
-				fmt.Sprintf("%v", event.Enriched),
-				fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
-				event.Event.Raw.TxHash.String(),
-			).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
+				fmt.Sprintf("%v", event.DisputeGameEvent.DisputeGame.IsGameBlacklisted),
+				fmt.Sprintf("%v", event.WithdrawalPresentOnL2ToL1MessagePasser),
+				fmt.Sprintf("%v", event.DisputeGameEvent.EventRef.BlockInfo.BlockNumber),
+				fmt.Sprintf("%v", event.DisputeGameEvent.EventRef.BlockInfo.BlockTime),
+				event.String(),
+			).Set(1)
+
 		}
 	}
 }
