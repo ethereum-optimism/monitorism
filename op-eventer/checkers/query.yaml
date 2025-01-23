@@ -2,7 +2,7 @@ Parameters:
   Mainnet:
     ContractAddress: "0xbEb5Fc579115071764c7423A4f12eDde41f106Ed"
     PauseEvent: "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258"
-    AuthorizedPauseAddresses: ["0x9ba6e03d8b90de867373db8cf1a58d2f7f006b3a"]
+    AuthorizedPauseAddresses: ["0x9ba6e03d8b90de867373db8cf1a58d2f7f006b3b"]
   Sepolia:
     ContractAddress: "0xbEb5Fc579115071764c7423A4f12eDde41f106Ed"
     PauseEvent: "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258"
@@ -17,14 +17,14 @@ QueriesTemplate:
      LOWER(address) = LOWER('$ContractAddress')
      AND topics[OFFSET(0)] = "$PauseEvent"
      )
-     SELECT t.*
+     SELECT t.hash as TX
      FROM `bigquery-public-data.crypto_ethereum.transactions` t
      INNER JOIN log_transactions l
      ON t.hash = l.transaction_hash
      WHERE LOWER(t.to_address) NOT IN (SELECT LOWER(addr) FROM UNNEST($AuthorizedPauseAddresses) AS addr)
 
 Checks:
-  - Path: consumers/metrics.py
+  - Path: consumers/metrics.sh
     Queries:
       Mainnet-TransactionPausedByUnauthorizedAddress:
         Description: "Alert when a transaction is paused by an unauthorized address"

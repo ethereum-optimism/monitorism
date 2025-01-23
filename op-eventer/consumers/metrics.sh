@@ -8,9 +8,12 @@ function log {
 }
 
 function metric {
-   local payload="raffaele_metrics,source=test"
+  metric_name=$1
+  metric_source=$2
+  metric_value=$3
+  payload="${metric_name},${metric_source},${metric_value}"
 
-  payload="${payload},event=2 event=1"
+ echo "Sending metric: $payload"
 
   curl \
   	-X POST \
@@ -19,5 +22,5 @@ function metric {
   	"$METRICS_URL" \
   	-d "$payload"
 }
-
-metric
+value=$1
+metric "raffaele_metrics" "source=test" "${value} metric=1"
