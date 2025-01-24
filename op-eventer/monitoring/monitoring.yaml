@@ -2,7 +2,7 @@ Parameters:
   Mainnet:
     ContractAddress: "0xbEb5Fc579115071764c7423A4f12eDde41f106Ed"
     PauseEvent: "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258"
-    AuthorizedPauseAddresses: ["0x9ba6e03d8b90de867373db8cf1a58d2f7f006b3b"]
+    AuthorizedPauseAddresses: ["0x9ba6e03d8b90de867373db8cf1a58d2f7f006b3a"]
   Sepolia:
     ContractAddress: "0xbEb5Fc579115071764c7423A4f12eDde41f106Ed"
     PauseEvent: "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258"
