@@ -31,6 +31,11 @@ def run_query(query):
     return results
 
 
+def send_alert(script_path, source, metric_name, priority, fields):
+    subprocess.run(f"bash {script_path} '{metric_name}' '{source}' 'Priority={
+                   priority},{fields} metric=1'", shell=True)
+
+
 def process_queries(config):
 
     # Get all Parameters
@@ -49,11 +54,14 @@ def process_queries(config):
             query_description = queries[query_name]['Description']
             query_parameters_name = queries[query_name]['Parameters']
             query_template_name = queries[query_name]['Query']
+            priority = queries[query_name]['Priority']
+            source = queries[query_name]['Source']
 
             query_parameters = Parameters[query_parameters_name]
             query_template = Template(QueriesTemplate[query_template_name])
             parsed_query = query_template.safe_substitute(query_parameters)
             processed_queries.append((query_name, parsed_query))
+
             results = run_query(parsed_query)
 
             for row in results:
@@ -61,8 +69,8 @@ def process_queries(config):
                     f"{field}={getattr(row, field)}" for field in row.keys())
 
                 print(f"\n{field_string} \n")
-                subprocess.run(f"bash {script_path} '{
-                               field_string}'", shell=True)
+                send_alert(script_path, source, query_name,
+                           priority, field_string)
 
     return processed_queries
 
@@ -76,7 +84,7 @@ if __name__ == "__main__":
             config = yaml.safe_load(file)
 
         for name, query in process_queries(config):
-            print(f"\n=== {name} ===")
-            print(query)
+            print(f"\nProcessing {name} ")
+            # print(query)
 
         time.sleep(10)

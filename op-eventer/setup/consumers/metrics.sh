@@ -22,5 +22,9 @@ function metric {
   	"$METRICS_URL" \
   	-d "$payload"
 }
-value=$1
-metric "raffaele_metrics" "source=test" "${value} metric=1"
+metric_name=$1
+source=$2
+value=$3
+# echo metric "${metric_name}" "source=test" "${value} metric=1"
+
+metric "${metric_name}" "source=${source}" "${value}"

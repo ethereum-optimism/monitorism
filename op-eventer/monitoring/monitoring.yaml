@@ -30,11 +30,11 @@ Checks:
         Description: "Alert when a transaction is paused by an unauthorized address"
         Parameters: Mainnet
         Query: TransactionPausedByUnauthorizedAddress
-        AlertMessage: "Transaction paused by unauthorized address on Mainnet"
         Priority: P1
+        Source: "test"
       Sepolia-TransactionPausedByUnauthorizedAddress:
         Description: "Alert when a transaction is paused by an unauthorized address"
         Parameters: Sepolia
         Query: TransactionPausedByUnauthorizedAddress
-        AlertMessage: "Transaction paused by unauthorized address on Sepolia"
         Priority: P2
+        Source: "test"
