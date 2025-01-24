@@ -6,6 +6,8 @@ from pprint import pprint
 from google.cloud import bigquery
 import subprocess
 import json
+import signal
+import time
 
 home = os.path.expanduser("~")
 credentials_path = f"{
@@ -13,6 +15,11 @@ credentials_path = f"{
 
 # Set credentials environment variable
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
+
+
+def signal_handler(sig, frame):
+    print('\nExiting gracefully...')
+    sys.exit(0)
 
 
 def run_query(query):
@@ -24,9 +31,7 @@ def run_query(query):
     return results
 
 
-def process_queries(file_path):
-    with open(file_path, 'r') as file:
-        config = yaml.safe_load(file)
+def process_queries(config):
 
     # Get all Parameters
     Parameters = config['Parameters']
@@ -63,6 +68,15 @@ def process_queries(file_path):
 
 
 if __name__ == "__main__":
-    for name, query in process_queries(sys.argv[1]):
-        print(f"\n=== {name} ===")
-        print(query)
+    signal.signal(signal.SIGINT, signal_handler)
+    file_path = sys.argv[1]
+
+    while True:
+        with open(file_path, 'r') as file:
+            config = yaml.safe_load(file)
+
+        for name, query in process_queries(config):
+            print(f"\n=== {name} ===")
+            print(query)
+
+        time.sleep(10)
