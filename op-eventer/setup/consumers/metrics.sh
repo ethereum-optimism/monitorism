@@ -22,9 +22,8 @@ function metric {
   	"$METRICS_URL" \
   	-d "$payload"
 }
-metric_name=$1
-source=$2
-value=$3
+source=$1
+value=$2
 # echo metric "${metric_name}" "source=test" "${value} metric=1"
 
-metric "${metric_name}" "source=${source}" "${value}"
+metric "opEventer" "source=${source}" "${value}"

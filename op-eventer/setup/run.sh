@@ -9,6 +9,7 @@ query_exec="$SCRIPT_DIR/query_exec.py"
 # Activate virtual environment
 source "$VENV_DIR/bin/activate"
 
+export GOOGLE_CLOUD_PROJECT=oplabs-dev-security
 # Check where credentials actually are
 CRED_FILE=$(gcloud info --format="get(config.paths.global_config_dir)")/application_default_credentials.json
 

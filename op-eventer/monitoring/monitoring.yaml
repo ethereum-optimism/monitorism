@@ -17,7 +17,7 @@ QueriesTemplate:
      LOWER(address) = LOWER('$ContractAddress')
      AND topics[OFFSET(0)] = "$PauseEvent"
      )
-     SELECT t.hash as TX
+     SELECT t.hash as MaliciousTX
      FROM `bigquery-public-data.crypto_ethereum.transactions` t
      INNER JOIN log_transactions l
      ON t.hash = l.transaction_hash

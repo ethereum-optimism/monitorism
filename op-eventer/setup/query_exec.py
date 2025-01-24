@@ -32,7 +32,7 @@ def run_query(query):
 
 
 def send_alert(script_path, source, metric_name, priority, fields):
-    subprocess.run(f"bash {script_path} '{metric_name}' '{source}' 'Priority={
+    subprocess.run(f"bash {script_path} '{source}' 'Query={metric_name},Priority={
                    priority},{fields} metric=1'", shell=True)
 
 
