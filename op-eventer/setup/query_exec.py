@@ -51,7 +51,6 @@ def process_queries(config):
         queries = check['Queries']
         for query in queries:
             query_name = query
-            query_description = queries[query_name]['Description']
             query_parameters_name = queries[query_name]['Parameters']
             query_template_name = queries[query_name]['Query']
             priority = queries[query_name]['Priority']
@@ -85,6 +84,6 @@ if __name__ == "__main__":
 
         for name, query in process_queries(config):
             print(f"\nProcessing {name} ")
-            # print(query)
+            print(query)
 
         time.sleep(10)
