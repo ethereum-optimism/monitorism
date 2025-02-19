@@ -357,9 +357,6 @@ func NewMetrics(m metrics.Factory) *Metrics {
 		),
 	}
 
-	// Set the up gauge to 1 to indicate the service is running
-	ret.UpGauge.Set(1)
-
 	return ret
 }
 
