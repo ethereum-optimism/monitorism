@@ -176,6 +176,7 @@ func (s *State) GetPercentages() (uint64, uint64) {
 }
 
 type Metrics struct {
+	UpGauge              prometheus.Gauge
 	InitialL1HeightGauge prometheus.Gauge
 	NextL1HeightGauge    prometheus.Gauge
 	LatestL1HeightGauge  prometheus.Gauge
@@ -201,6 +202,7 @@ type Metrics struct {
 }
 
 func (m *Metrics) String() string {
+	upGaugeValue, _ := GetGaugeValue(m.UpGauge)
 	initialL1HeightGaugeValue, _ := GetGaugeValue(m.InitialL1HeightGauge)
 	nextL1HeightGaugeValue, _ := GetGaugeValue(m.NextL1HeightGauge)
 	latestL1HeightGaugeValue, _ := GetGaugeValue(m.LatestL1HeightGauge)
@@ -218,7 +220,8 @@ func (m *Metrics) String() string {
 	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnInProgressGamesGaugeVec, prometheus.Labels{})
 
 	return fmt.Sprintf(
-		"InitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
+		"Up: %d\nInitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
+		uint64(upGaugeValue),
 		uint64(initialL1HeightGaugeValue),
 		uint64(nextL1HeightGaugeValue),
 		uint64(latestL1HeightGaugeValue),
@@ -273,6 +276,11 @@ func GetGaugeVecValue(gaugeVec *prometheus.GaugeVec, labels prometheus.Labels) (
 
 func NewMetrics(m metrics.Factory) *Metrics {
 	ret := &Metrics{
+		UpGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "up",
+			Help:      "1 if the service is up and running, 0 otherwise",
+		}),
 		InitialL1HeightGauge: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "initial_l1_height",
@@ -349,10 +357,16 @@ func NewMetrics(m metrics.Factory) *Metrics {
 		),
 	}
 
+	// Set the up gauge to 1 to indicate the service is running
+	ret.UpGauge.Set(1)
+
 	return ret
 }
 
 func (m *Metrics) UpdateMetricsFromState(state *State) {
+
+	// Set the up gauge to 1 to indicate the service is running
+	m.UpGauge.Set(1)
 
 	// Update Gauges
 	m.InitialL1HeightGauge.Set(float64(state.initialL1Height))
