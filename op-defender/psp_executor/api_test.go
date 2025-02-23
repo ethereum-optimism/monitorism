@@ -17,6 +17,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
+	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -58,7 +59,7 @@ func GeneratePrivatekey(size int) string {
 // TestHTTPServerHasCorrectRoute tests if the HTTP server has the correct route with "/api/psp_execution" path and "POST" method and the "/api/healthcheck" path and "GET" method.
 func TestHTTPServerHasCorrectRoute(t *testing.T) {
 	// Mock dependencies or create real ones depending on your test needs
-	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
+	logger := testlog.Logger(t, log.LvlInfo)
 	executor := &SimpleExecutor{}
 	metricsfactory := opmetrics.With(opmetrics.NewRegistry())
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
@@ -116,7 +117,7 @@ func TestHTTPServerHasCorrectRoute(t *testing.T) {
 // TestDefenderInitialization tests the initialization of the Defender struct with mock dependencies.
 func TestDefenderInitialization(t *testing.T) {
 	// Mock dependencies or create real ones depending on your test needs
-	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
+	logger := testlog.Logger(t, log.LvlInfo)
 	executor := &SimpleExecutor{}
 	metricsfactory := opmetrics.With(opmetrics.NewRegistry())
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
@@ -141,7 +142,7 @@ func TestDefenderInitialization(t *testing.T) {
 // TestHandlePostMockFetch tests the handlePost function with HTTP status code to make sure HTTP code returned are expected in every possible cases.
 func TestHandlePostMockFetch(t *testing.T) {
 	// Initialize the Defender with necessary mock or real components
-	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
+	logger := testlog.Logger(t, log.LvlInfo)
 	metricsRegistry := opmetrics.NewRegistry()
 	metricsfactory := opmetrics.With(metricsRegistry)
 	mockNodeUrl := "http://rpc.tenderly.co/fork/" // Need to have the "fork" in the URL to avoid mistake for now.
@@ -664,8 +665,7 @@ func TestGetNonceSafe(t *testing.T) {
 	safeAddressSepoliaBindings, _ := bindings.NewSafe(common.HexToAddress(safeAddressSepolia), l1ClientSepolia)
 
 	// Initialize the Defender with necessary mock or real components
-	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
-
+	logger := testlog.Logger(t, log.LvlInfo)
 	metricsRegistry_mainnet := opmetrics.NewRegistry()
 	metricsRegistry_sepolia := opmetrics.NewRegistry()
 	metricsRegistry_sepolia_error := opmetrics.NewRegistry()
@@ -850,7 +850,7 @@ func TestCheckPauseStatus(t *testing.T) {
 	superChainAddressSepoliaBindings, _ := bindings.NewSuperchainConfig(common.HexToAddress(superChainAddressSepolia), l1ClientSepolia)
 
 	// Initialize the Defender with necessary mock or real components
-	logger := log.New() //@TODO: replace with testlog  https://github.com/ethereum-optimism/optimism/blob/develop/op-service/testlog/testlog.go#L61
+	logger := testlog.Logger(t, log.LvlInfo)
 	metricsRegistry_mainnet := opmetrics.NewRegistry()
 	metricsRegistry_sepolia := opmetrics.NewRegistry()
 	metricsRegistry_sepolia_error := opmetrics.NewRegistry()
