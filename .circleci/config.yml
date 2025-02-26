@@ -261,6 +261,9 @@ jobs:
 
 workflows:
   release:
+    when:
+      and:
+        - equal: [<< pipeline.project.git_url >>, << pipeline.pull_request.repository_url >>] # does not run on forked pr
     jobs:
       - hold:
           type: approval
@@ -303,22 +306,9 @@ workflows:
   main:
     when:
       and:
-        - or:
-            # Trigger on new commits
-            - equal: [webhook, << pipeline.trigger_source >>]
+        - equal: [<< pipeline.project.git_url >>, << pipeline.pull_request.repository_url >>] # does not run on forked pr
+        - equal: [webhook, << pipeline.trigger_source >>]
     jobs:
-      - go-lint:
-          name: op-defender-go-lint
-          project_name: op-defender
-      - go-lint:
-          name: op-monitorism-go-lint
-          project_name: op-monitorism
-      - golang-test:
-          name: op-defender-golang-test
-          project_name: op-defender
-      - golang-test:
-          name: op-monitorism-golang-test
-          project_name: op-monitorism
       - docker-build:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
@@ -335,3 +325,17 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
+  all:
+    jobs:
+      - go-lint:
+          name: op-defender-go-lint
+          project_name: op-defender
+      - go-lint:
+          name: op-monitorism-go-lint
+          project_name: op-monitorism
+      - golang-test:
+          name: op-defender-golang-test
+          project_name: op-defender
+      - golang-test:
+          name: op-monitorism-golang-test
+          project_name: op-monitorism
