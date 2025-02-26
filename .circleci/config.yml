@@ -261,9 +261,6 @@ jobs:
 
 workflows:
   release:
-    when:
-      and:
-        - equal: [<< pipeline.project.git_url >>, << pipeline.pull_request.repository_url >>] # does not run on forked pr
     jobs:
       - hold:
           type: approval
@@ -271,14 +268,18 @@ workflows:
             tags:
               only: /(^op-monitorism\/v.*$|^op-defender\/v.*$)/
             branches:
-              ignore: /.*/
+              ignore:
+                - /.*/
+                - /pull\/[0-9]+/ # ignore for pull requests
       - docker-build:
           name: op-monitorism-docker-release
           filters:
             tags:
               only: /^op-monitorism\/v.*/
             branches:
-              ignore: /.*/
+              ignore:
+                - /.*/
+                - /pull\/[0-9]+/ # ignore for pull requests
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>
           requires: ["hold"]
@@ -293,7 +294,9 @@ workflows:
             tags:
               only: /^op-defender\/v.*/
             branches:
-              ignore: /.*/
+              ignore:
+                - /.*/
+                - /pull\/[0-9]+/
           docker_name: op-defender
           docker_tags: <<pipeline.git.revision>>
           requires: ["hold"]
@@ -306,8 +309,9 @@ workflows:
   main:
     when:
       and:
-        - equal: [<< pipeline.project.git_url >>, << pipeline.pull_request.repository_url >>] # does not run on forked pr
-        - equal: [webhook, << pipeline.trigger_source >>]
+        - or:
+            # Trigger on new commits
+            - equal: [webhook, << pipeline.trigger_source >>]
     jobs:
       - docker-build:
           name: op-monitorism-docker-build
@@ -317,6 +321,10 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
+          filters:
+            branches:
+              ignore:
+                - /pull\/[0-9]+/ # ignore for pull requests
       - docker-build:
           name: op-defender-docker-build
           docker_name: op-defender
@@ -325,8 +333,14 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
-  all:
-    jobs:
+          filters:
+            branches:
+              ignore:
+                - /pull\/[0-9]+/ # ignore for pull requests
+
+            
+test:
+  jobs:
       - go-lint:
           name: op-defender-go-lint
           project_name: op-defender
