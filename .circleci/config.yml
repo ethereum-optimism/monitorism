@@ -268,14 +268,18 @@ workflows:
             tags:
               only: /(^op-monitorism\/v.*$|^op-defender\/v.*$)/
             branches:
-              ignore: /.*/
+              ignore:
+                - /.*/
+                - /pull\/[0-9]+/ # ignore for pull requests
       - docker-build:
           name: op-monitorism-docker-release
           filters:
             tags:
               only: /^op-monitorism\/v.*/
             branches:
-              ignore: /.*/
+              ignore:
+                - /.*/
+                - /pull\/[0-9]+/ # ignore for pull requests
           docker_name: op-monitorism
           docker_tags: <<pipeline.git.revision>>
           requires: ["hold"]
@@ -290,7 +294,9 @@ workflows:
             tags:
               only: /^op-defender\/v.*/
             branches:
-              ignore: /.*/
+              ignore:
+                - /.*/
+                - /pull\/[0-9]+/
           docker_name: op-defender
           docker_tags: <<pipeline.git.revision>>
           requires: ["hold"]
@@ -307,18 +313,6 @@ workflows:
             # Trigger on new commits
             - equal: [webhook, << pipeline.trigger_source >>]
     jobs:
-      - go-lint:
-          name: op-defender-go-lint
-          project_name: op-defender
-      - go-lint:
-          name: op-monitorism-go-lint
-          project_name: op-monitorism
-      - golang-test:
-          name: op-defender-golang-test
-          project_name: op-defender
-      - golang-test:
-          name: op-monitorism-golang-test
-          project_name: op-monitorism
       - docker-build:
           name: op-monitorism-docker-build
           docker_name: op-monitorism
@@ -327,6 +321,10 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
+          filters:
+            branches:
+              ignore:
+                - /pull\/[0-9]+/ # ignore for pull requests
       - docker-build:
           name: op-defender-docker-build
           docker_name: op-defender
@@ -335,3 +333,21 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
+          filters:
+            branches:
+              ignore:
+                - /pull\/[0-9]+/ # ignore for pull requests   
+  test:
+    jobs:
+        - go-lint:
+            name: op-defender-go-lint
+            project_name: op-defender
+        - go-lint:
+            name: op-monitorism-go-lint
+            project_name: op-monitorism
+        - golang-test:
+            name: op-defender-golang-test
+            project_name: op-defender
+        - golang-test:
+            name: op-monitorism-golang-test
+            project_name: op-monitorism
