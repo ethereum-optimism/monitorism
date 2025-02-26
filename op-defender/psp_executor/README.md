@@ -136,4 +136,5 @@ OPTIONS:
    --metrics.enabled                 Enable the metrics server (default: false) [$DEFENDER_METRICS_ENABLED]
    --metrics.addr value              Metrics listening address (default: "0.0.0.0") [$DEFENDER_METRICS_ADDR]
    --metrics.port value              Metrics listening port (default: 7300) [$DEFENDER_METRICS_PORT]
-   --help, -h                        show help```
+   --help, -h                        show help
+```
