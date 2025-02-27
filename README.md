@@ -26,32 +26,36 @@ The suite is composed of two main components: `op-monitorism` and `op-defender`,
 ## Docker images
 
 ### Op-Monitorism
+
 Op-Monitorism Docker images are published with each release and build, ensuring you have access to the latest features and fixes.
 
 The latest release version for linux/amd64 can be found in the [release notes](https://github.com/ethereum-optimism/monitorism/releases)
 
 To pull the latest Docker image, run:
+
 ```bash
 docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:latest
-``` 
+```
+
 To pull a specific release version
+
 ```bash
 docker pull --platform linux/amd64 us-docker.pkg.dev/oplabs-tools-artifacts/images/op-monitorism:v0.0.4
 ```
 
 Note: The --platform flag is necessary for Mac computers with ARM chips to ensure compatibility with the linux/amd64 architecture.
 
-
 To build the Docker image locally, execute the following command:
+
 ```bash
 docker build -t op-monitorism ./op-monitorism
 ```
-Use "-t op-monitorism" to tag the image with the name op-monitorism for easier reference.
 
+Use "-t op-monitorism" to tag the image with the name op-monitorism for easier reference.
 
 ## Monitors Components
 
-The `monitors` are passive security service allowing to provide automated monitoring for the OP Stack.
+The `monitors` are passive security services that provide automated monitoring for the OP Stack.
 There are components that are designed to make monitoring of the OP stack and alerting on specific events, that could be a sign of a security incident.
 
 The list of all the monitors currently built into `op-monitorism` is below.
@@ -134,7 +138,7 @@ The secrets monitor takes a Drippie contract as a parameter and monitors for any
 The transaction monitor takes in a yaml config in order to run, and monitors transaction sent by a specific address, tracking both cumulative eth sent, as well as tunable thresholds for specific alerts. It is also configurable to support working against factory contracts, right now just the `FaultDisputeGame` factory to ensure the addresses are only interacting with valid fault dispute games.
 
 | `op-monitorism/transaction_monitor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/transaction_monitor/README.md) |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------- |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 
 ### Faultproof Withdrawal
 
@@ -145,8 +149,7 @@ This is a new version of the deprecated [chain-mon faultproof-wd-mon](https://gi
 For detailed information on how the component works and the algorithms used, please refer to the component README.
 
 | `op-monitorism/faultproof_withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof_withdrawals/README.md) |
-| ----------------------- | --------------------------------------------------------------------------------------------------- |
-
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 
 ## Defender Components
 

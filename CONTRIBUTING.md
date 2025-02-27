@@ -19,13 +19,14 @@ Before opening a PR:
 1. Ensure that tests pass and code is lint free. You can run `yarn test` and `yarn lint` locally to check.
 1. Update the README.md if your changes invalidate or extend its current content.
 1. Include tests for any new functionality.
-1. Ensure each section of the [Pull Request Template](./PULL_REQUEST_TEMPLATE.md) is filled out. Delete any sections that are not relevant.
+1. Ensure each section of the [Pull Request Template](https://github.com/ethereum-optimism/.github/blob/master/PULL_REQUEST_TEMPLATE.md) is filled out. Delete any sections that are not relevant.
 
 Unless your PR is ready for immediate review and merging, please mark it as 'draft' (or simply do not open a PR yet).
 
 **Bonus:** Add comments to the diff under the "Files Changed" tab on the PR page to clarify any sections where you think we might have questions about the approach taken.
 
 ### Response time:
+
 We aim to provide a meaningful response to all PRs and issues from external contributors within 2 business days.
 
 ## Steps for PR Reviewers
@@ -37,6 +38,7 @@ Reviewers should submit their review with either `Approve` or `Request changes` 
 If the reviewer selects `Request changes`, they should clearly indicate which changes they require in order to approve.
 
 If the reviewer selects `Approve`, they should either:
+
 1. immediately merge it, or
 2. indicate what further review they deem necessary (and from whom).
 
