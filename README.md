@@ -51,7 +51,7 @@ Use "-t op-monitorism" to tag the image with the name op-monitorism for easier r
 
 ## Monitors Components
 
-The `monitors` are passive security service allowing to provide automated monitoring for the OP Stack.
+The `monitors` are passive security services that provide automated OP Stack monitoring.
 There are components that are designed to make monitoring of the OP stack and alerting on specific events, that could be a sign of a security incident.
 
 The list of all the monitors currently built into `op-monitorism` is below.
@@ -60,7 +60,7 @@ The list of all the monitors currently built into `op-monitorism` is below.
 
 ![df2b94999628ce8eee98fb60f45667e54be9b13db82add6aa77888f355137329](https://github.com/ethereum-optimism/monitorism/assets/23560242/b8d36a0f-8a17-4e22-be5a-3e9f3586b3ab)
 
-The Global Events Monitor is made for to taking YAML rules as configuration and monitoring the events that are emitted on the chain.
+The Global Events Monitor is made for taking YAML rules as configuration and monitoring the events emitted on the chain.
 
 | `op-monitorism/global_events` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/global_events/README.md) |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -151,7 +151,7 @@ For detailed information on how the component works and the algorithms used, ple
 ## Defender Components
 
 The _defenders_ are active security service allowing to provide automated defense for the OP Stack.
-There are components that are designed to make immediate actions onchain/offchain to protect the assets.
+Some components are designed to make immediate actions onchain/offchain to protect the assets.
 
 The list of all the defender currently built into `op-defender` is below.
 
@@ -170,9 +170,9 @@ The PSP Executor Service is made for executing PSP onchain faster to increase ou
 
 After cloning, please run `./bootstrap.sh` to set up the development environment correctly.
 
-### Command line Options
+### Command-line Options
 
-The cli has the ability to spin up a monitor for varying activities, each emitting metrics used to setup alerts.
+The cli has the ability to spin up a monitor for varying activities, each emitting metrics used to set up alerts.
 
 ```
 COMMANDS:
