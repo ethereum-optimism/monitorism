@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	optls "github.com/ethereum-optimism/optimism/op-service/tls"
-	"github.com/ethereum-optimism/optimism/op-service/tls/certman"
 	"math/big"
 	"net/http"
 	"os"
@@ -20,6 +18,8 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	optls "github.com/ethereum-optimism/optimism/op-service/tls"
+	"github.com/ethereum-optimism/optimism/op-service/tls/certman"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
