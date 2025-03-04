@@ -78,7 +78,7 @@ func (on *OpNodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) (
 		err := on.rpc_l2Client.CallContext(on.ctx, &result, "optimism_outputAtBlock", l2blockNumberHex)
 		//check if error contains "failed to determine L2BlockRef of height"
 		if err != nil {
-			return [32]byte{}, fmt.Errorf("failed to get output at block for game block:%v : %w", l2blockNumberHex, err)
+			return [32]byte{}, fmt.Errorf("failed to get output at block for game blockHex:%v blockInt:%v error:%w", l2blockNumberHex, l2blockNumber, err)
 		}
 		trustedRootProof, err := StringToBytes32(result.OutputRoot)
 		if err != nil {
@@ -94,13 +94,14 @@ func (on *OpNodeHelper) GetOutputRootFromTrustedL2Node(l2blockNumber *big.Int) (
 // GetOutputRootFromCalculation retrieves the output root by calculating it from the given block number.
 // It returns the calculated output root as a Bytes32 array.
 func (on *OpNodeHelper) GetOutputRootFromCalculation(blockNumber *big.Int) ([32]byte, error) {
-	block, err := on.l2OpNodeClient.BlockByNumber(on.ctx, blockNumber)
+	fmt.Println("Getting output root from calculation for block number:", blockNumber)
+	block, err := on.l2OpGethClient.BlockByNumber(on.ctx, blockNumber)
 	if err != nil {
-		return [32]byte{}, fmt.Errorf("failed to get block by number: %w", err)
+		return [32]byte{}, fmt.Errorf("failed to get output at block for game blockInt:%v error:%w", blockNumber, err)
 	}
 
 	proof := struct{ StorageHash common.Hash }{}
-	err = on.l2OpNodeClient.Client().CallContext(on.ctx, &proof, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, nil, hexutil.EncodeBig(blockNumber))
+	err = on.l2OpGethClient.Client().CallContext(on.ctx, &proof, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, nil, hexutil.EncodeBig(blockNumber))
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("failed to get proof: %w", err)
 	}
