@@ -38,7 +38,7 @@ DESCRIPTION:
 
 OPTIONS:
    --l1.geth.url value             L1 execution layer node URL [$FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL]
-   --l2.node.url value             L2 rollup node consensus layer (op-node) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL]
+   --l2.node.url value             [DEPRECATED] L2 rollup node consensus layer (op-node) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL]
    --l2.geth.url value             L2 OP Stack execution layer client(op-geth) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL]
    --event.block.range value       Max block range when scanning for events (default: 1000) [$FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE]
    --start.block.height value      Starting height to scan for events. This will take precedence if set. (default: 0) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT]
@@ -59,7 +59,7 @@ OPTIONS:
 
 ```bash
 L1_GETH_URL="https://..."
-L2_OP_NODE_URL="https://..."
+L2_OP_NODE_URL="https://..."  # [DEPRECATED] This URL is no longer required
 L2_OP_GETH_URL="https://..."
 
 export MONITORISM_LOOP_INTERVAL_MSEC=100

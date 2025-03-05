@@ -28,7 +28,6 @@ type Monitor struct {
 	// user arguments
 	l1GethClient   *ethclient.Client
 	l2OpGethClient *ethclient.Client
-	l2OpNodeClient *ethclient.Client
 	l1ChainID      *big.Int
 	l2ChainID      *big.Int
 	maxBlockRange  uint64
@@ -55,12 +54,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l2: %w", err)
 	}
-	l2OpNodeClient, err := ethclient.Dial(cfg.L2OpNodeURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial l2: %w", err)
-	}
 
-	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, l1GethClient, l2OpGethClient, l2OpNodeClient, cfg.OptimismPortalAddress)
+	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, l1GethClient, l2OpGethClient, cfg.OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create withdrawal validator: %w", err)
 	}
@@ -87,7 +82,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		ctx:            ctx,
 		l1GethClient:   l1GethClient,
 		l2OpGethClient: l2OpGethClient,
-		l2OpNodeClient: l2OpNodeClient,
 
 		l1ChainID: l1ChainID,
 		l2ChainID: l2ChainID,
@@ -124,7 +118,11 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
 	}
 
-	state, err := NewState(log, startingL1BlockHeight, latestL1Height, ret.withdrawalValidator.GetLatestL2Height())
+	latestL2Height, err := ret.withdrawalValidator.L2NodeHelper.BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest L2 height: %w", err)
+	}
+	state, err := NewState(log, startingL1BlockHeight, latestL1Height, latestL2Height)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create state: %w", err)
 	}
@@ -289,7 +287,7 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
 		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
 		//upgrade state to the latest L2 height	after the event is processed
-		m.state.latestL2Height = m.withdrawalValidator.GetLatestL2Height()
+		m.state.latestL2Height, err = m.withdrawalValidator.L2NodeHelper.BlockNumber()
 		if err != nil {
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
 			return err
@@ -297,7 +295,7 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 
 		err = m.ConsumeEvent(enrichedWithdrawalEvent)
 		if err != nil {
-			m.log.Error("failed to consume event", "error", err)
+			m.log.Error("failed to consume event", "error", err, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 			return err
 		}
 	}
@@ -313,7 +311,7 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 	}
 	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(enrichedWithdrawalEvent)
 	if err != nil {
-		m.log.Error("failed to check if forgery detected", "error", err)
+		m.log.Error("failed to check if forgery detected", "error", err, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		return err
 	}
 

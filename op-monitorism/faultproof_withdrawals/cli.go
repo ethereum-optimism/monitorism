@@ -38,7 +38,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
 		L1GethURL:                 ctx.String(L1GethURLFlagName),
 		L2OpGethURL:               ctx.String(L2GethURLFlagName),
-		L2OpNodeURL:               ctx.String(L2NodeURLFlagName),
+		L2OpNodeURL:               "", // Ignored since deprecated
 		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight:     ctx.Int64(StartingL1BlockHeightFlagName),
 		HoursInThePastToStartFrom: ctx.Uint64(HoursInThePastToStartFromFlagName),
@@ -62,8 +62,9 @@ func CLIFlags(envVar string) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    L2NodeURLFlagName,
-			Usage:   "L2 rollup node consensus layer (op-node) URL",
+			Usage:   "[DEPRECATED] L2 rollup node consensus layer (op-node) URL - this flag is ignored",
 			EnvVars: opservice.PrefixEnvVar(envVar, "L2_OP_NODE_URL"),
+			Hidden:  true,
 		},
 		&cli.StringFlag{
 			Name:    L2GethURLFlagName,

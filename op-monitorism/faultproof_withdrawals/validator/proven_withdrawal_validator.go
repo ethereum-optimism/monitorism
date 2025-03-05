@@ -35,7 +35,7 @@ type EnrichedProvenWithdrawalEvent struct {
 // ProvenWithdrawalValidator validates proven withdrawal events.
 type ProvenWithdrawalValidator struct {
 	optimismPortal2Helper     *OptimismPortal2Helper     // Helper for interacting with Optimism Portal 2.
-	l2NodeHelper              *OpNodeHelper              // Helper for L2 node interactions.
+	L2NodeHelper              *OpNodeHelper              // Helper for L2 node interactions.
 	l2ToL1MessagePasserHelper *L2ToL1MessagePasserHelper // Helper for L2 to L1 message passing.
 	faultDisputeGameHelper    *FaultDisputeGameHelper    // Helper for dispute game interactions.
 	ctx                       context.Context            // Context for managing cancellation and timeouts.
@@ -59,7 +59,7 @@ func (v ValidateProofWithdrawalState) String() string {
 
 // NewWithdrawalValidator initializes a new ProvenWithdrawalValidator.
 // It binds necessary helpers and returns the validator instance.
-func NewWithdrawalValidator(ctx context.Context, l1GethClient *ethclient.Client, l2OpGethClient *ethclient.Client, l2OpNodeClient *ethclient.Client, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
+func NewWithdrawalValidator(ctx context.Context, l1GethClient *ethclient.Client, l2OpGethClient *ethclient.Client, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
 	optimismPortal2Helper, err := NewOptimismPortal2Helper(ctx, l1GethClient, OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
@@ -75,14 +75,14 @@ func NewWithdrawalValidator(ctx context.Context, l1GethClient *ethclient.Client,
 		return nil, fmt.Errorf("failed to create l2 to l1 message passer helper: %w", err)
 	}
 
-	l2NodeHelper, err := NewOpNodeHelper(ctx, l2OpNodeClient, l2OpGethClient)
+	l2NodeHelper, err := NewOpNodeHelper(ctx, l2OpGethClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create l2 node helper: %w", err)
 	}
 
 	return &ProvenWithdrawalValidator{
 		optimismPortal2Helper:     optimismPortal2Helper,
-		l2NodeHelper:              l2NodeHelper,
+		L2NodeHelper:              l2NodeHelper,
 		l2ToL1MessagePasserHelper: l2ToL1MessagePasserHelper,
 		faultDisputeGameHelper:    faultDisputeGameHelper,
 		ctx:                       ctx,
@@ -113,12 +113,12 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 
 	// Check if the game root claim is valid on L2 only if not confirmed already that it is on L2
 	if !event.Enriched {
-		latest_known_l2_block, err := wv.l2NodeHelper.GetLatestKnownL2BlockNumber()
+		latest_known_l2_block, err := wv.L2NodeHelper.BlockNumber()
 		if err != nil {
 			return fmt.Errorf("failed to get latest known L2 block number: %w", err)
 		}
 		if latest_known_l2_block >= event.DisputeGame.DisputeGameData.L2blockNumber.Uint64() {
-			trustedRootClaim, err := wv.l2NodeHelper.GetOutputRootFromTrustedL2Node(event.DisputeGame.DisputeGameData.L2blockNumber)
+			trustedRootClaim, err := wv.L2NodeHelper.GetOutputRootFromCalculation(event.DisputeGame.DisputeGameData.L2blockNumber)
 			if err != nil {
 				return fmt.Errorf("failed to get trustedRootClaim from Op-node: %w", err)
 			}
@@ -249,8 +249,4 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 	} else {
 		return false, nil
 	}
-}
-
-func (wv *ProvenWithdrawalValidator) GetLatestL2Height() uint64 {
-	return wv.l2NodeHelper.LatestKnownL2BlockNumber
 }
