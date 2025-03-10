@@ -27,7 +27,6 @@ type Monitor struct {
 	ctx context.Context
 
 	// user arguments
-	l1GethClient  *ethclient.Client
 	maxBlockRange uint64
 
 	// helpers
@@ -77,7 +76,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		log: log,
 
 		ctx:                 ctx,
-		l1GethClient:        l1GethClient,
 		withdrawalValidator: *withdrawalValidator,
 
 		maxBlockRange: cfg.EventBlockRange,
@@ -110,14 +108,25 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
 	}
 
-	latestL2Height, err := ret.withdrawalValidator.L2NodeHelper.BlockNumber()
+	latestL2Height, err := ret.withdrawalValidator.GetL2BlockNumber()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get latest L2 height: %w", err)
 	}
-	state, err := NewState(log, startingL1BlockHeight, latestL1Height, latestL2Height)
+
+	if startingL1BlockHeight > latestL1Height {
+		log.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", startingL1BlockHeight, "latestL1Height", latestL1Height)
+		startingL1BlockHeight = latestL1Height
+	}
+
+	state, err := NewState(log, withdrawalValidator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create state: %w", err)
 	}
+
+	state.nextL1Height = startingL1BlockHeight
+	state.latestL1Height = latestL1Height
+	state.latestL2Height = latestL2Height
+
 	ret.state = *state
 
 	// log state and metrics
@@ -193,7 +202,7 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 // GetLatestBlock retrieves the latest block number from the L1 Geth client.
 // It updates the state with the latest L1 height.
 func (m *Monitor) GetLatestBlock() (uint64, error) {
-	latestL1Height, err := m.l1GethClient.BlockNumber(m.ctx)
+	latestL1Height, err := m.withdrawalValidator.GetL1BlockNumber()
 	if err != nil {
 		return 0, fmt.Errorf("failed to query latest block number: %w", err)
 	}
@@ -226,18 +235,15 @@ func (m *Monitor) Run(ctx context.Context) {
 	start := m.state.nextL1Height
 
 	stop, err := m.GetMaxBlock()
-	m.state.nodeConnections++
 	if err != nil {
-		m.state.nodeConnectionFailures++
 		m.log.Error("failed to get max block", "error", err)
 		return
 	}
 
 	// review previous invalidProposalWithdrawalsEvents
 	err = m.ConsumeEvents(m.state.potentialAttackOnInProgressGames)
-	m.state.nodeConnections++
+
 	if err != nil {
-		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
@@ -245,7 +251,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	// get new events
 	m.log.Info("getting enriched withdrawal events", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(start, &stop)
-	m.state.nodeConnections++
+
 	if err != nil {
 		if start >= stop {
 			m.log.Info("no new events to process", "start", start, "stop", stop)
@@ -253,16 +259,14 @@ func (m *Monitor) Run(ctx context.Context) {
 			//in this case it happens when the range is too small, we can ignore the error as it is normal for the Iterator to not be ready yet
 			m.log.Info("failed to get enriched withdrawal events, should not be an issue as start and stop blocks are too close", "error", err)
 		} else {
-			m.state.nodeConnectionFailures++
 			m.log.Error("failed to get enriched withdrawal events", "error", err)
 		}
 		return
 	}
 
 	err = m.ConsumeEvents(newEvents)
-	m.state.nodeConnections++
+
 	if err != nil {
-		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
@@ -287,7 +291,7 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 			return err
 		}
 		//upgrade state to the latest L2 height	after the event is processed
-		m.state.latestL2Height, err = m.withdrawalValidator.L2NodeHelper.BlockNumber()
+		m.state.latestL2Height, err = m.withdrawalValidator.GetL2BlockNumber()
 		if err != nil {
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
 			return err
@@ -338,6 +342,5 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 
 // Close gracefully shuts down the Monitor by closing the Geth clients.
 func (m *Monitor) Close(_ context.Context) error {
-	m.l1GethClient.Close()
 	return nil
 }

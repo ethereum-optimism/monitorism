@@ -46,13 +46,22 @@ type State struct {
 	// It is unlikely that someone is going to use a withdrawal hash on a games that resolved with ChallengerWins. If this happens, maybe there is a bug somewhere in the UI used by the users or it is a malicious attack that failed
 	suspiciousEventsOnChallengerWinsGames         *lru.Cache
 	numberOfSuspiciousEventsOnChallengerWinsGames uint64
+
+	provenWithdrawalValidator *validator.ProvenWithdrawalValidator
 }
 
-func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64) (*State, error) {
-
-	if nextL1Height > latestL1Height {
-		logger.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", nextL1Height, "latestL1Height", latestL1Height)
-		nextL1Height = latestL1Height
+func NewState(logger log.Logger, provenWithdrawalValidator *validator.ProvenWithdrawalValidator) (*State, error) {
+	nextL1Height, err := provenWithdrawalValidator.GetL1BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get L1 block number: %w", err)
+	}
+	latestL1Height, err := provenWithdrawalValidator.GetL1BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get L1 block number: %w", err)
+	}
+	latestL2Height, err := provenWithdrawalValidator.GetL2BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get L2 block number: %w", err)
 	}
 
 	ret := State{
@@ -77,14 +86,23 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 		nodeConnectionFailures: 0,
 		nodeConnections:        0,
 
-		nextL1Height:    nextL1Height,
-		latestL1Height:  latestL1Height,
-		initialL1Height: nextL1Height,
-		latestL2Height:  latestL2Height,
-		logger:          logger,
+		nextL1Height:              nextL1Height,
+		latestL1Height:            latestL1Height,
+		initialL1Height:           nextL1Height,
+		latestL2Height:            latestL2Height,
+		logger:                    logger,
+		provenWithdrawalValidator: provenWithdrawalValidator,
 	}
 
 	return &ret, nil
+}
+
+func (s *State) GetNodeConnectionFailures() uint64 {
+	return s.provenWithdrawalValidator.L1Proxy.GetTotalConnectionErrors() + s.provenWithdrawalValidator.L2Proxy.GetTotalConnectionErrors()
+}
+
+func (s *State) GetNodeConnections() uint64 {
+	return s.provenWithdrawalValidator.L1Proxy.GetTotalConnections() + s.provenWithdrawalValidator.L2Proxy.GetTotalConnections()
 }
 
 func (s *State) LogState() {
@@ -402,11 +420,17 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.previousWithdrawalsProcessed = state.withdrawalsProcessed
 
 	// Node Connection Failures
-	nodeConnectionFailuresDelta := state.nodeConnectionFailures - m.previousNodeConnectionFailures
+	nodeConnectionFailuresDelta := state.GetNodeConnectionFailures() - m.previousNodeConnectionFailures
 	if nodeConnectionFailuresDelta > 0 {
 		m.NodeConnectionFailuresCounter.Add(float64(nodeConnectionFailuresDelta))
 	}
-	m.previousNodeConnectionFailures = state.nodeConnectionFailures
+	m.previousNodeConnectionFailures = state.GetNodeConnectionFailures()
+
+	nodeConnectionsDelta := state.GetNodeConnections() - m.previousNodeConnections
+	if nodeConnectionsDelta > 0 {
+		m.NodeConnectionsCounter.Add(float64(nodeConnectionsDelta))
+	}
+	m.previousNodeConnections = state.GetNodeConnections()
 
 	// Clear the previous values
 	m.PotentialAttackOnDefenderWinsGamesGaugeVec.Reset()
