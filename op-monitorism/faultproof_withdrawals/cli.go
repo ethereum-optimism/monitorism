@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	L1GethURLFlagName = "l1.geth.url"
-	L2NodeURLFlagName = "l2.node.url"
-	L2GethURLFlagName = "l2.geth.url"
+	L1GethURLFlagName        = "l1.geth.url"
+	L2NodeURLFlagName        = "l2.node.url"
+	L2GethURLFlagName        = "l2.geth.url"
+	L2GethBackupURLsFlagName = "l2.geth.backup.urls"
 
 	EventBlockRangeFlagName           = "event.block.range"
 	StartingL1BlockHeightFlagName     = "start.block.height"
@@ -23,9 +24,10 @@ const (
 )
 
 type CLIConfig struct {
-	L1GethURL   string
-	L2OpGethURL string
-	L2OpNodeURL string
+	L1GethURL        string
+	L2OpGethURL      string
+	L2OpNodeURL      string
+	L2GethBackupURLs []string
 
 	EventBlockRange           uint64
 	StartingL1BlockHeight     int64
@@ -38,6 +40,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
 		L1GethURL:                 ctx.String(L1GethURLFlagName),
 		L2OpGethURL:               ctx.String(L2GethURLFlagName),
+		L2GethBackupURLs:          ctx.StringSlice(L2GethBackupURLsFlagName),
 		L2OpNodeURL:               "", // Ignored since deprecated
 		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight:     ctx.Int64(StartingL1BlockHeightFlagName),
@@ -70,6 +73,11 @@ func CLIFlags(envVar string) []cli.Flag {
 			Name:    L2GethURLFlagName,
 			Usage:   "L2 OP Stack execution layer client(op-geth) URL",
 			EnvVars: opservice.PrefixEnvVar(envVar, "L2_OP_GETH_URL"),
+		},
+		&cli.StringSliceFlag{
+			Name:    L2GethBackupURLsFlagName,
+			Usage:   "Backup L2 OP Stack execution layer client URLs (format: name=url,name2=url2)",
+			EnvVars: opservice.PrefixEnvVar(envVar, "L2_OP_GETH_BACKUP_URLS"),
 		},
 		&cli.Uint64Flag{
 			Name:    EventBlockRangeFlagName,
