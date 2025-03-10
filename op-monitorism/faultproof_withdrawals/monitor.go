@@ -27,12 +27,8 @@ type Monitor struct {
 	ctx context.Context
 
 	// user arguments
-	l1GethClient    *ethclient.Client
-	l2OpGethClient  *ethclient.Client
-	l2BackupClients map[string]*ethclient.Client
-	l1ChainID       *big.Int
-	l2ChainID       *big.Int
-	maxBlockRange   uint64
+	l1GethClient  *ethclient.Client
+	maxBlockRange uint64
 
 	// helpers
 	withdrawalValidator validator.ProvenWithdrawalValidator
@@ -53,31 +49,19 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to dial l1: %w", err)
 	}
 
-	l1ChainID, err := l1GethClient.ChainID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get l1 chain id: %w", err)
-	}
-
-	l2OpGethClient, err := ethclient.Dial(cfg.L2OpGethURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial l2: %w", err)
-	}
-	l2ChainID, err := l2OpGethClient.ChainID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
-	}
-
-	// if backup urls are provided, create a backup client for each
-	var l2OpGethBackupClients map[string]*ethclient.Client
+	mapL2GethBackupURLs := make(map[string]string)
 	if len(cfg.L2GethBackupURLs) > 0 {
-		l2OpGethBackupClients, err = GethBackupClientsDictionary(ctx, cfg.L2GethBackupURLs, l2ChainID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create backup clients: %w", err)
+		for _, rawURL := range cfg.L2GethBackupURLs {
+			parts := strings.Split(rawURL, "=")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid backup URL format, expected name=url, got %s", rawURL)
+			}
+			name, url := parts[0], parts[1]
+			mapL2GethBackupURLs[name] = url
 		}
-
 	}
 
-	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, log, l1GethClient, l2OpGethClient, l2OpGethBackupClients, cfg.OptimismPortalAddress)
+	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, log, cfg.L1GethURL, cfg.L2OpGethURL, mapL2GethBackupURLs, cfg.OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create withdrawal validator: %w", err)
 	}
@@ -92,14 +76,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	ret := &Monitor{
 		log: log,
 
-		ctx:             ctx,
-		l1GethClient:    l1GethClient,
-		l2OpGethClient:  l2OpGethClient,
-		l2BackupClients: l2OpGethBackupClients,
-
-		l1ChainID: l1ChainID,
-		l2ChainID: l2ChainID,
-
+		ctx:                 ctx,
+		l1GethClient:        l1GethClient,
 		withdrawalValidator: *withdrawalValidator,
 
 		maxBlockRange: cfg.EventBlockRange,
@@ -147,30 +125,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	ret.metrics.UpdateMetricsFromState(&ret.state)
 
 	return ret, nil
-}
-
-func GethBackupClientsDictionary(ctx context.Context, L2GethBackupURLs []string, l2ChainID *big.Int) (map[string]*ethclient.Client, error) {
-	dictionary := make(map[string]*ethclient.Client)
-	for _, rawURL := range L2GethBackupURLs {
-		parts := strings.Split(rawURL, "=")
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid backup URL format, expected name=url, got %s", rawURL)
-		}
-		name, url := parts[0], parts[1]
-		backupClient, err := ethclient.Dial(url)
-		if err != nil {
-			return nil, fmt.Errorf("failed to dial l2 backup, error: %w", err)
-		}
-		backupChainID, err := backupClient.ChainID(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get backup L2 chain ID, error: %w", err)
-		}
-		if backupChainID.Cmp(l2ChainID) != 0 {
-			return nil, fmt.Errorf("backup L2 client chain ID mismatch, expected: %d, got: %d", l2ChainID, backupChainID)
-		}
-		dictionary[name] = backupClient
-	}
-	return dictionary, nil
 }
 
 // getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
@@ -352,9 +306,6 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 // ConsumeEvent processes a single enriched withdrawal event.
 // It logs the event details and checks for any forgery detection.
 func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) error {
-	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
-		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
-	}
 	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(enrichedWithdrawalEvent)
 	if err != nil {
 		m.log.Error("failed to check if forgery detected", "error", err, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
@@ -388,6 +339,5 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 // Close gracefully shuts down the Monitor by closing the Geth clients.
 func (m *Monitor) Close(_ context.Context) error {
 	m.l1GethClient.Close()
-	m.l2OpGethClient.Close()
 	return nil
 }

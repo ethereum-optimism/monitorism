@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -63,7 +64,7 @@ func (v ValidateProofWithdrawalState) String() string {
 
 // NewWithdrawalValidator initializes a new ProvenWithdrawalValidator.
 // It binds necessary helpers and returns the validator instance.
-func NewWithdrawalValidator(ctx context.Context, log log.Logger, l1GethClient *ethclient.Client, l2OpGethClient *ethclient.Client, l2OpGethBackupClients map[string]*ethclient.Client, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
+func NewWithdrawalValidatorBack(ctx context.Context, log log.Logger, l1GethClient *ethclient.Client, l2OpGethClient *ethclient.Client, l2OpGethBackupClients map[string]*ethclient.Client, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
 	optimismPortal2Helper, err := NewOptimismPortal2Helper(ctx, l1GethClient, OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
@@ -92,6 +93,81 @@ func NewWithdrawalValidator(ctx context.Context, log log.Logger, l1GethClient *e
 		ctx:                       ctx,
 		log:                       log,
 	}, nil
+}
+
+func NewWithdrawalValidator(ctx context.Context, log log.Logger, l1GethClientURL string, l2GethClientURL string, l2GethBackupClientsURLs map[string]string, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
+
+	l1GethClient, err := ethclient.Dial(l1GethClientURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial l1: %w", err)
+	}
+	l2OpGethClient, err := ethclient.Dial(l2GethClientURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial l2: %w", err)
+	}
+
+	l2ChainID, err := l2OpGethClient.ChainID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
+	}
+
+	// if backup urls are provided, create a backup client for each
+	var l2OpGethBackupClients map[string]*ethclient.Client
+	if len(l2GethBackupClientsURLs) > 0 {
+		l2OpGethBackupClients, err = GethBackupClientsDictionary(ctx, l2GethBackupClientsURLs, l2ChainID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create backup clients: %w", err)
+		}
+
+	}
+
+	optimismPortal2Helper, err := NewOptimismPortal2Helper(ctx, l1GethClient, OptimismPortalAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
+	}
+
+	faultDisputeGameHelper, err := NewFaultDisputeGameHelper(ctx, l1GethClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dispute game helper: %w", err)
+	}
+
+	l2ToL1MessagePasserHelper, err := NewL2ToL1MessagePasserHelper(ctx, l2OpGethClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create l2 to l1 message passer helper: %w", err)
+	}
+
+	l2NodeHelper, err := NewOpNodeHelper(ctx, l2OpGethClient, l2OpGethBackupClients)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create l2 node helper: %w", err)
+	}
+
+	return &ProvenWithdrawalValidator{
+		optimismPortal2Helper:     optimismPortal2Helper,
+		L2NodeHelper:              l2NodeHelper,
+		l2ToL1MessagePasserHelper: l2ToL1MessagePasserHelper,
+		faultDisputeGameHelper:    faultDisputeGameHelper,
+		ctx:                       ctx,
+		log:                       log,
+	}, nil
+}
+
+func GethBackupClientsDictionary(ctx context.Context, L2GethBackupURLs map[string]string, l2ChainID *big.Int) (map[string]*ethclient.Client, error) {
+	dictionary := make(map[string]*ethclient.Client)
+	for name, url := range L2GethBackupURLs {
+		backupClient, err := ethclient.Dial(url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial l2 backup, error: %w", err)
+		}
+		backupChainID, err := backupClient.ChainID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get backup L2 chain ID, error: %w", err)
+		}
+		if backupChainID.Cmp(l2ChainID) != 0 {
+			return nil, fmt.Errorf("backup L2 client chain ID mismatch, expected: %d, got: %d", l2ChainID, backupChainID)
+		}
+		dictionary[name] = backupClient
+	}
+	return dictionary, nil
 }
 
 // UpdateEnrichedWithdrawalEvent updates the enriched withdrawal event with relevant data.
