@@ -29,6 +29,7 @@ type State struct {
 	withdrawalsProcessed uint64 // This counts the withdrawals that have being completed and processed and we are not tracking anymore. eventProcessed >= withdrawalsProcessed. withdrawalsProcessed does not includes potential attacks with games in progress.
 
 	nodeConnectionFailures uint64
+	nodeConnections        uint64
 
 	// possible attacks detected
 
@@ -74,6 +75,7 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 
 		withdrawalsProcessed:   0,
 		nodeConnectionFailures: 0,
+		nodeConnections:        0,
 
 		nextL1Height:    nextL1Height,
 		latestL1Height:  latestL1Height,
@@ -100,7 +102,7 @@ func (s *State) LogState() {
 
 		"eventsProcessed", fmt.Sprintf("%d", s.eventsProcessed),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
-
+		"nodeConnections", fmt.Sprintf("%d", s.nodeConnections),
 		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfPotentialAttacksOnDefenderWinsGames),
 		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
 		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
@@ -185,8 +187,8 @@ type Metrics struct {
 	EventsProcessedCounter      prometheus.Counter
 	WithdrawalsProcessedCounter prometheus.Counter
 
-	NodeConnectionFailuresCounter prometheus.Counter
-
+	NodeConnectionFailuresCounter              prometheus.Counter
+	NodeConnectionsCounter                     prometheus.Counter
 	PotentialAttackOnDefenderWinsGamesGauge    prometheus.Gauge
 	PotentialAttackOnInProgressGamesGauge      prometheus.Gauge
 	SuspiciousEventsOnChallengerWinsGamesGauge prometheus.Gauge
@@ -199,6 +201,7 @@ type Metrics struct {
 	previousEventsProcessed        uint64
 	previousWithdrawalsProcessed   uint64
 	previousNodeConnectionFailures uint64
+	previousNodeConnections        uint64
 }
 
 func (m *Metrics) String() string {
@@ -212,6 +215,7 @@ func (m *Metrics) String() string {
 	eventsProcessedCounterValue, _ := GetCounterValue(m.EventsProcessedCounter)
 
 	nodeConnectionFailuresCounterValue, _ := GetCounterValue(m.NodeConnectionFailuresCounter)
+	nodeConnectionsCounterValue, _ := GetCounterValue(m.NodeConnectionsCounter)
 
 	potentialAttackOnDefenderWinsGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnDefenderWinsGamesGauge)
 	potentialAttackOnInProgressGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnInProgressGamesGauge)
@@ -220,7 +224,7 @@ func (m *Metrics) String() string {
 	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnInProgressGamesGaugeVec, prometheus.Labels{})
 
 	return fmt.Sprintf(
-		"Up: %d\nInitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
+		"Up: %d\nInitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\nnodeConnectionsCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n previousNodeConnections: %d\n",
 		uint64(upGaugeValue),
 		uint64(initialL1HeightGaugeValue),
 		uint64(nextL1HeightGaugeValue),
@@ -229,6 +233,7 @@ func (m *Metrics) String() string {
 		uint64(eventsProcessedCounterValue),
 		uint64(withdrawalsProcessedCounterValue),
 		uint64(nodeConnectionFailuresCounterValue),
+		uint64(nodeConnectionsCounterValue),
 		uint64(potentialAttackOnDefenderWinsGamesGaugeValue),
 		uint64(potentialAttackOnInProgressGamesGaugeValue),
 		uint64(forgeriesWithdrawalsEventsGaugeVecValue),
@@ -236,6 +241,7 @@ func (m *Metrics) String() string {
 		m.previousEventsProcessed,
 		m.previousWithdrawalsProcessed,
 		m.previousNodeConnectionFailures,
+		m.previousNodeConnections,
 	)
 }
 
@@ -315,6 +321,11 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Namespace: MetricsNamespace,
 			Name:      "node_connection_failures_total",
 			Help:      "Total number of node connection failures",
+		}),
+		NodeConnectionsCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "node_connections_total",
+			Help:      "Total number of node connections",
 		}),
 		PotentialAttackOnDefenderWinsGamesGauge: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
