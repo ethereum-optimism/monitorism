@@ -366,7 +366,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 				Name:      "potential_attack_on_defender_wins_games_gauge_vec",
 				Help:      "Information about potential attacks on defender wins games.",
 			},
-			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "TxHash", "TxL1BlockNumber", "ProxyAddress", "L2blockNumber", "RootClaim", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
 		),
 		PotentialAttackOnInProgressGamesGaugeVec: m.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -374,7 +374,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 				Name:      "potential_attack_on_in_progress_games_gauge_vec",
 				Help:      "Information about potential attacks on in progress games.",
 			},
-			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "TxHash", "TxL1BlockNumber", "ProxyAddress", "L2blockNumber", "RootClaim", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
 		),
 		SuspiciousEventsOnChallengerWinsGamesGaugeVec: m.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -382,7 +382,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 				Name:      "suspicious_events_on_challenger_wins_games_info",
 				Help:      "Information about suspicious events on challenger wins games.",
 			},
-			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "TxHash", "TxL1BlockNumber", "ProxyAddress", "L2blockNumber", "RootClaim", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
 		),
 	}
 
@@ -445,6 +445,11 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			withdrawalHash,
 			proofSubmitter,
 			status,
+			fmt.Sprintf("%v", event.Event.Raw.TxHash),
+			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.ProxyAddress),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.L2blockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.RootClaim),
 			fmt.Sprintf("%v", event.Blacklisted),
 			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
 			fmt.Sprintf("%v", event.Enriched),
@@ -466,6 +471,11 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			withdrawalHash,
 			proofSubmitter,
 			status,
+			fmt.Sprintf("%v", event.Event.Raw.TxHash),
+			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.ProxyAddress),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.L2blockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.RootClaim),
 			fmt.Sprintf("%v", event.Blacklisted),
 			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
 			fmt.Sprintf("%v", event.Enriched),
@@ -489,6 +499,11 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 				withdrawalHash,
 				proofSubmitter,
 				status,
+				fmt.Sprintf("%v", event.Event.Raw.TxHash),
+				fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.ProxyAddress),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.L2blockNumber),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.RootClaim),
 				fmt.Sprintf("%v", event.Blacklisted),
 				fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
 				fmt.Sprintf("%v", event.Enriched),

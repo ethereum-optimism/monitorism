@@ -25,14 +25,14 @@ const (
 
 // EnrichedProvenWithdrawalEvent represents an enriched event for proven withdrawals.
 type EnrichedProvenWithdrawalEvent struct {
-	Event                     *WithdrawalProvenExtension1Event // The original withdrawal event.
-	DisputeGame               *FaultDisputeGameProxy           // Associated dispute game.
-	ExpectedRootClaim         [32]byte                         // Expected root claim for validation.
-	Blacklisted               bool                             // Indicates if the game is blacklisted.
-	WithdrawalHashPresentOnL2 bool                             // Indicates if the withdrawal hash is present on L2.
-	Enriched                  bool                             // Indicates if the event is enriched.
-	ProcessedTimeStamp        float64                          // Unix TimeStamp seconds when the event was processed.
-	ClientUsed                string                           // Client used to get the proof
+	Event                         *WithdrawalProvenExtension1Event // The original withdrawal event.
+	DisputeGame                   *FaultDisputeGameProxy           // Associated dispute game.
+	Blacklisted                   bool                             // Indicates if the game is blacklisted.
+	WithdrawalHashPresentOnL2     bool                             // Indicates if the withdrawal hash is present on L2.
+	DisputeGameRootClaimIsTrusted bool                             // Indicates if the dispute game root claim is trusted.
+	Enriched                      bool                             // Indicates if the event is enriched.
+	ProcessedTimeStamp            float64                          // Unix TimeStamp seconds when the event was processed.
+	ClientUsed                    string                           // Client used to get the proof
 }
 
 // ProvenWithdrawalValidator validates proven withdrawal events.
@@ -45,10 +45,10 @@ type ProvenWithdrawalValidator struct {
 
 // String provides a string representation of EnrichedProvenWithdrawalEvent.
 func (e *EnrichedProvenWithdrawalEvent) String() string {
-	return fmt.Sprintf("Event: %v, DisputeGame: %v, ExpectedRootClaim: %s, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v, ClientUsed: %v",
+	return fmt.Sprintf("Event: %v, DisputeGame: %v, DisputeGameRootClaimIsTrusted: %v, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v, ClientUsed: %v",
 		e.Event,
 		e.DisputeGame,
-		common.Bytes2Hex(e.ExpectedRootClaim[:]),
+		e.DisputeGameRootClaimIsTrusted,
 		e.Blacklisted,
 		e.WithdrawalHashPresentOnL2,
 		e.Enriched,
@@ -128,25 +128,17 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 			return fmt.Errorf("failed to get latest known L2 block number: %w", err)
 		}
 		if latest_known_l2_block >= event.DisputeGame.DisputeGameData.L2blockNumber.Uint64() {
-			trustedRootClaim, clientUsed, err := wv.L2Proxy.GetOutputRootFromCalculation(event.DisputeGame.DisputeGameData.L2blockNumber)
+			trustedRootClaim, withdrawalHashPresentOnL2, clientUsed, err := wv.L2Proxy.VerifyRootClaimAndWithdrawalHash(event.DisputeGame.DisputeGameData.L2blockNumber, event.DisputeGame.DisputeGameData.RootClaim, event.Event.WithdrawalHash)
 			if err != nil {
 				return fmt.Errorf("failed to get trustedRootClaim from Op-node %s: %w", clientUsed, err)
 			}
-			event.ExpectedRootClaim = trustedRootClaim
+			event.DisputeGameRootClaimIsTrusted = trustedRootClaim
+			event.WithdrawalHashPresentOnL2 = withdrawalHashPresentOnL2
 			event.ClientUsed = clientUsed
 		} else {
-			event.ExpectedRootClaim = [32]byte{}
+			event.DisputeGameRootClaimIsTrusted = false
 		}
 
-	}
-
-	// Check if the withdrawal exists on L2 only if not confirmed already that it is on L2
-	if !event.WithdrawalHashPresentOnL2 || !event.Enriched {
-		withdrawalHashPresentOnL2, err := wv.L2Proxy.WithdrawalExistsOnL2(event.Event.WithdrawalHash)
-		if err != nil {
-			return fmt.Errorf("failed to check withdrawal existence on L2: %w", err)
-		}
-		event.WithdrawalHashPresentOnL2 = withdrawalHashPresentOnL2
 	}
 
 	event.Enriched = true
@@ -162,11 +154,11 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 	}
 
 	enrichedWithdrawalEvent := EnrichedProvenWithdrawalEvent{
-		Event:             withdrawalEvent,
-		DisputeGame:       &disputeGameProxy,
-		ExpectedRootClaim: [32]byte{},
-		Blacklisted:       false,
-		Enriched:          false,
+		Event:       withdrawalEvent,
+		DisputeGame: &disputeGameProxy,
+
+		Blacklisted: false,
+		Enriched:    false,
 	}
 
 	return &enrichedWithdrawalEvent, nil
@@ -247,13 +239,8 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 	if !enrichedWithdrawalEvent.Enriched {
 		return false, fmt.Errorf("game not enriched")
 	}
-	validGameRootClaim := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == enrichedWithdrawalEvent.ExpectedRootClaim
 
-	if validGameRootClaim && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2 {
-		return true, nil
-	} else {
-		return false, nil
-	}
+	return enrichedWithdrawalEvent.DisputeGameRootClaimIsTrusted && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2, nil
 }
 
 func (wv *ProvenWithdrawalValidator) GetL2BlockNumber() (uint64, error) {

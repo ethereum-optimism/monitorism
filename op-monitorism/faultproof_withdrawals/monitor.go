@@ -50,10 +50,10 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 	mapL2GethBackupURLs := make(map[string]string)
 	if len(cfg.L2GethBackupURLs) > 0 {
-		for _, rawURL := range cfg.L2GethBackupURLs {
-			parts := strings.Split(rawURL, "=")
+		for _, part := range cfg.L2GethBackupURLs {
+			parts := strings.Split(part, "=")
 			if len(parts) != 2 {
-				return nil, fmt.Errorf("invalid backup URL format, expected name=url, got %s", rawURL)
+				return nil, fmt.Errorf("invalid backup URL format, expected name=url, got %s", part)
 			}
 			name, url := parts[0], parts[1]
 			mapL2GethBackupURLs[name] = url
@@ -315,6 +315,12 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 		m.log.Error("failed to check if forgery detected", "error", err, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		return err
 	}
+
+	// // TODO REVERT THIS CHANGE
+	// if bytes.Equal(enrichedWithdrawalEvent.Event.WithdrawalHash[:], common.HexToHash("0x6aef9bc6874970107d2bd1a74f9db935b33a394f101628770ec1c62e80dc1223").Bytes()) {
+	// 	m.log.Error("WITHDRAWAL: is valid, game status is challenger wins", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	// 	m.state.IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent)
+	// }
 
 	if !valid {
 		if !enrichedWithdrawalEvent.Blacklisted {
