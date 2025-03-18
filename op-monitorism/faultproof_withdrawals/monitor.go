@@ -316,12 +316,6 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 		return err
 	}
 
-	// // TODO REVERT THIS CHANGE
-	// if bytes.Equal(enrichedWithdrawalEvent.Event.WithdrawalHash[:], common.HexToHash("0x6aef9bc6874970107d2bd1a74f9db935b33a394f101628770ec1c62e80dc1223").Bytes()) {
-	// 	m.log.Error("WITHDRAWAL: is valid, game status is challenger wins", "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
-	// 	m.state.IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent)
-	// }
-
 	if !valid {
 		if !enrichedWithdrawalEvent.Blacklisted {
 			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
