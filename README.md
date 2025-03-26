@@ -10,6 +10,7 @@
     - [Drippie Monitor](#drippie-monitor)
     - [Secrets Monitor](#secrets-monitor)
     - [Transaction Monitor](#transaction-monitor)
+    - [ETH Conservation Monitor](#eth-conservation-monitor)
     - [Faultproof Withdrawals](#faultproof-withdrawal)
   - [Defender Components](#defender-components)
     - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
@@ -138,6 +139,13 @@ The secrets monitor takes a Drippie contract as a parameter and monitors for any
 The transaction monitor takes in a yaml config in order to run, and monitors transaction sent by a specific address, tracking both cumulative eth sent, as well as tunable thresholds for specific alerts. It is also configurable to support working against factory contracts, right now just the `FaultDisputeGame` factory to ensure the addresses are only interacting with valid fault dispute games.
 
 | `op-monitorism/transaction_monitor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/transaction_monitor/README.md) |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+
+### ETH Conservation Monitor
+
+The ETH conservation monitor traces L2 blocks and asserts that they adhere to the L2 ETH conservation invariant.
+
+| `op-monitorism/conservation_monitor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/conservation_monitor/README.md) |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 
 ### Faultproof Withdrawal

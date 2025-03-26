@@ -14,8 +14,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// ProcessingFunc is the type for transaction processing functions
-type ProcessingFunc func(block *types.Block, tx *types.Transaction, client *ethclient.Client) error
+// TxProcessingFunc is the type for transaction processing functions
+type TxProcessingFunc func(block *types.Block, tx *types.Transaction, client *ethclient.Client) error
+
+// TxProcessingFunc is the type for block processing functions
+type BlockProcessingFunc func(block *types.Block, client *ethclient.Client) error
 
 type Metrics struct {
 	highestBlockSeen      prometheus.Gauge
@@ -25,14 +28,15 @@ type Metrics struct {
 
 // BlockProcessor handles the monitoring and processing of Ethereum blocks
 type BlockProcessor struct {
-	client        *ethclient.Client
-	processFunc   ProcessingFunc
-	interval      time.Duration
-	lastProcessed *big.Int
-	log           log.Logger
-	ctx           context.Context
-	cancel        context.CancelFunc
-	metrics       Metrics
+	client           *ethclient.Client
+	txProcessFunc    TxProcessingFunc
+	blockProcessFunc BlockProcessingFunc
+	interval         time.Duration
+	lastProcessed    *big.Int
+	log              log.Logger
+	ctx              context.Context
+	cancel           context.CancelFunc
+	metrics          Metrics
 }
 
 // Config holds the configuration for the processor
@@ -42,7 +46,14 @@ type Config struct {
 }
 
 // NewBlockProcessor creates a new processor instance
-func NewBlockProcessor(m metrics.Factory, log log.Logger, rpcURL string, processFunc ProcessingFunc, config *Config) (*BlockProcessor, error) {
+func NewBlockProcessor(
+	m metrics.Factory,
+	log log.Logger,
+	rpcURL string,
+	txProcessFunc TxProcessingFunc,
+	blockProcessFunc BlockProcessingFunc,
+	config *Config,
+) (*BlockProcessor, error) {
 	client, err := ethclient.Dial(rpcURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Ethereum client: %w", err)
@@ -69,13 +80,14 @@ func NewBlockProcessor(m metrics.Factory, log log.Logger, rpcURL string, process
 	}
 
 	p := &BlockProcessor{
-		client:      client,
-		processFunc: processFunc,
-		interval:    config.Interval,
-		ctx:         ctx,
-		cancel:      cancel,
-		metrics:     metrics,
-		log:         log,
+		client:           client,
+		txProcessFunc:    txProcessFunc,
+		blockProcessFunc: blockProcessFunc,
+		interval:         config.Interval,
+		ctx:              ctx,
+		cancel:           cancel,
+		metrics:          metrics,
+		log:              log,
 	}
 
 	// If starting block is specified, use it; otherwise will start from latest block
@@ -138,8 +150,17 @@ func (p *BlockProcessor) processNewBlocks() error {
 		}
 
 		// Process each transaction in the block
-		for _, tx := range block.Transactions() {
-			if err := p.processTransactionWithRetry(block, tx); err != nil {
+		if p.txProcessFunc != nil {
+			for _, tx := range block.Transactions() {
+				if err := p.processTransactionWithRetry(block, tx); err != nil {
+					return err
+				}
+			}
+		}
+
+		// Process the full block
+		if p.blockProcessFunc != nil {
+			if err := p.processBlockWithRetry(block); err != nil {
 				return err
 			}
 		}
@@ -161,10 +182,27 @@ func (p *BlockProcessor) processTransactionWithRetry(block *types.Block, tx *typ
 		case <-p.ctx.Done():
 			return p.ctx.Err()
 		default:
-			if err := p.processFunc(block, tx, p.client); err == nil {
+			if err := p.txProcessFunc(block, tx, p.client); err == nil {
 				return nil
 			} else {
 				p.log.Error("error processing transaction", "tx", tx.Hash().String(), "err", err)
+				p.metrics.processingErrors.Inc()
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}
+}
+
+func (p *BlockProcessor) processBlockWithRetry(block *types.Block) error {
+	for {
+		select {
+		case <-p.ctx.Done():
+			return p.ctx.Err()
+		default:
+			if err := p.blockProcessFunc(block, p.client); err == nil {
+				return nil
+			} else {
+				p.log.Error("error processing block", "block", block.Hash().String(), "err", err)
 				p.metrics.processingErrors.Inc()
 				time.Sleep(1 * time.Second)
 			}
