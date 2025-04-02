@@ -212,3 +212,4 @@ OPTIONS:
    --metrics.port value        [$MONITORISM_METRICS_PORT]        Metrics listening port (default: 7300)
    --loop.interval.msec value  [$MONITORISM_LOOP_INTERVAL_MSEC]  Loop interval of the monitor in milliseconds (default: 60000)
 ```
+
