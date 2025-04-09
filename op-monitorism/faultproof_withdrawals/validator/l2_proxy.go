@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -130,21 +129,9 @@ func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [3
 	accountResult := eth.AccountResult{}
 	encodedBlock := hexutil.EncodeBig(blockNumber)
 
-	// Create the ABI definition for "dummy(bytes32,uint256)"
-	typeBytes32, _ := abi.NewType("bytes32", "", nil)
-	typeUint256, _ := abi.NewType("uint256", "", nil)
-
-	arguments := abi.Arguments{
-		{Type: typeBytes32},
-		{Type: typeUint256},
-	}
-
-	// Pack the arguments (equivalent to abi-encode)
-	zero := big.NewInt(0)
-	packed, _ := arguments.Pack(withdrawalHash, zero)
-
-	// Calculate keccak hash (equivalent to cast keccak)
-	hash := crypto.Keccak256Hash(packed)
+	// Concatenate withdrawalHash with bytes(0) directly
+	combined := append(withdrawalHash[:], make([]byte, 32)...) // append 32 zero bytes
+	hash := crypto.Keccak256Hash(combined)
 
 	storageKeys := []common.Hash{hash}
 	fmt.Printf("Storage Keys: %v\n", storageKeys)
@@ -155,15 +142,15 @@ func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [3
 		l2Proxy.ConnectionError["default"]++
 		for clientName, client := range l2Proxy.l2OpGethBackupClients {
 			l2Proxy.Connections[clientName]++
-			err = client.Client().CallContext(l2Proxy.ctx, &accountResult, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, storageKeys, encodedBlock)
+			client_err := client.Client().CallContext(l2Proxy.ctx, &accountResult, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, storageKeys, encodedBlock)
 			// if we get a proof, we return it
-			if err == nil {
+			if client_err == nil {
 				return accountResult, clientName, nil
 			}
 			l2Proxy.ConnectionError[clientName]++
 		}
 
-		return eth.AccountResult{}, "", fmt.Errorf("failed to get proof from any node: %w", err)
+		return eth.AccountResult{}, "", fmt.Errorf("failed to get proof from any node")
 	}
 	return accountResult, "default", nil
 }
