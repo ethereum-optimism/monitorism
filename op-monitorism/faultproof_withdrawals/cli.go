@@ -13,7 +13,7 @@ import (
 const (
 	L1GethURLFlagName        = "l1.geth.url"
 	L2NodeURLFlagName        = "l2.node.url"
-	L2GethURLFlagName        = "l2.geth.url"
+	L2NodeURLFlagName        = "l2.node.url" // Deprecated
 	L2GethBackupURLsFlagName = "l2.geth.backup.urls"
 
 	EventBlockRangeFlagName           = "event.block.range"
