@@ -126,8 +126,8 @@ func (l2Proxy *L2Proxy) VerifyRootClaimAndWithdrawalHash(blockNumber *big.Int, r
 }
 
 // we retrieve the proof from the truested op-geth node and eventually from backup nodes if present
-func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [32]byte) (AccountResult, string, error) {
-	accountResult := AccountResult{}
+func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [32]byte) (eth.AccountResult, string, error) {
+	accountResult := eth.AccountResult{}
 	encodedBlock := hexutil.EncodeBig(blockNumber)
 
 	// Create the ABI definition for "dummy(bytes32,uint256)"
@@ -163,7 +163,7 @@ func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [3
 			l2Proxy.ConnectionError[clientName]++
 		}
 
-		return AccountResult{}, "", fmt.Errorf("failed to get proof from any node: %w", err)
+		return eth.AccountResult{}, "", fmt.Errorf("failed to get proof from any node: %w", err)
 	}
 	return accountResult, "default", nil
 }
