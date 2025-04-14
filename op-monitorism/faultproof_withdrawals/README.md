@@ -38,10 +38,11 @@ DESCRIPTION:
 
 OPTIONS:
    --l1.geth.url value             L1 execution layer node URL [$FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL]
-   --l2.node.url value             L2 rollup node consensus layer (op-node) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL]
+   --l2.node.url value             [DEPRECATED] L2 rollup node consensus layer (op-node) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL]
    --l2.geth.url value             L2 OP Stack execution layer client(op-geth) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL]
+   --l2.geth.backup.urls value     Backup L2 OP Stack execution layer client URLs (format: name=url,name2=url2) [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_BACKUP_URLS]
    --event.block.range value       Max block range when scanning for events (default: 1000) [$FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE]
-   --start.block.height value      Starting height to scan for events. This will take precedence if set. (default: 0) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT]
+   --start.block.height value      Starting height to scan for events. This will take precedence if set. (default: -1) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT]
    --start.block.hours.ago value   How many hours in the past to start to check for forgery. Default will be 336 (14 days) days if not set. The real block to start from will be found within the hour precision. (default: 0) [$FAULTPROOF_WITHDRAWAL_MON_START_HOURS_IN_THE_PAST]
    --optimismportal.address value  Address of the OptimismPortal contract [$FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL]
    --log.level value               The lowest log level that will be output (default: INFO) [$MONITORISM_LOG_LEVEL]
@@ -59,8 +60,9 @@ OPTIONS:
 
 ```bash
 L1_GETH_URL="https://..."
-L2_OP_NODE_URL="https://..."
+L2_OP_NODE_URL="https://..."  # [DEPRECATED] This URL is no longer required
 L2_OP_GETH_URL="https://..."
+L2_OP_GETH_BACKUP_URLS="backup1=https://...,backup2=https://..."
 
 export MONITORISM_LOOP_INTERVAL_MSEC=100
 export MONITORISM_METRICS_PORT=7300
@@ -68,10 +70,10 @@ export MONITORISM_METRICS_ENABLED=true
 export FAULTPROOF_WITHDRAWAL_MON_L1_GETH_URL="$L1_GETH_URL"
 export FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL="$L2_OP_NODE_URL"
 export FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL="$L2_OP_GETH_URL"
+export FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_BACKUP_URLS="$L2_OP_GETH_BACKUP_URLS"
 export FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL="0x16Fc5058F25648194471939df75CF27A2fdC48BC"
 export FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT=5914813
 export FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE=1000
-
 
 go run ./cmd/monitorism faultproof_withdrawals
 ```

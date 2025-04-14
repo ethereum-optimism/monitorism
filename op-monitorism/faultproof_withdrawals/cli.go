@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	L1GethURLFlagName = "l1.geth.url"
-	L2NodeURLFlagName = "l2.node.url"
-	L2GethURLFlagName = "l2.geth.url"
+	L1GethURLFlagName        = "l1.geth.url"
+	L2NodeURLFlagName        = "l2.node.url" // Deprecated
+	L2GethURLFlagName        = "l2.geth.url"
+	L2GethBackupURLsFlagName = "l2.geth.backup.urls"
 
 	EventBlockRangeFlagName           = "event.block.range"
 	StartingL1BlockHeightFlagName     = "start.block.height"
@@ -23,9 +24,10 @@ const (
 )
 
 type CLIConfig struct {
-	L1GethURL   string
-	L2OpGethURL string
-	L2OpNodeURL string
+	L1GethURL        string
+	L2OpGethURL      string
+	L2OpNodeURL      string
+	L2GethBackupURLs []string
 
 	EventBlockRange           uint64
 	StartingL1BlockHeight     int64
@@ -38,7 +40,8 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
 		L1GethURL:                 ctx.String(L1GethURLFlagName),
 		L2OpGethURL:               ctx.String(L2GethURLFlagName),
-		L2OpNodeURL:               ctx.String(L2NodeURLFlagName),
+		L2GethBackupURLs:          ctx.StringSlice(L2GethBackupURLsFlagName),
+		L2OpNodeURL:               "", // Ignored since deprecated
 		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight:     ctx.Int64(StartingL1BlockHeightFlagName),
 		HoursInThePastToStartFrom: ctx.Uint64(HoursInThePastToStartFromFlagName),
@@ -56,25 +59,35 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 func CLIFlags(envVar string) []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
-			Name:    L1GethURLFlagName,
-			Usage:   "L1 execution layer node URL",
-			EnvVars: opservice.PrefixEnvVar(envVar, "L1_GETH_URL"),
+			Name:     L1GethURLFlagName,
+			Usage:    "L1 execution layer node URL",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "L1_GETH_URL"),
+			Required: true,
 		},
 		&cli.StringFlag{
-			Name:    L2NodeURLFlagName,
-			Usage:   "L2 rollup node consensus layer (op-node) URL",
-			EnvVars: opservice.PrefixEnvVar(envVar, "L2_OP_NODE_URL"),
+			Name:     L2NodeURLFlagName,
+			Usage:    "[DEPRECATED] L2 rollup node consensus layer (op-node) URL - this flag is ignored",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "L2_OP_NODE_URL"),
+			Required: false,
 		},
 		&cli.StringFlag{
-			Name:    L2GethURLFlagName,
-			Usage:   "L2 OP Stack execution layer client(op-geth) URL",
-			EnvVars: opservice.PrefixEnvVar(envVar, "L2_OP_GETH_URL"),
+			Name:     L2GethURLFlagName,
+			Usage:    "L2 OP Stack execution layer client(op-geth) URL",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "L2_OP_GETH_URL"),
+			Required: true,
+		},
+		&cli.StringSliceFlag{
+			Name:     L2GethBackupURLsFlagName,
+			Usage:    "Backup L2 OP Stack execution layer client URLs (format: name=url,name2=url2)",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "L2_OP_GETH_BACKUP_URLS"),
+			Required: false,
 		},
 		&cli.Uint64Flag{
-			Name:    EventBlockRangeFlagName,
-			Usage:   "Max block range when scanning for events",
-			Value:   1000,
-			EnvVars: opservice.PrefixEnvVar(envVar, "EVENT_BLOCK_RANGE"),
+			Name:     EventBlockRangeFlagName,
+			Usage:    "Max block range when scanning for events",
+			Value:    1000,
+			EnvVars:  opservice.PrefixEnvVar(envVar, "EVENT_BLOCK_RANGE"),
+			Required: false,
 		},
 		&cli.Int64Flag{
 			Name:     StartingL1BlockHeightFlagName,

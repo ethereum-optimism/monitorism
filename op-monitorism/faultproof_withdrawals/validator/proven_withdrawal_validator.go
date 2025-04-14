@@ -3,9 +3,11 @@ package validator
 import (
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // ValidateProofWithdrawalState represents the state of the proof validation.
@@ -23,33 +25,34 @@ const (
 
 // EnrichedProvenWithdrawalEvent represents an enriched event for proven withdrawals.
 type EnrichedProvenWithdrawalEvent struct {
-	Event                     *WithdrawalProvenExtension1Event // The original withdrawal event.
-	DisputeGame               *FaultDisputeGameProxy           // Associated dispute game.
-	ExpectedRootClaim         [32]byte                         // Expected root claim for validation.
-	Blacklisted               bool                             // Indicates if the game is blacklisted.
-	WithdrawalHashPresentOnL2 bool                             // Indicates if the withdrawal hash is present on L2.
-	Enriched                  bool                             // Indicates if the event is enriched.
-	ProcessedTimeStamp        float64                          // Unix TimeStamp seconds when the event was processed.
+	Event                         *WithdrawalProvenExtension1Event // The original withdrawal event.
+	DisputeGame                   *FaultDisputeGameProxy           // Associated dispute game.
+	Blacklisted                   bool                             // Indicates if the game is blacklisted.
+	WithdrawalHashPresentOnL2     bool                             // Indicates if the withdrawal hash is present on L2.
+	DisputeGameRootClaimIsTrusted bool                             // Indicates if the dispute game root claim is trusted.
+	Enriched                      bool                             // Indicates if the event is enriched.
+	ProcessedTimeStamp            float64                          // Unix TimeStamp seconds when the event was processed.
+	ClientUsed                    string                           // Client used to get the proof
 }
 
 // ProvenWithdrawalValidator validates proven withdrawal events.
 type ProvenWithdrawalValidator struct {
-	optimismPortal2Helper     *OptimismPortal2Helper     // Helper for interacting with Optimism Portal 2.
-	l2NodeHelper              *OpNodeHelper              // Helper for L2 node interactions.
-	l2ToL1MessagePasserHelper *L2ToL1MessagePasserHelper // Helper for L2 to L1 message passing.
-	faultDisputeGameHelper    *FaultDisputeGameHelper    // Helper for dispute game interactions.
-	ctx                       context.Context            // Context for managing cancellation and timeouts.
+	L1Proxy *L1Proxy        // Helper for interacting with Optimism Portal 2.
+	L2Proxy *L2Proxy        // Helper for interacting with L2.
+	ctx     context.Context // Context for managing cancellation and timeouts.
+	log     log.Logger      // Logger for logging.
 }
 
 // String provides a string representation of EnrichedProvenWithdrawalEvent.
 func (e *EnrichedProvenWithdrawalEvent) String() string {
-	return fmt.Sprintf("Event: %v, DisputeGame: %v, ExpectedRootClaim: %s, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v",
+	return fmt.Sprintf("Event: %v, DisputeGame: %v, DisputeGameRootClaimIsTrusted: %v, Blacklisted: %v, withdrawalHashPresentOnL2: %v, Enriched: %v, ClientUsed: %v",
 		e.Event,
 		e.DisputeGame,
-		common.Bytes2Hex(e.ExpectedRootClaim[:]),
+		e.DisputeGameRootClaimIsTrusted,
 		e.Blacklisted,
 		e.WithdrawalHashPresentOnL2,
-		e.Enriched)
+		e.Enriched,
+		e.ClientUsed)
 }
 
 // String provides a string representation of ValidateProofWithdrawalState.
@@ -57,36 +60,43 @@ func (v ValidateProofWithdrawalState) String() string {
 	return [...]string{"INVALID_PROOF_FORGERY_DETECTED", "INVALID_PROPOSAL_FORGERY_DETECTED", "INVALID_PROPOSAL_INPROGRESS", "INVALID_PROPOSAL_CORRECTLY_RESOLVED", "PROOF_ON_BLACKLISTED_GAME", "VALID_PROOF"}[v]
 }
 
-// NewWithdrawalValidator initializes a new ProvenWithdrawalValidator.
-// It binds necessary helpers and returns the validator instance.
-func NewWithdrawalValidator(ctx context.Context, l1GethClient *ethclient.Client, l2OpGethClient *ethclient.Client, l2OpNodeClient *ethclient.Client, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
-	optimismPortal2Helper, err := NewOptimismPortal2Helper(ctx, l1GethClient, OptimismPortalAddress)
+func NewWithdrawalValidator(ctx context.Context, log log.Logger, l1GethClientURL string, l2GethClientURL string, l2GethBackupClientsURLs map[string]string, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
+
+	l1Proxy, err := NewL1Proxy(ctx, l1GethClientURL, OptimismPortalAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
+		return nil, fmt.Errorf("failed to create l1 proxy: %w", err)
 	}
 
-	faultDisputeGameHelper, err := NewFaultDisputeGameHelper(ctx, l1GethClient)
+	l2Proxy, err := NewL2Proxy(ctx, l2GethClientURL, l2GethBackupClientsURLs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create dispute game helper: %w", err)
-	}
-
-	l2ToL1MessagePasserHelper, err := NewL2ToL1MessagePasserHelper(ctx, l2OpGethClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create l2 to l1 message passer helper: %w", err)
-	}
-
-	l2NodeHelper, err := NewOpNodeHelper(ctx, l2OpNodeClient, l2OpGethClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create l2 node helper: %w", err)
+		return nil, fmt.Errorf("failed to create l2 proxy: %w", err)
 	}
 
 	return &ProvenWithdrawalValidator{
-		optimismPortal2Helper:     optimismPortal2Helper,
-		l2NodeHelper:              l2NodeHelper,
-		l2ToL1MessagePasserHelper: l2ToL1MessagePasserHelper,
-		faultDisputeGameHelper:    faultDisputeGameHelper,
-		ctx:                       ctx,
+		L1Proxy: l1Proxy,
+		L2Proxy: l2Proxy,
+		ctx:     ctx,
+		log:     log,
 	}, nil
+}
+
+func GethBackupClientsDictionary(ctx context.Context, L2GethBackupURLs map[string]string, l2ChainID *big.Int) (map[string]*ethclient.Client, error) {
+	dictionary := make(map[string]*ethclient.Client)
+	for name, url := range L2GethBackupURLs {
+		backupClient, err := ethclient.Dial(url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial l2 backup, error: %w", err)
+		}
+		backupChainID, err := backupClient.ChainID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get backup L2 chain ID, error: %w", err)
+		}
+		if backupChainID.Cmp(l2ChainID) != 0 {
+			return nil, fmt.Errorf("backup L2 client chain ID mismatch, expected: %d, got: %d", l2ChainID, backupChainID)
+		}
+		dictionary[name] = backupClient
+	}
+	return dictionary, nil
 }
 
 // UpdateEnrichedWithdrawalEvent updates the enriched withdrawal event with relevant data.
@@ -104,7 +114,7 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 
 	// Check if the game is blacklisted only if not confirmed already that it is blacklisted
 	if event.Blacklisted || !event.Enriched {
-		blacklisted, err := wv.optimismPortal2Helper.IsGameBlacklisted(event.DisputeGame)
+		blacklisted, err := wv.L1Proxy.IsGameBlacklisted(event.DisputeGame)
 		if err != nil {
 			return fmt.Errorf("failed to check if game is blacklisted: %w", err)
 		}
@@ -113,29 +123,22 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 
 	// Check if the game root claim is valid on L2 only if not confirmed already that it is on L2
 	if !event.Enriched {
-		latest_known_l2_block, err := wv.l2NodeHelper.GetLatestKnownL2BlockNumber()
+		latest_known_l2_block, err := wv.L2Proxy.BlockNumber()
 		if err != nil {
 			return fmt.Errorf("failed to get latest known L2 block number: %w", err)
 		}
 		if latest_known_l2_block >= event.DisputeGame.DisputeGameData.L2blockNumber.Uint64() {
-			trustedRootClaim, err := wv.l2NodeHelper.GetOutputRootFromTrustedL2Node(event.DisputeGame.DisputeGameData.L2blockNumber)
+			trustedRootClaim, withdrawalHashPresentOnL2, clientUsed, err := wv.L2Proxy.VerifyRootClaimAndWithdrawalHash(event.DisputeGame.DisputeGameData.L2blockNumber, event.DisputeGame.DisputeGameData.RootClaim, event.Event.WithdrawalHash)
 			if err != nil {
-				return fmt.Errorf("failed to get trustedRootClaim from Op-node: %w", err)
+				return fmt.Errorf("failed to get trustedRootClaim from Op-node %s: %w", clientUsed, err)
 			}
-			event.ExpectedRootClaim = trustedRootClaim
+			event.DisputeGameRootClaimIsTrusted = trustedRootClaim
+			event.WithdrawalHashPresentOnL2 = withdrawalHashPresentOnL2
+			event.ClientUsed = clientUsed
 		} else {
-			event.ExpectedRootClaim = [32]byte{}
+			event.DisputeGameRootClaimIsTrusted = false
 		}
 
-	}
-
-	// Check if the withdrawal exists on L2 only if not confirmed already that it is on L2
-	if !event.WithdrawalHashPresentOnL2 || !event.Enriched {
-		withdrawalHashPresentOnL2, err := wv.l2ToL1MessagePasserHelper.WithdrawalExistsOnL2(event.Event.WithdrawalHash)
-		if err != nil {
-			return fmt.Errorf("failed to check withdrawal existence on L2: %w", err)
-		}
-		event.WithdrawalHashPresentOnL2 = withdrawalHashPresentOnL2
 	}
 
 	event.Enriched = true
@@ -151,11 +154,11 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 	}
 
 	enrichedWithdrawalEvent := EnrichedProvenWithdrawalEvent{
-		Event:             withdrawalEvent,
-		DisputeGame:       &disputeGameProxy,
-		ExpectedRootClaim: [32]byte{},
-		Blacklisted:       false,
-		Enriched:          false,
+		Event:       withdrawalEvent,
+		DisputeGame: &disputeGameProxy,
+
+		Blacklisted: false,
+		Enriched:    false,
 	}
 
 	return &enrichedWithdrawalEvent, nil
@@ -164,12 +167,12 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 // getDisputeGamesFromWithdrawalhashAndProofSubmitter retrieves a DisputeGame object
 // based on the provided withdrawal hash and proof submitter address.
 func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (FaultDisputeGameProxy, error) {
-	submittedProofData, err := wv.optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
+	submittedProofData, err := wv.L1Proxy.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
 	if err != nil {
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games addresses: %w", err)
 	}
 	disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress
-	disputeGame, err := wv.faultDisputeGameHelper.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)
+	disputeGame, err := wv.L1Proxy.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)
 	if err != nil {
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games: %w", err)
 	}
@@ -177,16 +180,10 @@ func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSu
 	return disputeGame, nil
 }
 
-// GetProvenWithdrawalsExtension1Events retrieves proven withdrawal extension 1 events
-// within the specified block range. It returns a slice of WithdrawalProvenExtension1Event along with any error encountered.
-func (wv *ProvenWithdrawalValidator) GetProvenWithdrawalsExtension1Events(start uint64, end *uint64) ([]WithdrawalProvenExtension1Event, error) {
-	return wv.optimismPortal2Helper.GetProvenWithdrawalsExtension1Events(start, end)
-}
-
 // GetEnrichedWithdrawalsEvents retrieves enriched withdrawal events within the specified block range.
 // It returns a slice of EnrichedProvenWithdrawalEvent along with any error encountered.
 func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, end *uint64) ([]EnrichedProvenWithdrawalEvent, error) {
-	events, err := wv.optimismPortal2Helper.GetProvenWithdrawalsExtension1Events(start, end)
+	events, err := wv.L1Proxy.GetProvenWithdrawalsExtension1Events(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 events: %w", err)
 	}
@@ -207,7 +204,7 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, 
 // GetEnrichedWithdrawalsEvents retrieves enriched withdrawal events within the specified block range.
 // It returns a slice of EnrichedProvenWithdrawalEvent along with any error encountered.
 func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint64, end *uint64) (map[common.Hash]*EnrichedProvenWithdrawalEvent, error) {
-	iterator, err := wv.optimismPortal2Helper.GetProvenWithdrawalsExtension1EventsIterator(start, end)
+	iterator, err := wv.L1Proxy.GetProvenWithdrawalsExtension1EventsIterator(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
 	}
@@ -242,15 +239,14 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 	if !enrichedWithdrawalEvent.Enriched {
 		return false, fmt.Errorf("game not enriched")
 	}
-	validGameRootClaim := enrichedWithdrawalEvent.DisputeGame.DisputeGameData.RootClaim == enrichedWithdrawalEvent.ExpectedRootClaim
 
-	if validGameRootClaim && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2 {
-		return true, nil
-	} else {
-		return false, nil
-	}
+	return enrichedWithdrawalEvent.DisputeGameRootClaimIsTrusted && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2, nil
 }
 
-func (wv *ProvenWithdrawalValidator) GetLatestL2Height() uint64 {
-	return wv.l2NodeHelper.LatestKnownL2BlockNumber
+func (wv *ProvenWithdrawalValidator) GetL2BlockNumber() (uint64, error) {
+	return wv.L2Proxy.BlockNumber()
+}
+
+func (wv *ProvenWithdrawalValidator) GetL1BlockNumber() (uint64, error) {
+	return wv.L1Proxy.BlockNumber()
 }
