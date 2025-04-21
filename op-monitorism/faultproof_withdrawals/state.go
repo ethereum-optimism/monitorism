@@ -29,6 +29,7 @@ type State struct {
 	withdrawalsProcessed uint64 // This counts the withdrawals that have being completed and processed and we are not tracking anymore. eventProcessed >= withdrawalsProcessed. withdrawalsProcessed does not includes potential attacks with games in progress.
 
 	nodeConnectionFailures uint64
+	nodeConnections        uint64
 
 	// possible attacks detected
 
@@ -45,13 +46,22 @@ type State struct {
 	// It is unlikely that someone is going to use a withdrawal hash on a games that resolved with ChallengerWins. If this happens, maybe there is a bug somewhere in the UI used by the users or it is a malicious attack that failed
 	suspiciousEventsOnChallengerWinsGames         *lru.Cache
 	numberOfSuspiciousEventsOnChallengerWinsGames uint64
+
+	provenWithdrawalValidator *validator.ProvenWithdrawalValidator
 }
 
-func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, latestL2Height uint64) (*State, error) {
-
-	if nextL1Height > latestL1Height {
-		logger.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", nextL1Height, "latestL1Height", latestL1Height)
-		nextL1Height = latestL1Height
+func NewState(logger log.Logger, provenWithdrawalValidator *validator.ProvenWithdrawalValidator) (*State, error) {
+	nextL1Height, err := provenWithdrawalValidator.GetL1BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get L1 block number: %w", err)
+	}
+	latestL1Height, err := provenWithdrawalValidator.GetL1BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get L1 block number: %w", err)
+	}
+	latestL2Height, err := provenWithdrawalValidator.GetL2BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get L2 block number: %w", err)
 	}
 
 	ret := State{
@@ -74,15 +84,25 @@ func NewState(logger log.Logger, nextL1Height uint64, latestL1Height uint64, lat
 
 		withdrawalsProcessed:   0,
 		nodeConnectionFailures: 0,
+		nodeConnections:        0,
 
-		nextL1Height:    nextL1Height,
-		latestL1Height:  latestL1Height,
-		initialL1Height: nextL1Height,
-		latestL2Height:  latestL2Height,
-		logger:          logger,
+		nextL1Height:              nextL1Height,
+		latestL1Height:            latestL1Height,
+		initialL1Height:           nextL1Height,
+		latestL2Height:            latestL2Height,
+		logger:                    logger,
+		provenWithdrawalValidator: provenWithdrawalValidator,
 	}
 
 	return &ret, nil
+}
+
+func (s *State) GetNodeConnectionFailures() uint64 {
+	return s.provenWithdrawalValidator.L1Proxy.GetTotalConnectionErrors() + s.provenWithdrawalValidator.L2Proxy.GetTotalConnectionErrors()
+}
+
+func (s *State) GetNodeConnections() uint64 {
+	return s.provenWithdrawalValidator.L1Proxy.GetTotalConnections() + s.provenWithdrawalValidator.L2Proxy.GetTotalConnections()
 }
 
 func (s *State) LogState() {
@@ -100,7 +120,7 @@ func (s *State) LogState() {
 
 		"eventsProcessed", fmt.Sprintf("%d", s.eventsProcessed),
 		"nodeConnectionFailures", fmt.Sprintf("%d", s.nodeConnectionFailures),
-
+		"nodeConnections", fmt.Sprintf("%d", s.nodeConnections),
 		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfPotentialAttacksOnDefenderWinsGames),
 		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
 		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
@@ -185,8 +205,8 @@ type Metrics struct {
 	EventsProcessedCounter      prometheus.Counter
 	WithdrawalsProcessedCounter prometheus.Counter
 
-	NodeConnectionFailuresCounter prometheus.Counter
-
+	NodeConnectionFailuresCounter              prometheus.Counter
+	NodeConnectionsCounter                     prometheus.Counter
 	PotentialAttackOnDefenderWinsGamesGauge    prometheus.Gauge
 	PotentialAttackOnInProgressGamesGauge      prometheus.Gauge
 	SuspiciousEventsOnChallengerWinsGamesGauge prometheus.Gauge
@@ -199,6 +219,7 @@ type Metrics struct {
 	previousEventsProcessed        uint64
 	previousWithdrawalsProcessed   uint64
 	previousNodeConnectionFailures uint64
+	previousNodeConnections        uint64
 }
 
 func (m *Metrics) String() string {
@@ -212,6 +233,7 @@ func (m *Metrics) String() string {
 	eventsProcessedCounterValue, _ := GetCounterValue(m.EventsProcessedCounter)
 
 	nodeConnectionFailuresCounterValue, _ := GetCounterValue(m.NodeConnectionFailuresCounter)
+	nodeConnectionsCounterValue, _ := GetCounterValue(m.NodeConnectionsCounter)
 
 	potentialAttackOnDefenderWinsGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnDefenderWinsGamesGauge)
 	potentialAttackOnInProgressGamesGaugeValue, _ := GetGaugeValue(m.PotentialAttackOnInProgressGamesGauge)
@@ -220,7 +242,7 @@ func (m *Metrics) String() string {
 	invalidProposalWithdrawalsEventsGaugeVecValue, _ := GetGaugeVecValue(m.PotentialAttackOnInProgressGamesGaugeVec, prometheus.Labels{})
 
 	return fmt.Sprintf(
-		"Up: %d\nInitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n",
+		"Up: %d\nInitialL1HeightGauge: %d\nNextL1HeightGauge: %d\nLatestL1HeightGauge: %d\n latestL2HeightGaugeValue: %d\n eventsProcessedCounterValue: %d\nwithdrawalsProcessedCounterValue: %d\nnodeConnectionFailuresCounterValue: %d\nnodeConnectionsCounterValue: %d\n potentialAttackOnDefenderWinsGamesGaugeValue: %d\n potentialAttackOnInProgressGamesGaugeValue: %d\n  forgeriesWithdrawalsEventsGaugeVecValue: %d\n invalidProposalWithdrawalsEventsGaugeVecValue: %d\n previousEventsProcessed: %d\n previousWithdrawalsProcessed: %d\n previousNodeConnectionFailures: %d\n previousNodeConnections: %d\n",
 		uint64(upGaugeValue),
 		uint64(initialL1HeightGaugeValue),
 		uint64(nextL1HeightGaugeValue),
@@ -229,6 +251,7 @@ func (m *Metrics) String() string {
 		uint64(eventsProcessedCounterValue),
 		uint64(withdrawalsProcessedCounterValue),
 		uint64(nodeConnectionFailuresCounterValue),
+		uint64(nodeConnectionsCounterValue),
 		uint64(potentialAttackOnDefenderWinsGamesGaugeValue),
 		uint64(potentialAttackOnInProgressGamesGaugeValue),
 		uint64(forgeriesWithdrawalsEventsGaugeVecValue),
@@ -236,6 +259,7 @@ func (m *Metrics) String() string {
 		m.previousEventsProcessed,
 		m.previousWithdrawalsProcessed,
 		m.previousNodeConnectionFailures,
+		m.previousNodeConnections,
 	)
 }
 
@@ -316,6 +340,11 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			Name:      "node_connection_failures_total",
 			Help:      "Total number of node connection failures",
 		}),
+		NodeConnectionsCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "node_connections_total",
+			Help:      "Total number of node connections",
+		}),
 		PotentialAttackOnDefenderWinsGamesGauge: m.NewGauge(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "potential_attack_on_defender_wins_games_count",
@@ -337,7 +366,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 				Name:      "potential_attack_on_defender_wins_games_gauge_vec",
 				Help:      "Information about potential attacks on defender wins games.",
 			},
-			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "TxHash", "TxL1BlockNumber", "ProxyAddress", "L2blockNumber", "RootClaim", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
 		),
 		PotentialAttackOnInProgressGamesGaugeVec: m.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -345,7 +374,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 				Name:      "potential_attack_on_in_progress_games_gauge_vec",
 				Help:      "Information about potential attacks on in progress games.",
 			},
-			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "TxHash", "TxL1BlockNumber", "ProxyAddress", "L2blockNumber", "RootClaim", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
 		),
 		SuspiciousEventsOnChallengerWinsGamesGaugeVec: m.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -353,7 +382,7 @@ func NewMetrics(m metrics.Factory) *Metrics {
 				Name:      "suspicious_events_on_challenger_wins_games_info",
 				Help:      "Information about suspicious events on challenger wins games.",
 			},
-			[]string{"withdrawal_hash", "proof_submitter", "status", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
+			[]string{"withdrawal_hash", "proof_submitter", "status", "TxHash", "TxL1BlockNumber", "ProxyAddress", "L2blockNumber", "RootClaim", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
 		),
 	}
 
@@ -391,11 +420,17 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.previousWithdrawalsProcessed = state.withdrawalsProcessed
 
 	// Node Connection Failures
-	nodeConnectionFailuresDelta := state.nodeConnectionFailures - m.previousNodeConnectionFailures
+	nodeConnectionFailuresDelta := state.GetNodeConnectionFailures() - m.previousNodeConnectionFailures
 	if nodeConnectionFailuresDelta > 0 {
 		m.NodeConnectionFailuresCounter.Add(float64(nodeConnectionFailuresDelta))
 	}
-	m.previousNodeConnectionFailures = state.nodeConnectionFailures
+	m.previousNodeConnectionFailures = state.GetNodeConnectionFailures()
+
+	nodeConnectionsDelta := state.GetNodeConnections() - m.previousNodeConnections
+	if nodeConnectionsDelta > 0 {
+		m.NodeConnectionsCounter.Add(float64(nodeConnectionsDelta))
+	}
+	m.previousNodeConnections = state.GetNodeConnections()
 
 	// Clear the previous values
 	m.PotentialAttackOnDefenderWinsGamesGaugeVec.Reset()
@@ -410,6 +445,11 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			withdrawalHash,
 			proofSubmitter,
 			status,
+			fmt.Sprintf("%v", event.Event.Raw.TxHash),
+			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.ProxyAddress),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.L2blockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.RootClaim),
 			fmt.Sprintf("%v", event.Blacklisted),
 			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
 			fmt.Sprintf("%v", event.Enriched),
@@ -431,6 +471,11 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 			withdrawalHash,
 			proofSubmitter,
 			status,
+			fmt.Sprintf("%v", event.Event.Raw.TxHash),
+			fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.ProxyAddress),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.L2blockNumber),
+			fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.RootClaim),
 			fmt.Sprintf("%v", event.Blacklisted),
 			fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
 			fmt.Sprintf("%v", event.Enriched),
@@ -454,6 +499,11 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 				withdrawalHash,
 				proofSubmitter,
 				status,
+				fmt.Sprintf("%v", event.Event.Raw.TxHash),
+				fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.ProxyAddress),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.L2blockNumber),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.RootClaim),
 				fmt.Sprintf("%v", event.Blacklisted),
 				fmt.Sprintf("%v", event.WithdrawalHashPresentOnL2),
 				fmt.Sprintf("%v", event.Enriched),

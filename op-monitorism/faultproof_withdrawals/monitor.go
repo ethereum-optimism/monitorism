@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/validator"
@@ -26,12 +27,7 @@ type Monitor struct {
 	ctx context.Context
 
 	// user arguments
-	l1GethClient   *ethclient.Client
-	l2OpGethClient *ethclient.Client
-	l2OpNodeClient *ethclient.Client
-	l1ChainID      *big.Int
-	l2ChainID      *big.Int
-	maxBlockRange  uint64
+	maxBlockRange uint64
 
 	// helpers
 	withdrawalValidator validator.ProvenWithdrawalValidator
@@ -51,16 +47,20 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1: %w", err)
 	}
-	l2OpGethClient, err := ethclient.Dial(cfg.L2OpGethURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial l2: %w", err)
-	}
-	l2OpNodeClient, err := ethclient.Dial(cfg.L2OpNodeURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial l2: %w", err)
+
+	mapL2GethBackupURLs := make(map[string]string)
+	if len(cfg.L2GethBackupURLs) > 0 {
+		for _, part := range cfg.L2GethBackupURLs {
+			parts := strings.Split(part, "=")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid backup URL format, expected name=url, got %s", part)
+			}
+			name, url := parts[0], parts[1]
+			mapL2GethBackupURLs[name] = url
+		}
 	}
 
-	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, l1GethClient, l2OpGethClient, l2OpNodeClient, cfg.OptimismPortalAddress)
+	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, log, cfg.L1GethURL, cfg.L2OpGethURL, mapL2GethBackupURLs, cfg.OptimismPortalAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create withdrawal validator: %w", err)
 	}
@@ -70,28 +70,12 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to query latest block number: %w", err)
 	}
 
-	l1ChainID, err := l1GethClient.ChainID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get l1 chain id: %w", err)
-	}
-	l2ChainID, err := l2OpGethClient.ChainID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get l2 chain id: %w", err)
-	}
-
 	metrics := NewMetrics(m)
 
 	ret := &Monitor{
 		log: log,
 
-		ctx:            ctx,
-		l1GethClient:   l1GethClient,
-		l2OpGethClient: l2OpGethClient,
-		l2OpNodeClient: l2OpNodeClient,
-
-		l1ChainID: l1ChainID,
-		l2ChainID: l2ChainID,
-
+		ctx:                 ctx,
 		withdrawalValidator: *withdrawalValidator,
 
 		maxBlockRange: cfg.EventBlockRange,
@@ -124,10 +108,25 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
 	}
 
-	state, err := NewState(log, startingL1BlockHeight, latestL1Height, ret.withdrawalValidator.GetLatestL2Height())
+	latestL2Height, err := ret.withdrawalValidator.GetL2BlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest L2 height: %w", err)
+	}
+
+	if startingL1BlockHeight > latestL1Height {
+		log.Info("nextL1Height is greater than latestL1Height, starting from latest", "nextL1Height", startingL1BlockHeight, "latestL1Height", latestL1Height)
+		startingL1BlockHeight = latestL1Height
+	}
+
+	state, err := NewState(log, withdrawalValidator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create state: %w", err)
 	}
+
+	state.nextL1Height = startingL1BlockHeight
+	state.latestL1Height = latestL1Height
+	state.latestL2Height = latestL2Height
+
 	ret.state = *state
 
 	// log state and metrics
@@ -203,7 +202,7 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 // GetLatestBlock retrieves the latest block number from the L1 Geth client.
 // It updates the state with the latest L1 height.
 func (m *Monitor) GetLatestBlock() (uint64, error) {
-	latestL1Height, err := m.l1GethClient.BlockNumber(m.ctx)
+	latestL1Height, err := m.withdrawalValidator.GetL1BlockNumber()
 	if err != nil {
 		return 0, fmt.Errorf("failed to query latest block number: %w", err)
 	}
@@ -237,15 +236,14 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	stop, err := m.GetMaxBlock()
 	if err != nil {
-		m.state.nodeConnectionFailures++
 		m.log.Error("failed to get max block", "error", err)
 		return
 	}
 
 	// review previous invalidProposalWithdrawalsEvents
 	err = m.ConsumeEvents(m.state.potentialAttackOnInProgressGames)
+
 	if err != nil {
-		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
@@ -253,6 +251,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	// get new events
 	m.log.Info("getting enriched withdrawal events", "start", fmt.Sprintf("%d", start), "stop", fmt.Sprintf("%d", stop))
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(start, &stop)
+
 	if err != nil {
 		if start >= stop {
 			m.log.Info("no new events to process", "start", start, "stop", stop)
@@ -260,15 +259,14 @@ func (m *Monitor) Run(ctx context.Context) {
 			//in this case it happens when the range is too small, we can ignore the error as it is normal for the Iterator to not be ready yet
 			m.log.Info("failed to get enriched withdrawal events, should not be an issue as start and stop blocks are too close", "error", err)
 		} else {
-			m.state.nodeConnectionFailures++
 			m.log.Error("failed to get enriched withdrawal events", "error", err)
 		}
 		return
 	}
 
 	err = m.ConsumeEvents(newEvents)
+
 	if err != nil {
-		m.state.nodeConnectionFailures++
 		m.log.Error("failed to consume events", "error", err)
 		return
 	}
@@ -288,8 +286,12 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 		}
 		m.log.Info("processing withdrawal event", "event", enrichedWithdrawalEvent)
 		err := m.withdrawalValidator.UpdateEnrichedWithdrawalEvent(enrichedWithdrawalEvent)
+		if err != nil {
+			m.log.Error("failed to update enriched withdrawal event", "error", err)
+			return err
+		}
 		//upgrade state to the latest L2 height	after the event is processed
-		m.state.latestL2Height = m.withdrawalValidator.GetLatestL2Height()
+		m.state.latestL2Height, err = m.withdrawalValidator.GetL2BlockNumber()
 		if err != nil {
 			m.log.Error("failed to update enriched withdrawal event", "error", err)
 			return err
@@ -297,7 +299,7 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 
 		err = m.ConsumeEvent(enrichedWithdrawalEvent)
 		if err != nil {
-			m.log.Error("failed to consume event", "error", err)
+			m.log.Error("failed to consume event", "error", err, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 			return err
 		}
 	}
@@ -308,12 +310,9 @@ func (m *Monitor) ConsumeEvents(enrichedWithdrawalEvents map[common.Hash]*valida
 // ConsumeEvent processes a single enriched withdrawal event.
 // It logs the event details and checks for any forgery detection.
 func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) error {
-	if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID.Cmp(m.l2ChainID) != 0 {
-		m.log.Error("l2ChainID mismatch", "expected", fmt.Sprintf("%d", m.l2ChainID), "got", fmt.Sprintf("%d", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2ChainID))
-	}
 	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(enrichedWithdrawalEvent)
 	if err != nil {
-		m.log.Error("failed to check if forgery detected", "error", err)
+		m.log.Error("failed to check if forgery detected", "error", err, "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
 		return err
 	}
 
@@ -343,7 +342,5 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 
 // Close gracefully shuts down the Monitor by closing the Geth clients.
 func (m *Monitor) Close(_ context.Context) error {
-	m.l1GethClient.Close()
-	m.l2OpGethClient.Close()
 	return nil
 }
