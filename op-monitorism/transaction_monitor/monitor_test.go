@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
-	"github.com/ethereum-optimism/optimism/op-service/testutils/anvil"
+	"github.com/ethereum-optimism/optimism/op-service/testutils/devnet"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -32,16 +32,13 @@ var (
 	watchedKey, _ = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
 )
 
-func setupAnvil(t *testing.T) (*anvil.Runner, *ethclient.Client, string) {
-	anvil.Test(t)
-
-	ctx := context.Background()
+func setupAnvil(t *testing.T) (*devnet.Anvil, *ethclient.Client, string) {
 	logger := log.New()
 
-	anvilRunner, err := anvil.New("http://127.0.1:8545", logger)
+	anvilRunner, err := devnet.NewAnvil(logger)
 	require.NoError(t, err)
 
-	err = anvilRunner.Start(ctx)
+	err = anvilRunner.Start()
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = anvilRunner.Stop()
