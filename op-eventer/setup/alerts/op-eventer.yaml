@@ -1,0 +1,43 @@
+groups:
+  - name: op-eventer
+    rules:
+      - alert: OpEventerP1
+        expr: increase(opEventer_metric{ priority="P1" }[230m]) > 0
+        for: 1s
+        annotations:
+          summary: OpEventer Emitted Alert"
+        labels:
+          team: security
+          severity: P1
+      - alert: OpEventerP2
+        expr: increase(opEventer_metric{ priority="P2" }[230m]) > 0
+        for: 1s
+        annotations:
+          summary: OpEventer Emitted Alert"
+        labels:
+          team: security
+          severity: P2
+      - alert: OpEventerP3
+        expr: increase(opEventer_metric{ priority="P3" }[230m]) > 0
+        for: 1s
+        annotations:
+          summary: OpEventer Emitted Alert"
+        labels:
+          team: security
+          severity: P3
+      - alert: OpEventerP4
+        expr: increase(opEventer_metric{ priority="P3" }[230m]) > 0
+        for: 1s
+        annotations:
+          summary: OpEventer Emitted Alert"
+        labels:
+          team: security
+          severity: P4
+      - alert: OpEventerP5
+        expr: increase(opEventer_metric{ priority="P3" }[230m]) > 0
+        for: 1s
+        annotations:
+          summary: OpEventer Emitted Alert"
+        labels:
+          team: security
+          severity: P5
