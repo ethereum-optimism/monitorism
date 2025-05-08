@@ -202,6 +202,7 @@ COMMANDS:
 
 Each monitor has some common configuration, configurable both via cli or env with defaults.
 
+
 ```
 OPTIONS:
    --log.level value           [$MONITORISM_LOG_LEVEL]           The lowest log level that will be output (default: INFO)
