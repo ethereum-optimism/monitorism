@@ -3,6 +3,7 @@ package global_events
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"regexp"
 	"strings"
 	"time"
@@ -32,7 +33,8 @@ type Monitor struct {
 	nickname string
 	//safeAddress *bindings.OptimismPortalCaller
 
-	LiveAddress *common.Address
+	LiveAddress                *common.Address
+	LastSuccessfullBlockNumber *big.Int
 
 	//filename   string //filename of the yaml rules
 	//yamlconfig Configuration
@@ -182,12 +184,17 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 		m.log.Warn("Failed to retrieve latest block header", "error", err.Error()) //TODO:need to wait 12 and retry here!
 		return
 	}
+
 	latestBlockNumber := header.Number
 	blocknumber, _ := latestBlockNumber.Float64()
 
+	if m.LastSuccessfullBlockNumber == nil { // only during initialisation.
+		m.LastSuccessfullBlockNumber = latestBlockNumber
+	}
+
 	m.CurrentBlock.WithLabelValues(m.nickname).Set(float64(blocknumber)) //metrics for the current block monitored.
 	query := ethereum.FilterQuery{
-		FromBlock: latestBlockNumber,
+		FromBlock: m.LastSuccessfullBlockNumber,
 		ToBlock:   latestBlockNumber,
 		// Addresses: []common.Address{}, //if empty means that all addresses are monitored should be this value for optimisation and avoiding to take every logs every time -> m.globalconfig.GetUniqueMonitoredAddresses
 	}
@@ -216,7 +223,10 @@ func (m *Monitor) checkEvents(ctx context.Context) { //TODO: Ensure the logs cri
 			}
 		}
 	}
-	m.log.Info("Checking events..", "CurrentBlock", latestBlockNumber)
+
+	m.log.Info("Checking events..", "From block", m.LastSuccessfullBlockNumber, "To block", latestBlockNumber)
+	m.LastSuccessfullBlockNumber = latestBlockNumber
+
 }
 
 // ReturnConfigFromConfigsAndAddress allows to return the config from the configs and the address.
