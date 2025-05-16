@@ -10,6 +10,7 @@
     - [Drippie Monitor](#drippie-monitor)
     - [Secrets Monitor](#secrets-monitor)
     - [Transaction Monitor](#transaction-monitor)
+    - [ETH Conservation Monitor](#eth-conservation-monitor)
     - [Faultproof Withdrawals](#faultproof-withdrawal)
   - [Defender Components](#defender-components)
     - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
@@ -140,6 +141,13 @@ The transaction monitor takes in a yaml config in order to run, and monitors tra
 | `op-monitorism/transaction_monitor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/transaction_monitor/README.md) |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 
+### ETH Conservation Monitor
+
+The ETH conservation monitor traces L2 blocks and asserts that they adhere to the L2 ETH conservation invariant.
+
+| `op-monitorism/conservation_monitor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/conservation_monitor/README.md) |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+
 ### Faultproof Withdrawal
 
 The Faultproof Withdrawal component monitors ProvenWithdrawals events on the [OptimismPortal](https://github.com/ethereum-optimism/superchain-registry/blob/d454618b6cf885417aa8cc8c760bd9ed0429c131/superchain/configs/mainnet/op.toml#L50) contract and performs checks to detect any violations of invariant conditions on the chain. If a violation is detected, it logs the issue and sets a Prometheus metric for the event.
@@ -204,3 +212,4 @@ OPTIONS:
    --metrics.port value        [$MONITORISM_METRICS_PORT]        Metrics listening port (default: 7300)
    --loop.interval.msec value  [$MONITORISM_LOOP_INTERVAL_MSEC]  Loop interval of the monitor in milliseconds (default: 60000)
 ```
+
