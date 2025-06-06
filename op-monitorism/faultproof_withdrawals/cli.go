@@ -21,6 +21,9 @@ const (
 	HoursInThePastToStartFromFlagName = "start.block.hours.ago"
 
 	OptimismPortalAddressFlagName = "optimismportal.address"
+	FailOnNotFoundBlocksFlagName  = "fail.on.not.found.blocks"
+	MaxNotFoundBlocksFlagName     = "max.not.found.blocks"
+	MaxBlockRetriesFlagName       = "max.block.retries"
 )
 
 type CLIConfig struct {
@@ -34,6 +37,8 @@ type CLIConfig struct {
 	HoursInThePastToStartFrom uint64
 
 	OptimismPortalAddress common.Address
+	MaxNotFoundBlocks     int
+	MaxBlockRetries       int
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -45,6 +50,8 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
 		StartingL1BlockHeight:     ctx.Int64(StartingL1BlockHeightFlagName),
 		HoursInThePastToStartFrom: ctx.Uint64(HoursInThePastToStartFromFlagName),
+		MaxNotFoundBlocks:         ctx.Int(MaxNotFoundBlocksFlagName),
+		MaxBlockRetries:           ctx.Int(MaxBlockRetriesFlagName),
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
@@ -101,6 +108,20 @@ func CLIFlags(envVar string) []cli.Flag {
 			Usage:    "How many hours in the past to start to check for forgery. Default will be 336 (14 days) days if not set. The real block to start from will be found within the hour precision.",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_HOURS_IN_THE_PAST"),
 			Required: false,
+		},
+		&cli.Uint64Flag{
+			Name:     MaxNotFoundBlocksFlagName,
+			Usage:    "Maximum number of consecutive blocks not found before giving up",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "MAX_NOT_FOUND_BLOCKS"),
+			Required: false,
+			Value:    10,
+		},
+		&cli.Uint64Flag{
+			Name:     MaxBlockRetriesFlagName,
+			Usage:    "Maximum number of retries to get a block",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "MAX_BLOCK_RETRIES"),
+			Required: false,
+			Value:    5,
 		},
 		&cli.StringFlag{
 			Name:     OptimismPortalAddressFlagName,

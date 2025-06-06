@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -118,7 +119,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		log.Debug("Searching for block at approximate time",
 			"latestHeight", latestL1HeightBigInt.String(),
 			"hoursInPast", hoursInThePastToStartFrom)
-		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)))
+		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)), cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get block at approximate time: %w", err)
 		}
@@ -169,7 +170,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 }
 
 // getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
-func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int) (*big.Int, error) {
+func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int, cfg CLIConfig) (*big.Int, error) {
 
 	secondsInThePast := hoursInThePast.Mul(hoursInThePast, big.NewInt(60*60))
 	m.log.Info("Looking for a block at approximate time of hours back",
@@ -193,6 +194,13 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 		"rightBound", right.String(),
 		"acceptableDiffSeconds", acceptablediff.String())
 
+	notFoundCount := 0
+	maxNotFoundBlocks := cfg.MaxNotFoundBlocks
+	maxRetries := cfg.MaxBlockRetries
+	if maxRetries > 1 {
+		maxRetries = 1
+	}
+	baseDelay := 1 * time.Second
 	// Perform binary search
 	for left.Cmp(right) <= 0 {
 		//interrupt in case of context cancellation
@@ -211,11 +219,54 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 			"right", right.String(),
 			"mid", mid.String())
 
-		// Get the block at mid
-		block, err := client.BlockByNumber(context.Background(), mid)
+		// Get the block at mid with retries
+		var block *types.Block
+		var err error
+
+		for i := 0; i < maxRetries; i++ {
+			block, err = client.BlockByNumber(ctx, mid)
+			if err == nil {
+				notFoundCount = 0 // Reset counter on success
+				break
+			}
+
+			delay := baseDelay * time.Duration(1<<uint(i))
+			m.log.Debug("Failed to get block, retrying with backoff",
+				"attempt", i+1,
+				"maxRetries", maxRetries,
+				"delay", delay,
+				"error", err)
+
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled during block fetch retry")
+			case <-time.After(delay):
+				continue
+			}
+		}
+
 		if err != nil {
-			m.log.Error("Failed to get block", "blockNumber", mid.String(), "error", err)
-			return nil, err
+			notFoundCount++
+			m.log.Warn("Failed to get block after all retries, moving to newer block",
+				"blockNumber", mid.String(),
+				"error", err,
+				"maxRetries", maxRetries,
+				"notFoundCount", notFoundCount,
+				"maxNotFoundBlocks", maxNotFoundBlocks)
+
+			if notFoundCount >= maxNotFoundBlocks {
+				m.log.Error("Too many consecutive blocks not found, giving up search",
+					"notFoundCount", notFoundCount,
+					"maxNotFoundBlocks", maxNotFoundBlocks)
+				return nil, fmt.Errorf("too many consecutive blocks not found (%d), node might be too far behind", notFoundCount)
+			}
+
+			// Move to newer blocks by adjusting the left boundary
+			left.Set(mid)
+			m.log.Debug("Adjusted search range to newer blocks",
+				"newLeft", left.String(),
+				"right", right.String())
+			continue
 		}
 
 		// Check the block's timestamp
