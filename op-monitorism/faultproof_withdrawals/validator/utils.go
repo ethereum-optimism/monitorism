@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -55,8 +54,13 @@ func StringToBytes32(input string) ([32]uint8, error) {
 	return array, nil
 }
 
+// BlockFetcher defines the interface for fetching blocks
+type BlockFetcher interface {
+	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
+}
+
 // RetryBlockNumber retries to get a block by number with a backoff.
-func RetryBlockNumber(ctx context.Context, client *ethclient.Client, log log.Logger, latestBlockNumber *big.Int, maxRetries int) (*types.Block, error) {
+func RetryBlockNumber(ctx context.Context, client BlockFetcher, log log.Logger, latestBlockNumber *big.Int, maxRetries int) (*types.Block, error) {
 	var baseDelay = 1 * time.Second
 
 	// Try forever if maxRetries is < 1
@@ -92,6 +96,6 @@ func RetryBlockNumber(ctx context.Context, client *ethclient.Client, log log.Log
 }
 
 // RetryLatestBlock retries to get the latest block with a backoff.
-func RetryLatestBlock(ctx context.Context, client *ethclient.Client, log log.Logger, maxRetries int) (*types.Block, error) {
+func RetryLatestBlock(ctx context.Context, client BlockFetcher, log log.Logger, maxRetries int) (*types.Block, error) {
 	return RetryBlockNumber(ctx, client, log, nil, maxRetries)
 }

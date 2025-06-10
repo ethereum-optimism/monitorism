@@ -119,7 +119,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		log.Debug("Searching for block at approximate time",
 			"latestHeight", latestL1HeightBigInt.String(),
 			"hoursInPast", hoursInThePastToStartFrom)
-		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)), cfg.StartBlockMaxMissingBlocks, cfg.MaxBlockRetries)
+		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)), cfg.MaxBlockRetries)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get block at approximate time: %w", err)
 		}
@@ -170,7 +170,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 }
 
 // getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
-func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int, startBlockMaxMissingBlocks int, maxRetries int) (*big.Int, error) {
+func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int, maxRetries int) (*big.Int, error) {
 
 	secondsInThePast := hoursInThePast.Mul(hoursInThePast, big.NewInt(60*60))
 	m.log.Info("Looking for a block at approximate time of hours back",
@@ -194,11 +194,6 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 		"rightBound", right.String(),
 		"acceptableDiffSeconds", acceptablediff.String())
 
-	notFoundCount := 0
-	if maxRetries > 1 {
-		maxRetries = 1
-	}
-
 	// Perform binary search
 	for left.Cmp(right) <= 0 {
 		//interrupt in case of context cancellation
@@ -221,29 +216,8 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 		block, err := validator.RetryBlockNumber(ctx, client, m.log, mid, maxRetries)
 
 		if err != nil {
-			notFoundCount++
-			m.log.Warn("Failed to get block after all retries, moving to newer block",
-				"blockNumber", mid.String(),
-				"error", err,
-				"maxRetries", maxRetries,
-				"notFoundCount", notFoundCount,
-				"startBlockMaxMissingBlocks", startBlockMaxMissingBlocks)
-
-			if notFoundCount >= startBlockMaxMissingBlocks {
-				m.log.Error("Too many consecutive blocks not found, giving up search",
-					"notFoundCount", notFoundCount,
-					"startBlockMaxMissingBlocks", startBlockMaxMissingBlocks)
-				return nil, fmt.Errorf("too many consecutive blocks not found (%d), node might be too far behind", notFoundCount)
-			}
-
-			// Move to newer blocks by adjusting the left boundary
-			left.Set(mid)
-			m.log.Debug("Adjusted search range to newer blocks",
-				"newLeft", left.String(),
-				"right", right.String())
-			continue
-		} else {
-			notFoundCount = 0
+			m.log.Error("Failed to get block", "blockNumber", mid.String(), "error", err)
+			return nil, err
 		}
 
 		// Check the block's timestamp

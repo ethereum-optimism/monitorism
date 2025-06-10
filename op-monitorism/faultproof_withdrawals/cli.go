@@ -16,10 +16,9 @@ const (
 	L2GethURLFlagName        = "l2.geth.url"
 	L2GethBackupURLsFlagName = "l2.geth.backup.urls"
 
-	EventBlockRangeFlagName            = "event.block.range"
-	StartingL1BlockHeightFlagName      = "start.block.height"
-	HoursInThePastToStartFromFlagName  = "start.block.hours.ago"
-	StartBlockMaxMissingBlocksFlagName = "start.block.max.missing.blocks"
+	EventBlockRangeFlagName           = "event.block.range"
+	StartingL1BlockHeightFlagName     = "start.block.height"
+	HoursInThePastToStartFromFlagName = "start.block.hours.ago"
 
 	OptimismPortalAddressFlagName = "optimismportal.address"
 	MaxBlockRetriesFlagName       = "max.block.retries"
@@ -42,15 +41,14 @@ type CLIConfig struct {
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		L1GethURL:                  ctx.String(L1GethURLFlagName),
-		L2OpGethURL:                ctx.String(L2GethURLFlagName),
-		L2GethBackupURLs:           ctx.StringSlice(L2GethBackupURLsFlagName),
-		L2OpNodeURL:                "", // Ignored since deprecated
-		EventBlockRange:            ctx.Uint64(EventBlockRangeFlagName),
-		StartingL1BlockHeight:      ctx.Int64(StartingL1BlockHeightFlagName),
-		HoursInThePastToStartFrom:  ctx.Uint64(HoursInThePastToStartFromFlagName),
-		StartBlockMaxMissingBlocks: ctx.Int(StartBlockMaxMissingBlocksFlagName),
-		MaxBlockRetries:            ctx.Int(MaxBlockRetriesFlagName),
+		L1GethURL:                 ctx.String(L1GethURLFlagName),
+		L2OpGethURL:               ctx.String(L2GethURLFlagName),
+		L2GethBackupURLs:          ctx.StringSlice(L2GethBackupURLsFlagName),
+		L2OpNodeURL:               "", // Ignored since deprecated
+		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
+		StartingL1BlockHeight:     ctx.Int64(StartingL1BlockHeightFlagName),
+		HoursInThePastToStartFrom: ctx.Uint64(HoursInThePastToStartFromFlagName),
+		MaxBlockRetries:           ctx.Int(MaxBlockRetriesFlagName),
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
@@ -107,13 +105,6 @@ func CLIFlags(envVar string) []cli.Flag {
 			Usage:    "How many hours in the past to start to check for forgery. Default will be 336 (14 days) days if not set. The real block to start from will be found within the hour precision.",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_HOURS_IN_THE_PAST"),
 			Required: false,
-		},
-		&cli.Uint64Flag{
-			Name:     StartBlockMaxMissingBlocksFlagName,
-			Usage:    "Maximum number of consecutive missing blocks allowed when searching for the starting block based on hours ago. This helps handle cases where the RPC node might be missing some historical blocks during the initial block search.",
-			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_MAX_MISSING_BLOCKS"),
-			Required: false,
-			Value:    10,
 		},
 		&cli.Uint64Flag{
 			Name:     MaxBlockRetriesFlagName,
