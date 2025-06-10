@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"golang.org/x/exp/maps"
 )
 
 const (
@@ -167,7 +168,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		"l1GethURL", cfg.L1GethURL,
 		"l2GethURL", cfg.L2OpGethURL,
 		"optimismPortalAddress", cfg.OptimismPortalAddress,
-		"l2GethBackupURLs", cfg.L2GethBackupURLs,
+		"l2GethBackupURLs", strings.Join(maps.Keys(mapL2GethBackupURLs), ","),
 		"hoursInThePastToStartFrom", hoursInThePastToStartFrom,
 		"startingL1BlockHeight", cfg.StartingL1BlockHeight,
 		"eventBlockRange", cfg.EventBlockRange,
