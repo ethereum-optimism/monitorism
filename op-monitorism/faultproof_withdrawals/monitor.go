@@ -163,7 +163,15 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		"startingL1Height", startingL1BlockHeight,
 		"latestL1Height", latestL1Height,
 		"latestL2Height", latestL2Height,
-		"maxBlockRange", cfg.EventBlockRange)
+		"maxBlockRange", cfg.EventBlockRange,
+		"l1GethURL", cfg.L1GethURL,
+		"l2GethURL", cfg.L2OpGethURL,
+		"optimismPortalAddress", cfg.OptimismPortalAddress,
+		"l2GethBackupURLs", cfg.L2GethBackupURLs,
+		"hoursInThePastToStartFrom", hoursInThePastToStartFrom,
+		"startingL1BlockHeight", cfg.StartingL1BlockHeight,
+		"eventBlockRange", cfg.EventBlockRange,
+	)
 
 	return ret, nil
 }
@@ -324,9 +332,9 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	// get new events
 	m.log.Info("Getting enriched withdrawal events",
-		"start", start,
-		"stop", stop,
-		"range", stop-start)
+		"l1BlockStart", fmt.Sprintf("%d", start),
+		"l1BlockStop", fmt.Sprintf("%d", stop),
+		"l1BlockRange", fmt.Sprintf("%d", stop-start))
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(start, &stop)
 
 	if err != nil {
@@ -334,14 +342,16 @@ func (m *Monitor) Run(ctx context.Context) {
 			m.log.Info("No new events to process", "start", start, "stop", stop)
 		} else if stop-start <= 1 {
 			m.log.Info("Failed to get enriched withdrawal events, range too small",
-				"error", err,
-				"start", start,
-				"stop", stop)
+				"l1BlockStart", fmt.Sprintf("%d", start),
+				"l1BlockStop", fmt.Sprintf("%d", stop),
+				"l1BlockRange", fmt.Sprintf("%d", stop-start),
+				"error", err)
 		} else {
 			m.log.Error("Failed to get enriched withdrawal events",
-				"error", err,
-				"start", start,
-				"stop", stop)
+				"l1BlockStart", fmt.Sprintf("%d", start),
+				"l1BlockStop", fmt.Sprintf("%d", stop),
+				"l1BlockRange", fmt.Sprintf("%d", stop-start),
+				"error", err)
 		}
 		return
 	}

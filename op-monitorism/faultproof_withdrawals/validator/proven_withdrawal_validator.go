@@ -80,23 +80,41 @@ func NewWithdrawalValidator(ctx context.Context, log log.Logger, l1GethClientURL
 	}, nil
 }
 
-func GethBackupClientsDictionary(ctx context.Context, L2GethBackupURLs map[string]string, l2ChainID *big.Int) (map[string]*ethclient.Client, error) {
-	dictionary := make(map[string]*ethclient.Client)
+type BackupClientResult struct {
+	Client *ethclient.Client
+	Error  string
+}
+
+func GethBackupClientsDictionary(ctx context.Context, L2GethBackupURLs map[string]string, l2ChainID *big.Int) (map[string]*ethclient.Client, map[string]string, error) {
+	goodClients := make(map[string]*ethclient.Client)
+	badClients := make(map[string]string)
+
 	for name, url := range L2GethBackupURLs {
 		backupClient, err := ethclient.Dial(url)
 		if err != nil {
-			return nil, fmt.Errorf("failed to dial l2 backup, error: %w", err)
+			badClients[name] = fmt.Sprintf("failed to dial: %v", err)
+			continue
 		}
+
 		backupChainID, err := backupClient.ChainID(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get backup L2 chain ID, error: %w", err)
+			badClients[name] = fmt.Sprintf("failed to get chain ID: %v", err)
+			continue
 		}
+
 		if backupChainID.Cmp(l2ChainID) != 0 {
-			return nil, fmt.Errorf("backup L2 client chain ID mismatch, expected: %d, got: %d", l2ChainID, backupChainID)
+			badClients[name] = fmt.Sprintf("chain ID mismatch, expected: %d, got: %d", l2ChainID, backupChainID)
+			continue
 		}
-		dictionary[name] = backupClient
+
+		goodClients[name] = backupClient
 	}
-	return dictionary, nil
+
+	if len(goodClients) == 0 {
+		return nil, badClients, fmt.Errorf("no valid backup clients found")
+	}
+
+	return goodClients, badClients, nil
 }
 
 // UpdateEnrichedWithdrawalEvent updates the enriched withdrawal event with relevant data.
@@ -130,7 +148,7 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 		if latest_known_l2_block >= event.DisputeGame.DisputeGameData.L2blockNumber.Uint64() {
 			trustedRootClaim, withdrawalHashPresentOnL2, clientUsed, err := wv.L2Proxy.VerifyRootClaimAndWithdrawalHash(event.DisputeGame.DisputeGameData.L2blockNumber, event.DisputeGame.DisputeGameData.RootClaim, event.Event.WithdrawalHash)
 			if err != nil {
-				return fmt.Errorf("failed to get trustedRootClaim from Op-node %s: %w", clientUsed, err)
+				return fmt.Errorf("failed to get trustedRootClaim from L2 clients '%s': %w", clientUsed, err)
 			}
 			event.DisputeGameRootClaimIsTrusted = trustedRootClaim
 			event.WithdrawalHashPresentOnL2 = withdrawalHashPresentOnL2

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -37,12 +38,12 @@ func NewL2Proxy(ctx context.Context, l2GethClientURL string, l2GethBackupClients
 
 	// if backup urls are provided, create a backup client for each
 	var l2OpGethBackupClients map[string]*ethclient.Client
+	var badClients map[string]string
 	if len(l2GethBackupClientsURLs) > 0 {
-		l2OpGethBackupClients, err = GethBackupClientsDictionary(ctx, l2GethBackupClientsURLs, chainID)
+		l2OpGethBackupClients, badClients, err = GethBackupClientsDictionary(ctx, l2GethBackupClientsURLs, chainID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create backup clients: %w", err)
+			return nil, fmt.Errorf("failed to create backup clients: %w. Bad clients: %v", err, badClients)
 		}
-
 	}
 
 	return &L2Proxy{l2GethClient: l2GethClient, chainID: chainID, ctx: ctx, l2OpGethBackupClients: l2OpGethBackupClients, ConnectionError: make(map[string]uint64), Connections: make(map[string]uint64)}, nil
@@ -114,14 +115,15 @@ func (l2Proxy *L2Proxy) VerifyRootClaimAndWithdrawalHash(blockNumber *big.Int, r
 	l2Proxy.Connections["default"]++
 	if err != nil {
 		l2Proxy.ConnectionError["default"]++
-		return false, false, "", fmt.Errorf("failed to get proof: %w", err)
+		return false, false, clientUsed, fmt.Errorf("failed to get proof: %w", err)
+	} else {
+
+		// verify the proof when this comes from untrusted node (merkle trie)
+		err = accountResult.Verify(block.Root())
+
+		outputRoot := eth.OutputRoot(&eth.OutputV0{StateRoot: [32]byte(block.Root()), MessagePasserStorageRoot: [32]byte(accountResult.StorageHash), BlockHash: block.Hash()})
+		return bytes.Equal(outputRoot[:], rootClaim[:]), err == nil, clientUsed, nil
 	}
-
-	// verify the proof when this comes from untrusted node (merkle trie)
-	err = accountResult.Verify(block.Root())
-
-	outputRoot := eth.OutputRoot(&eth.OutputV0{StateRoot: [32]byte(block.Root()), MessagePasserStorageRoot: [32]byte(accountResult.StorageHash), BlockHash: block.Hash()})
-	return bytes.Equal(outputRoot[:], rootClaim[:]), err == nil, clientUsed, nil
 }
 
 // we retrieve the proof from the truested op-geth node and eventually from backup nodes if present
@@ -134,10 +136,12 @@ func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [3
 	hash := crypto.Keccak256Hash(combined)
 
 	storageKeys := []common.Hash{hash}
-	fmt.Printf("Storage Keys: %v\n", storageKeys)
+	// fmt.Printf("Storage Keys: %v\n", storageKeys)
 
+	usedClients := []string{"default"}
 	l2Proxy.Connections["default"]++
 	err := l2Proxy.l2GethClient.Client().CallContext(l2Proxy.ctx, &accountResult, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, storageKeys, encodedBlock)
+	fmt.Printf("Used Clients: %v\n", usedClients)
 	if err != nil {
 		l2Proxy.ConnectionError["default"]++
 		for clientName, client := range l2Proxy.l2OpGethBackupClients {
@@ -145,14 +149,17 @@ func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [3
 			client_err := client.Client().CallContext(l2Proxy.ctx, &accountResult, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, storageKeys, encodedBlock)
 			// if we get a proof, we return it
 			if client_err == nil {
-				return accountResult, clientName, nil
+				usedClients = append(usedClients, clientName)
+				break
 			}
 			l2Proxy.ConnectionError[clientName]++
 		}
 
-		return eth.AccountResult{}, "", fmt.Errorf("failed to get proof from any node")
 	}
-	return accountResult, "default", nil
+	if accountResult.StorageHash == (common.Hash{}) {
+		return eth.AccountResult{}, strings.Join(usedClients, ","), fmt.Errorf("failed to get proof from any node")
+	}
+	return accountResult, strings.Join(usedClients, ","), nil
 }
 
 func (l2Proxy *L2Proxy) GetTotalConnections() uint64 {
