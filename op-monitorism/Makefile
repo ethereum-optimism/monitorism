@@ -72,7 +72,7 @@ help:
 	@echo "  make build"
 	@echo "  make run"
 	@echo "  make clean"
-	@echo "  make test"
+	@echo "  make test [module]    # Run all tests or tests for a specific module (e.g. make test faultproof_withdrawals)"
 	@echo "  make test-live"
 	@echo "  make tidy"
 	@echo "  make help"
