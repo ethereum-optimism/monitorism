@@ -44,7 +44,9 @@ OPTIONS:
    --event.block.range value       Max block range when scanning for events (default: 1000) [$FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE]
    --start.block.height value      Starting height to scan for events. This will take precedence if set. (default: -1) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT]
    --start.block.hours.ago value   How many hours in the past to start to check for forgery. Default will be 336 (14 days) days if not set. The real block to start from will be found within the hour precision. (default: 0) [$FAULTPROOF_WITHDRAWAL_MON_START_HOURS_IN_THE_PAST]
+   --start.block.max.missing.blocks value  Maximum number of consecutive missing blocks allowed when searching for the starting block based on hours ago. This helps handle cases where the RPC node might be missing some historical blocks during the initial block search. (default: 10) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_MAX_MISSING_BLOCKS]
    --optimismportal.address value  Address of the OptimismPortal contract [$FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL]
+   --max.block.retries value       Maximum number of retries when fetching a block before giving up. 0 or less means it will retry forever (default: 5) [$FAULTPROOF_WITHDRAWAL_MON_MAX_BLOCK_RETRIES]
    --log.level value               The lowest log level that will be output (default: INFO) [$MONITORISM_LOG_LEVEL]
    --log.format value              Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text) [$MONITORISM_LOG_FORMAT]
    --log.color                     Color the log output if in terminal mode (default: false) [$MONITORISM_LOG_COLOR]
@@ -74,8 +76,9 @@ export FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_BACKUP_URLS="$L2_OP_GETH_BACKUP_URLS
 export FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL="0x16Fc5058F25648194471939df75CF27A2fdC48BC"
 export FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT=5914813
 export FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE=1000
+export FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_MAX_MISSING_BLOCKS=10
+export FAULTPROOF_WITHDRAWAL_MON_MAX_BLOCK_RETRIES=5
 
 go run ./cmd/monitorism faultproof_withdrawals
 ```
-
 Metrics will be available at [http://localhost:7300](http://localhost:7300)

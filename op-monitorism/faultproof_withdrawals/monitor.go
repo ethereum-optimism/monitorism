@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -70,17 +69,18 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		"l2Url", cfg.L2OpGethURL,
 		"backupUrls", len(mapL2GethBackupURLs),
 		"portalAddress", cfg.OptimismPortalAddress)
-	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, log, cfg.L1GethURL, cfg.L2OpGethURL, mapL2GethBackupURLs, cfg.OptimismPortalAddress)
+	withdrawalValidator, err := validator.NewWithdrawalValidator(ctx, log, cfg.L1GethURL, cfg.L2OpGethURL, mapL2GethBackupURLs, cfg.OptimismPortalAddress, cfg.MaxBlockRetries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create withdrawal validator: %w", err)
 	}
 	log.Debug("Successfully created withdrawal validator")
 
 	log.Debug("Querying latest L1 block number")
-	latestL1Height, err := l1GethClient.BlockNumber(ctx)
+	latestL1HeightBlock, err := validator.RetryLatestBlock(ctx, l1GethClient, log, cfg.MaxBlockRetries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query latest block number: %w", err)
 	}
+	latestL1Height := latestL1HeightBlock.NumberU64()
 	log.Debug("Retrieved latest L1 block number", "height", latestL1Height)
 
 	metrics := NewMetrics(m)
@@ -119,7 +119,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		log.Debug("Searching for block at approximate time",
 			"latestHeight", latestL1HeightBigInt.String(),
 			"hoursInPast", hoursInThePastToStartFrom)
-		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)), cfg)
+		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)), cfg.StartBlockMaxMissingBlocks, cfg.MaxBlockRetries)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get block at approximate time: %w", err)
 		}
@@ -170,7 +170,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 }
 
 // getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
-func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int, cfg CLIConfig) (*big.Int, error) {
+func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int, startBlockMaxMissingBlocks int, maxRetries int) (*big.Int, error) {
 
 	secondsInThePast := hoursInThePast.Mul(hoursInThePast, big.NewInt(60*60))
 	m.log.Info("Looking for a block at approximate time of hours back",
@@ -195,12 +195,10 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 		"acceptableDiffSeconds", acceptablediff.String())
 
 	notFoundCount := 0
-	maxNotFoundBlocks := cfg.MaxNotFoundBlocks
-	maxRetries := cfg.MaxBlockRetries
 	if maxRetries > 1 {
 		maxRetries = 1
 	}
-	baseDelay := 1 * time.Second
+
 	// Perform binary search
 	for left.Cmp(right) <= 0 {
 		//interrupt in case of context cancellation
@@ -220,30 +218,7 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 			"mid", mid.String())
 
 		// Get the block at mid with retries
-		var block *types.Block
-		var err error
-
-		for i := 0; i < maxRetries; i++ {
-			block, err = client.BlockByNumber(ctx, mid)
-			if err == nil {
-				notFoundCount = 0 // Reset counter on success
-				break
-			}
-
-			delay := baseDelay * time.Duration(1<<uint(i))
-			m.log.Debug("Failed to get block, retrying with backoff",
-				"attempt", i+1,
-				"maxRetries", maxRetries,
-				"delay", delay,
-				"error", err)
-
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("context cancelled during block fetch retry")
-			case <-time.After(delay):
-				continue
-			}
-		}
+		block, err := validator.RetryBlockNumber(ctx, client, m.log, mid, maxRetries)
 
 		if err != nil {
 			notFoundCount++
@@ -252,12 +227,12 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 				"error", err,
 				"maxRetries", maxRetries,
 				"notFoundCount", notFoundCount,
-				"maxNotFoundBlocks", maxNotFoundBlocks)
+				"startBlockMaxMissingBlocks", startBlockMaxMissingBlocks)
 
-			if notFoundCount >= maxNotFoundBlocks {
+			if notFoundCount >= startBlockMaxMissingBlocks {
 				m.log.Error("Too many consecutive blocks not found, giving up search",
 					"notFoundCount", notFoundCount,
-					"maxNotFoundBlocks", maxNotFoundBlocks)
+					"startBlockMaxMissingBlocks", startBlockMaxMissingBlocks)
 				return nil, fmt.Errorf("too many consecutive blocks not found (%d), node might be too far behind", notFoundCount)
 			}
 
@@ -267,6 +242,8 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, cli
 				"newLeft", left.String(),
 				"right", right.String())
 			continue
+		} else {
+			notFoundCount = 0
 		}
 
 		// Check the block's timestamp

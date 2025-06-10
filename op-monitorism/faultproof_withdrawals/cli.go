@@ -16,13 +16,12 @@ const (
 	L2GethURLFlagName        = "l2.geth.url"
 	L2GethBackupURLsFlagName = "l2.geth.backup.urls"
 
-	EventBlockRangeFlagName           = "event.block.range"
-	StartingL1BlockHeightFlagName     = "start.block.height"
-	HoursInThePastToStartFromFlagName = "start.block.hours.ago"
+	EventBlockRangeFlagName            = "event.block.range"
+	StartingL1BlockHeightFlagName      = "start.block.height"
+	HoursInThePastToStartFromFlagName  = "start.block.hours.ago"
+	StartBlockMaxMissingBlocksFlagName = "start.block.max.missing.blocks"
 
 	OptimismPortalAddressFlagName = "optimismportal.address"
-	FailOnNotFoundBlocksFlagName  = "fail.on.not.found.blocks"
-	MaxNotFoundBlocksFlagName     = "max.not.found.blocks"
 	MaxBlockRetriesFlagName       = "max.block.retries"
 )
 
@@ -32,26 +31,26 @@ type CLIConfig struct {
 	L2OpNodeURL      string
 	L2GethBackupURLs []string
 
-	EventBlockRange           uint64
-	StartingL1BlockHeight     int64
-	HoursInThePastToStartFrom uint64
+	EventBlockRange            uint64
+	StartingL1BlockHeight      int64
+	HoursInThePastToStartFrom  uint64
+	StartBlockMaxMissingBlocks int
 
 	OptimismPortalAddress common.Address
-	MaxNotFoundBlocks     int
 	MaxBlockRetries       int
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		L1GethURL:                 ctx.String(L1GethURLFlagName),
-		L2OpGethURL:               ctx.String(L2GethURLFlagName),
-		L2GethBackupURLs:          ctx.StringSlice(L2GethBackupURLsFlagName),
-		L2OpNodeURL:               "", // Ignored since deprecated
-		EventBlockRange:           ctx.Uint64(EventBlockRangeFlagName),
-		StartingL1BlockHeight:     ctx.Int64(StartingL1BlockHeightFlagName),
-		HoursInThePastToStartFrom: ctx.Uint64(HoursInThePastToStartFromFlagName),
-		MaxNotFoundBlocks:         ctx.Int(MaxNotFoundBlocksFlagName),
-		MaxBlockRetries:           ctx.Int(MaxBlockRetriesFlagName),
+		L1GethURL:                  ctx.String(L1GethURLFlagName),
+		L2OpGethURL:                ctx.String(L2GethURLFlagName),
+		L2GethBackupURLs:           ctx.StringSlice(L2GethBackupURLsFlagName),
+		L2OpNodeURL:                "", // Ignored since deprecated
+		EventBlockRange:            ctx.Uint64(EventBlockRangeFlagName),
+		StartingL1BlockHeight:      ctx.Int64(StartingL1BlockHeightFlagName),
+		HoursInThePastToStartFrom:  ctx.Uint64(HoursInThePastToStartFromFlagName),
+		StartBlockMaxMissingBlocks: ctx.Int(StartBlockMaxMissingBlocksFlagName),
+		MaxBlockRetries:            ctx.Int(MaxBlockRetriesFlagName),
 	}
 
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
@@ -110,9 +109,9 @@ func CLIFlags(envVar string) []cli.Flag {
 			Required: false,
 		},
 		&cli.Uint64Flag{
-			Name:     MaxNotFoundBlocksFlagName,
-			Usage:    "Maximum number of consecutive blocks not found before giving up",
-			EnvVars:  opservice.PrefixEnvVar(envVar, "MAX_NOT_FOUND_BLOCKS"),
+			Name:     StartBlockMaxMissingBlocksFlagName,
+			Usage:    "Maximum number of consecutive missing blocks allowed when searching for the starting block based on hours ago. This helps handle cases where the RPC node might be missing some historical blocks during the initial block search.",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_MAX_MISSING_BLOCKS"),
 			Required: false,
 			Value:    10,
 		},

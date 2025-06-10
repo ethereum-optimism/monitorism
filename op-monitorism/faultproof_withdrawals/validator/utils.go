@@ -1,12 +1,17 @@
 package validator
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // Raw represents raw event data associated with a blockchain transaction.
@@ -48,4 +53,45 @@ func StringToBytes32(input string) ([32]uint8, error) {
 	var array [32]uint8
 	copy(array[:], bytes)
 	return array, nil
+}
+
+// RetryBlockNumber retries to get a block by number with a backoff.
+func RetryBlockNumber(ctx context.Context, client *ethclient.Client, log log.Logger, latestBlockNumber *big.Int, maxRetries int) (*types.Block, error) {
+	var baseDelay = 1 * time.Second
+
+	// Try forever if maxRetries is < 1
+	for i := 0; maxRetries < 1 || i < maxRetries; i++ {
+		block, err := client.BlockByNumber(ctx, latestBlockNumber)
+		if err == nil {
+			return block, nil
+		}
+
+		// Limit the delay to 20 seconds
+		delay := baseDelay
+		if i > 0 {
+			delay = baseDelay * time.Duration(1<<uint(i))
+		}
+		if delay > 20*time.Second {
+			delay = 20 * time.Second
+		}
+		log.Debug("Failed to get block, retrying with backoff",
+			"attempt", i+1,
+			"maxRetries", maxRetries,
+			"delay", delay,
+			"error", err)
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled during block fetch retry")
+		case <-time.After(delay):
+			continue
+		}
+	}
+
+	return nil, fmt.Errorf("failed to get block after all retries")
+}
+
+// RetryLatestBlock retries to get the latest block with a backoff.
+func RetryLatestBlock(ctx context.Context, client *ethclient.Client, log log.Logger, maxRetries int) (*types.Block, error) {
+	return RetryBlockNumber(ctx, client, log, nil, maxRetries)
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type L1Proxy struct {
@@ -16,9 +17,11 @@ type L1Proxy struct {
 	ctx                    context.Context         // Context for managing cancellation and timeouts.
 	Connections            uint64
 	ConnectionErrors       uint64
+	log                    log.Logger
+	maxRetries             int
 }
 
-func NewL1Proxy(ctx context.Context, l1GethClientURL string, OptimismPortalAddress common.Address) (*L1Proxy, error) {
+func NewL1Proxy(ctx context.Context, l1GethClientURL string, OptimismPortalAddress common.Address, log log.Logger, maxRetries int) (*L1Proxy, error) {
 	l1GethClient, err := ethclient.Dial(l1GethClientURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l1: %w", err)
@@ -41,6 +44,8 @@ func NewL1Proxy(ctx context.Context, l1GethClientURL string, OptimismPortalAddre
 		ctx:                    ctx,
 		Connections:            0,
 		ConnectionErrors:       0,
+		log:                    log,
+		maxRetries:             maxRetries,
 	}, nil
 }
 
@@ -96,12 +101,12 @@ func (l1Proxy *L1Proxy) GetProvenWithdrawalsExtension1EventsIterator(start uint6
 
 func (l1Proxy *L1Proxy) BlockNumber() (uint64, error) {
 	l1Proxy.Connections++
-	blockNumber, err := l1Proxy.l1GethClient.BlockNumber(l1Proxy.ctx)
+	blockNumber, err := RetryLatestBlock(l1Proxy.ctx, l1Proxy.l1GethClient, l1Proxy.log, l1Proxy.maxRetries)
 	if err != nil {
 		l1Proxy.ConnectionErrors++
 		return 0, fmt.Errorf("failed to get block number: %w", err)
 	}
-	return blockNumber, nil
+	return blockNumber.NumberU64(), nil
 }
 
 func (l1Proxy *L1Proxy) GetTotalConnections() uint64 {

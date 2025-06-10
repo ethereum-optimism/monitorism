@@ -60,14 +60,14 @@ func (v ValidateProofWithdrawalState) String() string {
 	return [...]string{"INVALID_PROOF_FORGERY_DETECTED", "INVALID_PROPOSAL_FORGERY_DETECTED", "INVALID_PROPOSAL_INPROGRESS", "INVALID_PROPOSAL_CORRECTLY_RESOLVED", "PROOF_ON_BLACKLISTED_GAME", "VALID_PROOF"}[v]
 }
 
-func NewWithdrawalValidator(ctx context.Context, log log.Logger, l1GethClientURL string, l2GethClientURL string, l2GethBackupClientsURLs map[string]string, OptimismPortalAddress common.Address) (*ProvenWithdrawalValidator, error) {
+func NewWithdrawalValidator(ctx context.Context, log log.Logger, l1GethClientURL string, l2GethClientURL string, l2GethBackupClientsURLs map[string]string, OptimismPortalAddress common.Address, maxRetries int) (*ProvenWithdrawalValidator, error) {
 
-	l1Proxy, err := NewL1Proxy(ctx, l1GethClientURL, OptimismPortalAddress)
+	l1Proxy, err := NewL1Proxy(ctx, l1GethClientURL, OptimismPortalAddress, log, maxRetries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create l1 proxy: %w", err)
 	}
 
-	l2Proxy, err := NewL2Proxy(ctx, l2GethClientURL, l2GethBackupClientsURLs)
+	l2Proxy, err := NewL2Proxy(ctx, l2GethClientURL, l2GethBackupClientsURLs, log, maxRetries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create l2 proxy: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
@@ -22,9 +23,11 @@ type L2Proxy struct {
 	l2OpGethBackupClients map[string]*ethclient.Client
 	ConnectionError       map[string]uint64
 	Connections           map[string]uint64
+	log                   log.Logger
+	maxRetries            int
 }
 
-func NewL2Proxy(ctx context.Context, l2GethClientURL string, l2GethBackupClientsURLs map[string]string) (*L2Proxy, error) {
+func NewL2Proxy(ctx context.Context, l2GethClientURL string, l2GethBackupClientsURLs map[string]string, log log.Logger, maxRetries int) (*L2Proxy, error) {
 	l2GethClient, err := ethclient.Dial(l2GethClientURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial l2: %w", err)
@@ -45,25 +48,34 @@ func NewL2Proxy(ctx context.Context, l2GethClientURL string, l2GethBackupClients
 
 	}
 
-	return &L2Proxy{l2GethClient: l2GethClient, chainID: chainID, ctx: ctx, l2OpGethBackupClients: l2OpGethBackupClients, ConnectionError: make(map[string]uint64), Connections: make(map[string]uint64)}, nil
+	return &L2Proxy{
+		l2GethClient:          l2GethClient,
+		chainID:               chainID,
+		ctx:                   ctx,
+		l2OpGethBackupClients: l2OpGethBackupClients,
+		ConnectionError:       make(map[string]uint64),
+		Connections:           make(map[string]uint64),
+		log:                   log,
+		maxRetries:            maxRetries,
+	}, nil
 }
 
 // get latest known L2 block number
 func (l2Proxy *L2Proxy) BlockNumber() (uint64, error) {
-	blockNumber, err := l2Proxy.l2GethClient.BlockNumber(l2Proxy.ctx)
+	blockNumber, err := RetryLatestBlock(l2Proxy.ctx, l2Proxy.l2GethClient, l2Proxy.log, l2Proxy.maxRetries)
 	l2Proxy.Connections["default"]++
 	if err != nil {
 		l2Proxy.ConnectionError["default"]++
 		return 0, fmt.Errorf("failed to get block number: %w", err)
 	}
-	return blockNumber, nil
+	return blockNumber.NumberU64(), nil
 }
 
 // GetOutputRootFromCalculation retrieves the output root by calculating it from the given block number.
 // It returns the calculated output root as a Bytes32 array.
 func (l2Proxy *L2Proxy) VerifyWithdrawalHashAndClaim(blockNumber *big.Int, withdrawalHash [32]byte, claim [32]byte) (bool, bool, string, error) {
 	// We get the block from our trusted op-geth node
-	block, err := l2Proxy.l2GethClient.BlockByNumber(l2Proxy.ctx, blockNumber)
+	block, err := RetryBlockNumber(l2Proxy.ctx, l2Proxy.l2GethClient, l2Proxy.log, blockNumber, l2Proxy.maxRetries)
 	l2Proxy.Connections["default"]++
 	if err != nil {
 		l2Proxy.ConnectionError["default"]++
@@ -102,7 +114,7 @@ func (l2Proxy *L2Proxy) VerifyWithdrawalHashAndClaim(blockNumber *big.Int, withd
 //   - error: Any error that occurred during verification
 func (l2Proxy *L2Proxy) VerifyRootClaimAndWithdrawalHash(blockNumber *big.Int, rootClaim [32]byte, withdrawalHash [32]byte) (bool, bool, string, error) {
 	// We get the block from our trusted op-geth node
-	block, err := l2Proxy.l2GethClient.BlockByNumber(l2Proxy.ctx, blockNumber)
+	block, err := RetryBlockNumber(l2Proxy.ctx, l2Proxy.l2GethClient, l2Proxy.log, blockNumber, l2Proxy.maxRetries)
 	l2Proxy.Connections["default"]++
 	if err != nil {
 		l2Proxy.ConnectionError["default"]++
