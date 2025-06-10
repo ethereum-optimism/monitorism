@@ -42,7 +42,15 @@ clean:
 .PHONY: test
 test:
 	@echo "Running tests..."
-	$(GOTEST) ./... -v
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" != "" ]; then \
+		$(GOTEST) -v -count=1 ./$(filter-out $@,$(MAKECMDGOALS))/...; \
+	else \
+		$(GOTEST) ./... -v; \
+	fi
+
+# This allows passing arguments to the test target
+%:
+	@:
 
 #include tests that require live resources
 #these resources are meant to be real and not mocked
