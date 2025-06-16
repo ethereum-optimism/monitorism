@@ -3,6 +3,7 @@ package faultproof_withdrawals
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"time"
@@ -11,13 +12,16 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"golang.org/x/exp/maps"
 )
 
 const (
 	MetricsNamespace                 = "faultproof_withdrawals"
 	DefaultHoursInThePastToStartFrom = 14 * 24 //14 days
+	acceptableDiffSec                = 3600    // 1h
 )
 
 // Monitor monitors the state and events related to withdrawal forgery.
@@ -163,100 +167,114 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		"startingL1Height", startingL1BlockHeight,
 		"latestL1Height", latestL1Height,
 		"latestL2Height", latestL2Height,
-		"maxBlockRange", cfg.EventBlockRange)
+		"maxBlockRange", cfg.EventBlockRange,
+		"l1GethURL", cfg.L1GethURL,
+		"l2GethURL", cfg.L2OpGethURL,
+		"optimismPortalAddress", cfg.OptimismPortalAddress,
+		"l2GethBackupURLs", strings.Join(maps.Keys(mapL2GethBackupURLs), ","),
+		"hoursInThePastToStartFrom", hoursInThePastToStartFrom,
+		"startingL1BlockHeight", cfg.StartingL1BlockHeight,
+		"eventBlockRange", cfg.EventBlockRange,
+	)
 
 	return ret, nil
 }
 
 // getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
-func (m *Monitor) getBlockAtApproximateTimeBinarySearch(ctx context.Context, client *ethclient.Client, latestBlockNumber *big.Int, hoursInThePast *big.Int) (*big.Int, error) {
+func (m *Monitor) getBlockAtApproximateTimeBinarySearch(
+	ctx context.Context,
+	client *ethclient.Client,
+	latest *big.Int,
+	hoursAgo *big.Int,
+) (*big.Int, error) {
+	m.log.Info("Starting binary search for block",
+		"hoursAgo", hoursAgo,
+		"latestBlock", fmt.Sprintf("%d", latest),
+		"acceptableDiffSec", acceptableDiffSec)
 
-	secondsInThePast := hoursInThePast.Mul(hoursInThePast, big.NewInt(60*60))
-	m.log.Info("Looking for a block at approximate time of hours back",
-		"secondsInThePast", fmt.Sprintf("%v", secondsInThePast),
-		"time", fmt.Sprintf("%v", time.Now().Format("2006-01-02 15:04:05 MST")),
-		"latestBlockNumber", fmt.Sprintf("%v", latestBlockNumber))
-	// Calculate the total seconds in two weeks
-	targetTime := big.NewInt(time.Now().Unix())
-	targetTime.Sub(targetTime, secondsInThePast)
+	secondsAgo := new(big.Int).Mul(hoursAgo, big.NewInt(3600))
+	targetTs := big.NewInt(time.Now().Unix()).Sub(big.NewInt(time.Now().Unix()), secondsAgo)
 
-	// Initialize the search range
+	m.log.Debug("Search parameters",
+		"secondsAgo", secondsAgo,
+		"targetTimestamp", time.Unix(targetTs.Int64(), 0).UTC().Format("2006-01-02 15:04:05 UTC"))
+
 	left := big.NewInt(0)
-	right := new(big.Int).Set(latestBlockNumber)
+	right := new(big.Int).Set(latest)
+	best := new(big.Int)
+	var bestHdr *types.Header
+	bestDiffAbs := new(big.Int).SetUint64(math.MaxUint64)
+	iterations := 0
 
-	var mid *big.Int
-	acceptablediff := big.NewInt(60 * 60) //60 minutes
-
-	m.log.Debug("Starting binary search",
-		"targetTime", time.Unix(targetTime.Int64(), 0).Format("2006-01-02 15:04:05 MST"),
-		"leftBound", left.String(),
-		"rightBound", right.String(),
-		"acceptableDiffSeconds", acceptablediff.String())
-
-	// Perform binary search
 	for left.Cmp(right) <= 0 {
-		//interrupt in case of context cancellation
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("context cancelled")
-		default:
-		}
-
-		// Calculate the midpoint
-		mid = new(big.Int).Add(left, right)
+		iterations++
+		mid := new(big.Int).Add(left, right)
 		mid.Div(mid, big.NewInt(2))
 
 		m.log.Debug("Binary search iteration",
-			"left", left.String(),
-			"right", right.String(),
-			"mid", mid.String())
+			"iteration", iterations,
+			"left", left,
+			"right", right,
+			"mid", mid)
 
-		// Get the block at mid
-		block, err := client.BlockByNumber(context.Background(), mid)
+		hdr, err := client.HeaderByNumber(ctx, mid)
 		if err != nil {
-			m.log.Error("Failed to get block", "blockNumber", mid.String(), "error", err)
+			m.log.Error("Failed to get block header", "block", mid, "error", err)
 			return nil, err
 		}
 
-		// Check the block's timestamp
-		blockTime := big.NewInt(int64(block.Time()))
-		blockTimeFormatted := time.Unix(blockTime.Int64(), 0).Format("2006-01-02 15:04:05 MST")
-
-		//calculate the difference between the block time and the target time
-		diff := new(big.Int).Sub(blockTime, targetTime)
-		diffHours := new(big.Int).Div(diff, big.NewInt(3600))
+		blockTs := big.NewInt(int64(hdr.Time))
+		diffAbs := new(big.Int).Abs(new(big.Int).Sub(blockTs, targetTs))
+		diffHours := new(big.Int).Div(diffAbs, big.NewInt(3600))
 
 		m.log.Debug("Block time comparison",
-			"blockNumber", mid.String(),
-			"blockTime", blockTimeFormatted,
-			"timeDiffHours", diffHours.String(),
-			"timeDiffSeconds", diff.String())
+			"block", fmt.Sprintf("%d", mid),
+			"blockTime", time.Unix(int64(hdr.Time), 0).UTC().Format("2006-01-02 15:04:05 UTC"),
+			"timeDiffHours", diffHours,
+			"timeDiffSeconds", diffAbs)
 
-		// If block time is less than or equal to target time, check if we need to search to the right
-		if blockTime.Cmp(targetTime) <= 0 {
-			left.Set(mid) // Move left boundary up to mid
-			m.log.Debug("Moving left boundary up", "newLeft", left.String())
-		} else {
-			right.Sub(mid, big.NewInt(1)) // Move right boundary down
-			m.log.Debug("Moving right boundary down", "newRight", right.String())
+		if diffAbs.Cmp(bestDiffAbs) < 0 {
+			best.Set(mid)
+			bestHdr = hdr
+			bestDiffAbs.Set(diffAbs)
+			m.log.Debug("New best block found",
+				"block", fmt.Sprintf("%d", mid),
+				"timeDiff", diffAbs)
+			if bestDiffAbs.Cmp(big.NewInt(acceptableDiffSec)) <= 0 {
+				m.log.Debug("Found block within acceptable time difference", "diffSeconds", bestDiffAbs)
+				break
+			}
 		}
-		if new(big.Int).Abs(diff).Cmp(acceptablediff) <= 0 {
-			//if the difference is less than or equal to 1 hour, we can consider this block as the block closest to the target time
-			m.log.Debug("Found acceptable block",
-				"blockNumber", mid.String(),
-				"blockTime", blockTimeFormatted,
-				"timeDiffHours", diffHours.String())
-			break
+
+		if blockTs.Cmp(targetTs) < 0 {
+			left.Set(mid)
+			m.log.Debug("Moving left boundary", "newLeft", left)
+		} else {
+			right.Sub(mid, big.NewInt(1))
+			m.log.Debug("Moving right boundary", "newRight", right)
 		}
 	}
 
-	// log the block number closest to the target time and the time
 	m.log.Info("Found block closest to target time",
-		"block", left.String(),
-		"time", time.Unix(targetTime.Int64(), 0).Format("2006-01-02 15:04:05 MST"),
-		"blockTime", time.Unix(targetTime.Int64(), 0).Format("2006-01-02 15:04:05 MST"))
-	// After exiting the loop, left should be the block number closest to the target time
-	return left, nil
+		"block", fmt.Sprintf("%d", best),
+		"blockTs", time.Unix(int64(bestHdr.Time), 0).UTC().Format("2006-01-02 15:04:05 UTC"),
+		"targetTs", time.Unix(targetTs.Int64(), 0).UTC().Format("2006-01-02 15:04:05 UTC"),
+		"timeDiffHours", new(big.Int).Div(bestDiffAbs, big.NewInt(3600)),
+		"timeDiffSeconds", bestDiffAbs,
+		"iterations", iterations)
+
+	maxAllowedDiffSeconds := big.NewInt(30 * 60) // 30 minutes
+	// Validate that the found block is within a few minutes of the target time
+	if bestDiffAbs.Cmp(maxAllowedDiffSeconds) > 0 {
+		m.log.Error("Found block is too far from target time",
+			"block", fmt.Sprintf("%d", best),
+			"blockTime", time.Unix(int64(bestHdr.Time), 0).UTC().Format("2006-01-02 15:04:05 UTC"),
+			"targetTime", time.Unix(targetTs.Int64(), 0).UTC().Format("2006-01-02 15:04:05 UTC"),
+			"timeDiffSeconds", bestDiffAbs,
+			"maxAllowedDiffSeconds", maxAllowedDiffSeconds)
+	}
+
+	return best, nil
 }
 
 // GetLatestBlock retrieves the latest block number from the L1 Geth client.
@@ -324,9 +342,9 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	// get new events
 	m.log.Info("Getting enriched withdrawal events",
-		"start", start,
-		"stop", stop,
-		"range", stop-start)
+		"l1BlockStart", fmt.Sprintf("%d", start),
+		"l1BlockStop", fmt.Sprintf("%d", stop),
+		"l1BlockRange", fmt.Sprintf("%d", stop-start))
 	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(start, &stop)
 
 	if err != nil {
@@ -334,14 +352,16 @@ func (m *Monitor) Run(ctx context.Context) {
 			m.log.Info("No new events to process", "start", start, "stop", stop)
 		} else if stop-start <= 1 {
 			m.log.Info("Failed to get enriched withdrawal events, range too small",
-				"error", err,
-				"start", start,
-				"stop", stop)
+				"l1BlockStart", fmt.Sprintf("%d", start),
+				"l1BlockStop", fmt.Sprintf("%d", stop),
+				"l1BlockRange", fmt.Sprintf("%d", stop-start),
+				"error", err)
 		} else {
 			m.log.Error("Failed to get enriched withdrawal events",
-				"error", err,
-				"start", start,
-				"stop", stop)
+				"l1BlockStart", fmt.Sprintf("%d", start),
+				"l1BlockStop", fmt.Sprintf("%d", stop),
+				"l1BlockRange", fmt.Sprintf("%d", stop-start),
+				"error", err)
 		}
 		return
 	}

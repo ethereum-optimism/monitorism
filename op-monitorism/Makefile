@@ -42,7 +42,15 @@ clean:
 .PHONY: test
 test:
 	@echo "Running tests..."
-	$(GOTEST) ./... -v
+	@if [ "$(filter-out $@,$(MAKECMDGOALS))" != "" ]; then \
+		$(GOTEST) -v -count=1 ./$(filter-out $@,$(MAKECMDGOALS))/...; \
+	else \
+		$(GOTEST) ./... -v; \
+	fi
+
+# This allows passing arguments to the test target
+%:
+	@:
 
 #include tests that require live resources
 #these resources are meant to be real and not mocked
@@ -64,7 +72,7 @@ help:
 	@echo "  make build"
 	@echo "  make run"
 	@echo "  make clean"
-	@echo "  make test"
+	@echo "  make test [module]    # Run all tests or tests for a specific module (e.g. make test faultproof_withdrawals)"
 	@echo "  make test-live"
 	@echo "  make tidy"
 	@echo "  make help"

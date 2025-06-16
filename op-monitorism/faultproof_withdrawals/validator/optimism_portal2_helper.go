@@ -97,7 +97,7 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsEventsIterartor(start uint6
 	filterOpts := &bind.FilterOpts{Context: op.ctx, Start: start, End: end}
 	iterator, err := op.optimismPortal2.FilterWithdrawalProven(filterOpts, nil, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to filter withdrawal proven start_block:%d end_block:%d error:%w", start, *end, err)
+		return nil, fmt.Errorf("failed to filter withdrawal proven l1_start_block:%d l1_end_block:%d error:%w", start, *end, err)
 	}
 
 	return iterator, nil
