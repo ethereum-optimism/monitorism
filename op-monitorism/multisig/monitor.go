@@ -281,10 +281,10 @@ func (m *Monitor) checkSafeAmount(ctx context.Context, safeAddress common.Addres
 		return
 	}
 
-	const HIGH_VALUE_THRESHOLD = 1000000 // $1M USD hardcoded TODO: make this configurable
+	const HIGH_VALUE_THRESHOLD = 100 // $1M USD hardcoded TODO: make this configurable
 	if balanceUSD < HIGH_VALUE_THRESHOLD {
 		// Log successful validation
-		m.log.Info("Safe Amount Risk Validation Passed ✅",
+		m.log.Info("Safe Criticity masches ✅",
 			"name", safeName,
 			"address", addrStr,
 			"balance_usd", balanceUSD,
@@ -304,10 +304,10 @@ func (m *Monitor) checkSafeAmount(ctx context.Context, safeAddress common.Addres
 		m.safeRiskMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
 
 		// Send alert - high value Safe doesn't have CRITICAL risk in Notion
-		m.sendAlert("RISK MISMATCH: Safe `" + safeName + "` at `" + addrStr + "` has high value `$" + strconv.Itoa(balanceUSD) + " USD` (`" + fmt.Sprintf("%.2f", balanceEth) + " ETH`) but Notion risk is `" + notionRisk + "` instead of `CRITICAL`")
+		m.sendAlert("🚨Safe Criticity mismatch Safe `" + safeName + "` at `" + addrStr + "` has high value `$" + strconv.Itoa(balanceUSD) + " USD` (`" + fmt.Sprintf("%.2f", balanceEth) + " ETH`) but Notion risk is `" + notionRisk + "` instead of `CRITICAL`")
 
 		// Log detailed information
-		m.log.Error("High-value Safe risk mismatch detected",
+		m.log.Warn("Safe Criticity mismatch ⚠️",
 			"name", safeName,
 			"address", addrStr,
 			"balance_usd", balanceUSD,
@@ -323,7 +323,7 @@ func (m *Monitor) checkSafeAmount(ctx context.Context, safeAddress common.Addres
 		m.safeRiskMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
 
 		// Log successful validation
-		m.log.Info("High-value Safe risk validation passed",
+		m.log.Info("Safe Criticity matches ✅",
 			"name", safeName,
 			"address", addrStr,
 			"balance_usd", balanceUSD,
