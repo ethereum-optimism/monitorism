@@ -171,3 +171,9 @@ Using the `--help` flag will show all available options:
 
 
 For additional support, check the logs with `--log.level=DEBUG` for detailed troubleshooting information.
+
+## TODO
+- [ ] Add an argument for the pricefeed with an array and passing more API easily.
+- [ ] Add more network that (Ethereum L1).
+- [ ] Compute the balance also on the token and not only the native token. 
+
