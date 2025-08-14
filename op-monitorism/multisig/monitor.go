@@ -2,21 +2,14 @@ package multisig
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"math/big"
-	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 
-	"github.com/ethereum-optimism/monitorism/op-monitorism/multisig/bindings"
+	gsbindings "github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -24,38 +17,30 @@ import (
 )
 
 const (
-	MetricsNamespace = "multisig_mon"
-	SafeNonceABI     = "nonce()"
-
-	OPTokenEnvName = "OP_SERVICE_ACCOUNT_TOKEN"
-
-	// Item names follow a `ready-<nonce>.json` format
-	PresignedNonceTitlePrefix = "ready-"
-	PresignedNonceTitleSuffix = ".json"
-)
-
-var (
-	SafeNonceSelector = crypto.Keccak256([]byte(SafeNonceABI))[:4]
+	MetricsNamespace = "multisig_registry"
 )
 
 type Monitor struct {
 	log log.Logger
 
 	l1Client *ethclient.Client
+	nickname string
 
-	optimismPortalAddress common.Address
-	optimismPortal        *bindings.OptimismPortalCaller
-	nickname              string
+	// Notion configuration
+	notionDatabaseID string
+	notionToken      string
+	notionProps      NotionProps
 
-	//onePassToken string
-	onePassVault *string
-	safeAddress  *common.Address
-
-	// metrics
-	safeNonce                 *prometheus.GaugeVec
-	latestPresignedPauseNonce *prometheus.GaugeVec
-	pausedState               *prometheus.GaugeVec
-	unexpectedRpcErrors       *prometheus.CounterVec
+	// Metrics
+	thresholdMismatch   *prometheus.GaugeVec
+	onchainThreshold    *prometheus.GaugeVec
+	notionThreshold     *prometheus.GaugeVec
+	signerCountMismatch *prometheus.GaugeVec
+	onchainSignerCount  *prometheus.GaugeVec
+	notionSignerCount   *prometheus.GaugeVec
+	safeAccessibleGauge *prometheus.GaugeVec
+	unexpectedErrors    *prometheus.CounterVec
+	totalSafesMonitored *prometheus.GaugeVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -64,143 +49,196 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to dial l1 rpc: %w", err)
 	}
 
-	optimismPortal, err := bindings.NewOptimismPortalCaller(cfg.OptimismPortalAddress, l1Client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
-	}
-
-	if cfg.OnePassVault != nil && len(os.Getenv(OPTokenEnvName)) == 0 {
-		return nil, fmt.Errorf("%s ENV name must be set for 1Pass integration", OPTokenEnvName)
-	}
-
-	if cfg.OnePassVault == nil {
-		log.Warn("one pass integration is not configured")
-	}
-	if cfg.SafeAddress == nil {
-		log.Warn("safe integration is not configured")
-	}
-
 	return &Monitor{
-		log:      log,
-		l1Client: l1Client,
+		log:              log,
+		l1Client:         l1Client,
+		nickname:         cfg.Nickname,
+		notionDatabaseID: cfg.NotionDatabaseID,
+		notionToken:      cfg.NotionToken,
+		notionProps:      DefaultNotionProps(),
 
-		optimismPortal:        optimismPortal,
-		optimismPortalAddress: cfg.OptimismPortalAddress,
-		nickname:              cfg.Nickname,
+		thresholdMismatch: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "threshold_mismatch",
+			Help:      "1 if Notion threshold differs from onchain, 0 if matches",
+		}, []string{"safe_address", "safe_name", "nickname"}),
 
-		safeAddress:  cfg.SafeAddress,
-		onePassVault: cfg.OnePassVault,
+		onchainThreshold: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "onchain_threshold",
+			Help:      "Current onchain Safe threshold",
+		}, []string{"safe_address", "safe_name", "nickname"}),
 
-		safeNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+		notionThreshold: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "safeNonce",
-			Help:      "Safe Nonce",
-		}, []string{"address", "nickname"}),
-		latestPresignedPauseNonce: m.NewGaugeVec(prometheus.GaugeOpts{
+			Name:      "notion_threshold",
+			Help:      "Threshold recorded in Notion database",
+		}, []string{"safe_address", "safe_name", "nickname"}),
+
+		signerCountMismatch: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "latestPresignedPauseNonce",
-			Help:      "Latest pre-signed pause nonce",
-		}, []string{"address", "nickname"}),
-		pausedState: m.NewGaugeVec(prometheus.GaugeOpts{
+			Name:      "signer_count_mismatch",
+			Help:      "1 if Notion signer count differs from onchain, 0 if matches",
+		}, []string{"safe_address", "safe_name", "nickname"}),
+
+		onchainSignerCount: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "pausedState",
-			Help:      "OptimismPortal paused state",
-		}, []string{"address", "nickname"}),
-		unexpectedRpcErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Name:      "onchain_signer_count",
+			Help:      "Current onchain Safe owner count",
+		}, []string{"safe_address", "safe_name", "nickname"}),
+
+		notionSignerCount: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
-			Name:      "unexpectedRpcErrors",
-			Help:      "number of unexpected rpc errors",
-		}, []string{"section", "name"}),
+			Name:      "notion_signer_count",
+			Help:      "Signer count recorded in Notion database",
+		}, []string{"safe_address", "safe_name", "nickname"}),
+
+		safeAccessibleGauge: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "safe_accessible",
+			Help:      "1 if Safe contract is accessible, 0 if not",
+		}, []string{"safe_address", "safe_name", "nickname"}),
+
+		unexpectedErrors: m.NewCounterVec(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "unexpected_errors",
+			Help:      "Number of unexpected errors during monitoring",
+		}, []string{"error_type", "safe_address"}),
+
+		totalSafesMonitored: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "total_safes_monitored",
+			Help:      "Total number of Safes being monitored from Notion",
+		}, []string{"nickname"}),
 	}, nil
 }
 
 func (m *Monitor) Run(ctx context.Context) {
-	m.checkOptimismPortal(ctx)
-	m.checkSafeNonce(ctx)
-	m.checkPresignedNonce(ctx)
-}
+	m.log.Info("Starting Notion-based Safe monitoring cycle")
 
-func (m *Monitor) checkOptimismPortal(ctx context.Context) {
-	paused, err := m.optimismPortal.Paused(&bind.CallOpts{Context: ctx})
+	// Step 1: Call QueryNotionSafes function from query.go
+	safeRows, err := QueryNotionSafes(ctx, m.notionToken, m.notionDatabaseID, m.notionProps)
 	if err != nil {
-		m.log.Error("failed to query OptimismPortal paused status", "err", err)
-		m.unexpectedRpcErrors.WithLabelValues("optimismportal", "paused").Inc()
+		m.log.Error("Failed to query Notion database", "err", err)
+		m.unexpectedErrors.WithLabelValues("notion_query", "").Inc()
 		return
 	}
 
-	pausedMetric := 0
-	if paused {
-		pausedMetric = 1
+	m.log.Info("Retrieved Safe records from Notion", "count", len(safeRows))
+	m.totalSafesMonitored.WithLabelValues(m.nickname).Set(float64(len(safeRows)))
+
+	// Step 2: Iterate over each Safe and check that values are correct
+	for _, safeRow := range safeRows {
+		m.monitorSafe(ctx, safeRow)
 	}
 
-	m.pausedState.WithLabelValues(m.optimismPortalAddress.String(), m.nickname).Set(float64(pausedMetric))
-	m.log.Info("OptimismPortal status", "address", m.optimismPortalAddress.String(), "paused", paused)
+	m.log.Info("Completed monitoring cycle", "safes_checked", len(safeRows))
 }
 
-func (m *Monitor) checkSafeNonce(ctx context.Context) {
-	if m.safeAddress == nil {
-		m.log.Warn("safe address is not configured, skipping...")
+func (m *Monitor) monitorSafe(ctx context.Context, safeRow NotionSafeRow) {
+	addr := strings.TrimSpace(safeRow.Address)
+	safeName := safeRow.Name
+	if safeName == "" {
+		safeName = "unnamed"
+		m.log.Info("The safe name is empty for the safe address:", "address", addr)
+	}
+
+	// Validate address format
+	if !common.IsHexAddress(addr) {
+		m.log.Error("Invalid Safe address in Notion", "address", addr, "name", safeName)
+		m.unexpectedErrors.WithLabelValues("invalid_address", addr).Inc()
 		return
 	}
 
-	nonceBytes := hexutil.Bytes{}
-	nonceTx := map[string]interface{}{"to": *m.safeAddress, "data": hexutil.Encode(SafeNonceSelector)}
-	if err := m.l1Client.Client().CallContext(ctx, &nonceBytes, "eth_call", nonceTx, "latest"); err != nil {
-		m.log.Error("failed to query safe nonce", "err", err)
-		m.unexpectedRpcErrors.WithLabelValues("safe", "nonce()").Inc()
-		return
-	}
+	safeAddress := common.HexToAddress(addr)
+	addrStr := safeAddress.Hex()
 
-	nonce := new(big.Int).SetBytes(nonceBytes).Uint64()
-	m.safeNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(nonce))
-	m.log.Info("Safe Nonce", "address", m.safeAddress.String(), "nonce", nonce)
-}
-
-func (m *Monitor) checkPresignedNonce(ctx context.Context) {
-	if m.onePassVault == nil {
-		m.log.Warn("one pass integration is not configured, skipping...")
-		return
-	}
-
-	cmd := exec.CommandContext(ctx, "op", "item", "list", "--format=json", fmt.Sprintf("--vault=%s", *m.onePassVault))
-
-	output, err := cmd.Output()
+	// Create Safe contract binding
+	safeCaller, err := gsbindings.NewGnosisSafeCaller(safeAddress, m.l1Client)
 	if err != nil {
-		m.log.Error("failed to run op cli")
-		m.unexpectedRpcErrors.WithLabelValues("1pass", "exec").Inc()
+		m.log.Error("Failed to create Safe contract binding", "address", addrStr, "name", safeName, "err", err)
+		m.unexpectedErrors.WithLabelValues("binding_error", addrStr).Inc()
+		m.safeAccessibleGauge.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
 		return
 	}
 
-	vaultItems := []struct{ Title string }{}
-	if err := json.Unmarshal(output, &vaultItems); err != nil {
-		m.log.Error("failed to unmarshal op cli stdout", "err", err)
-		m.unexpectedRpcErrors.WithLabelValues("1pass", "stdout").Inc()
+	// Check threshold
+	m.checkThreshold(ctx, safeCaller, safeRow, addrStr, safeName)
+
+	// Check signer count
+	m.checkSignerCount(ctx, safeCaller, safeRow, addrStr, safeName)
+	// TODO: Check the amount of held tokens + native tokens of the multisig
+	//m.checkTokenBalance(ctx, safeCaller, safeRow, addrStr, safeName)
+
+	m.safeAccessibleGauge.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
+}
+
+func (m *Monitor) checkThreshold(ctx context.Context, safeCaller *gsbindings.GnosisSafeCaller, safeRow NotionSafeRow, addrStr, safeName string) {
+	onchainThreshold, err := safeCaller.GetThreshold(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		m.log.Error("Failed to get Safe threshold", "address", addrStr, "name", safeName, "err", err)
+		m.unexpectedErrors.WithLabelValues("threshold_query", addrStr).Inc()
 		return
 	}
 
-	latestPresignedNonce := int64(-1)
-	for _, item := range vaultItems {
-		if strings.HasPrefix(item.Title, PresignedNonceTitlePrefix) && strings.HasSuffix(item.Title, PresignedNonceTitleSuffix) {
-			nonceStr := item.Title[len(PresignedNonceTitlePrefix) : len(item.Title)-len(PresignedNonceTitleSuffix)]
-			nonce, err := strconv.ParseInt(nonceStr, 10, 64)
-			if err != nil {
-				m.log.Error("failed to parse nonce from item title", "title", item.Title)
-				m.unexpectedRpcErrors.WithLabelValues("1pass", "title").Inc()
-				return
-			}
-			if nonce > latestPresignedNonce {
-				latestPresignedNonce = nonce
-			}
+	onchainThr := onchainThreshold.Uint64()
+	notionThr := uint64(safeRow.Threshold)
+
+	// Update metrics
+	m.onchainThreshold.WithLabelValues(addrStr, safeName, m.nickname).Set(float64(onchainThr))
+	m.notionThreshold.WithLabelValues(addrStr, safeName, m.nickname).Set(float64(notionThr))
+
+	if onchainThr != notionThr {
+		m.thresholdMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
+		m.log.Error("Threshold mismatch detected",
+			"name", safeName,
+			"address", addrStr,
+			"onchain_threshold", onchainThr,
+			"notion_threshold", notionThr,
+			"networks", safeRow.Networks,
+			"risk", safeRow.Risk,
+			"multisig_lead", safeRow.MultisigLead)
+	} else {
+		m.thresholdMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
+		m.log.Info("Threshold matches",
+			"name", safeName,
+			"address", addrStr,
+			"threshold", onchainThr)
+	}
+}
+
+func (m *Monitor) checkSignerCount(ctx context.Context, safeCaller *gsbindings.GnosisSafeCaller, safeRow NotionSafeRow, addrStr, safeName string) {
+	owners, err := safeCaller.GetOwners(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		m.log.Error("Failed to get Safe owners", "address", addrStr, "name", safeName, "err", err)
+		m.unexpectedErrors.WithLabelValues("owners_query", addrStr).Inc()
+		return
+	}
+
+	onchainSignerCount := uint64(len(owners))
+	notionSignerCount := uint64(safeRow.SignerCount)
+
+	// Update metrics
+	m.onchainSignerCount.WithLabelValues(addrStr, safeName, m.nickname).Set(float64(onchainSignerCount))
+	m.notionSignerCount.WithLabelValues(addrStr, safeName, m.nickname).Set(float64(notionSignerCount))
+
+	if notionSignerCount > 0 && onchainSignerCount != notionSignerCount {
+		m.signerCountMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
+		m.log.Warn("Signer count mismatch detected",
+			"name", safeName,
+			"address", addrStr,
+			"onchain_signers", onchainSignerCount,
+			"notion_signers", notionSignerCount,
+			"multisig_lead", safeRow.MultisigLead)
+	} else {
+		m.signerCountMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
+		if notionSignerCount > 0 {
+			m.log.Info("Signer count matches",
+				"name", safeName,
+				"address", addrStr,
+				"signer_count", onchainSignerCount)
 		}
 	}
-
-	m.latestPresignedPauseNonce.WithLabelValues(m.safeAddress.String(), m.nickname).Set(float64(latestPresignedNonce))
-	if latestPresignedNonce == -1 {
-		m.log.Error("no presigned nonce found")
-		return
-	}
-
-	m.log.Info("Latest Presigned Nonce", "nonce", latestPresignedNonce)
 }
 
 func (m *Monitor) Close(_ context.Context) error {
