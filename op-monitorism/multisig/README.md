@@ -70,10 +70,18 @@ The service expects a Notion database with the following properties:
 The service automatically sends alerts for various conditions:
 
 **Threshold Mismatch:**
+<img width="1081" height="330" alt="9e1522fd9f2b24d8e9be96f43531b4e00ca0cb17b00a1647834695205988b29d" src="https://github.com/user-attachments/assets/c7759302-10a2-4f20-8ffb-4297db4e1fea" />
 
-**High-Value Risk Validation:**
 
-**Balance Alerts:**
+**Signer Mismatch:**
+<img width="924" height="281" alt="61600282cec0e8bc627e4919b8af31fe185b1fa4b8413d3605d09731fa54839d" src="https://github.com/user-attachments/assets/8dd5f9a1-5c84-4505-99e2-6701c07c9ba1" />
+
+
+
+**Safe Balance Criticity Alerts:**
+<img width="1086" height="334" alt="e2e8a6d8640404b48baa6a268dc1c52291eba1867d1c42487f510618e78e7de5" src="https://github.com/user-attachments/assets/4c813df2-23b9-45bf-9230-67345ff97b20" />
+
+
 
 ### 5. Metrics Server
 
