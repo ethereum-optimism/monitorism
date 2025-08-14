@@ -18,6 +18,9 @@ const (
 
 	// Webhook flags
 	WebhookURLFlagName = "webhook.url"
+
+	// Risk threshold flags
+	HighValueThresholdFlagName = "high.value.threshold.usd"
 )
 
 type CLIConfig struct {
@@ -30,15 +33,19 @@ type CLIConfig struct {
 
 	// Webhook configuration (optional)
 	WebhookURL string
+
+	// Risk threshold configuration
+	HighValueThresholdUSD int
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 	cfg := CLIConfig{
-		L1NodeURL:        ctx.String(L1NodeURLFlagName),
-		Nickname:         ctx.String(NicknameFlagName),
-		NotionDatabaseID: ctx.String(NotionDatabaseIDFlagName),
-		NotionToken:      ctx.String(NotionTokenFlagName),
-		WebhookURL:       ctx.String(WebhookURLFlagName),
+		L1NodeURL:             ctx.String(L1NodeURLFlagName),
+		Nickname:              ctx.String(NicknameFlagName),
+		NotionDatabaseID:      ctx.String(NotionDatabaseIDFlagName),
+		NotionToken:           ctx.String(NotionTokenFlagName),
+		WebhookURL:            ctx.String(WebhookURLFlagName),
+		HighValueThresholdUSD: ctx.Int(HighValueThresholdFlagName),
 	}
 
 	// Notion validation
@@ -77,11 +84,16 @@ func CLIFlags(envVar string) []cli.Flag {
 			Usage:    "Notion integration token (API key)",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "NOTION_TOKEN"),
 			Required: true,
-		},
-		&cli.StringFlag{
+		}, &cli.StringFlag{
 			Name:    WebhookURLFlagName,
 			Usage:   "Webhook URL for sending alerts (optional)",
 			EnvVars: opservice.PrefixEnvVar(envVar, "WEBHOOK_URL"),
+		},
+		&cli.IntFlag{
+			Name:    HighValueThresholdFlagName,
+			Usage:   "USD threshold for high-value Safe validation (e.g., 1000000 for $1M)",
+			Value:   1000000, // Default to $1M
+			EnvVars: opservice.PrefixEnvVar(envVar, "HIGH_VALUE_THRESHOLD_USD"),
 		},
 	}
 }

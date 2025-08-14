@@ -35,6 +35,9 @@ type Monitor struct {
 	// Webhook configuration
 	webhookURL string
 
+	// Risk threshold configuration
+	highValueThresholdUSD int
+
 	// Metrics
 	thresholdMismatch   *prometheus.GaugeVec
 	onchainThreshold    *prometheus.GaugeVec
@@ -55,13 +58,14 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 
 	return &Monitor{
-		log:              log,
-		l1Client:         l1Client,
-		nickname:         cfg.Nickname,
-		notionDatabaseID: cfg.NotionDatabaseID,
-		notionToken:      cfg.NotionToken,
-		notionProps:      DefaultNotionProps(),
-		webhookURL:       cfg.WebhookURL,
+		log:                   log,
+		l1Client:              l1Client,
+		nickname:              cfg.Nickname,
+		notionDatabaseID:      cfg.NotionDatabaseID,
+		notionToken:           cfg.NotionToken,
+		notionProps:           DefaultNotionProps(),
+		webhookURL:            cfg.WebhookURL,
+		highValueThresholdUSD: cfg.HighValueThresholdUSD,
 		thresholdMismatch: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "threshold_mismatch",
@@ -280,9 +284,7 @@ func (m *Monitor) checkSafeAmount(ctx context.Context, safeAddress common.Addres
 		m.unexpectedErrors.WithLabelValues("balance_query", addrStr).Inc()
 		return
 	}
-
-	const HIGH_VALUE_THRESHOLD = 100 // $1M USD hardcoded TODO: make this configurable
-	if balanceUSD < HIGH_VALUE_THRESHOLD {
+	if balanceUSD < m.highValueThresholdUSD {
 		// Log successful validation
 		m.log.Info("Safe Criticity masches ✅",
 			"name", safeName,
@@ -314,7 +316,7 @@ func (m *Monitor) checkSafeAmount(ctx context.Context, safeAddress common.Addres
 			"balance_eth", balanceEth,
 			"notion_risk", notionRisk,
 			"expected_risk", "CRITICAL",
-			"threshold_usd", HIGH_VALUE_THRESHOLD)
+			"threshold_usd", m.highValueThresholdUSD)
 
 		// Increment error metric
 		m.unexpectedErrors.WithLabelValues("risk_mismatch", addrStr).Inc()
