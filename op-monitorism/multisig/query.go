@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const notionAPIVersion = "2022-06-28"
@@ -114,7 +116,6 @@ func QueryNotionSafes(ctx context.Context, token, databaseID string, props Notio
 
 			for _, page := range parsed.Results {
 				rec, ok := extractRow(page, props)
-				fmt.Println(rec)
 				if ok {
 					out = append(out, rec)
 				}
@@ -165,9 +166,7 @@ type notionUser struct {
 
 func extractRow(pg notionPage, props NotionProps) (NotionSafeRow, bool) {
 	getProp := func(key string) (notionProperty, bool) {
-		fmt.Println("key", key)
 		raw, ok := pg.Properties[key]
-		fmt.Println("raw", raw)
 		if !ok {
 			return notionProperty{}, false
 		}
@@ -187,8 +186,6 @@ func extractRow(pg notionPage, props NotionProps) (NotionSafeRow, bool) {
 	if errSignerCounts {
 		fmt.Println("pSigners", *pSigners.Number)
 	}
-
-	fmt.Println("pSigners", *pSigners.Number)
 	pThr, _ := getProp(props.Threshold)
 	//pHasMonitoring, _ := getProp(props.HasMonitoring)
 	//pHasBackupChat, _ := getProp(props.HasBackupChat)
@@ -312,4 +309,58 @@ func extractInt(p notionProperty) int {
 		}
 	}
 	return -1
+}
+
+// IsWebhookEnabled checks if a webhook URL is valid and properly configured
+func IsWebhookEnabled(webhookURL string) bool {
+	if webhookURL == "" {
+		return false
+	}
+
+	// Validate URL format
+	parsedURL, err := url.Parse(webhookURL)
+	if err != nil {
+		return false
+	}
+
+	// Check if URL has proper scheme and host
+	if parsedURL.Scheme == "" {
+		return false
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return false
+	}
+	if parsedURL.Host == "" {
+		return false
+	}
+
+	return true
+}
+
+// SendWebhookAlert sends a simple string message to a webhook URL
+func SendWebhookAlert(webhookURL, message string) error {
+	// Create simple JSON payload
+	payload := map[string]interface{}{
+		"content":   message,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	// Send HTTP POST request
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to send webhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check if request was successful
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
+	}
+
+	return nil
 }

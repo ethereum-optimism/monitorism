@@ -15,6 +15,9 @@ const (
 	// Notion flags
 	NotionDatabaseIDFlagName = "notion.database.id"
 	NotionTokenFlagName      = "notion.token"
+
+	// Webhook flags
+	WebhookURLFlagName = "webhook.url"
 )
 
 type CLIConfig struct {
@@ -24,6 +27,9 @@ type CLIConfig struct {
 	// Notion configuration (required)
 	NotionDatabaseID string
 	NotionToken      string
+
+	// Webhook configuration (optional)
+	WebhookURL string
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -32,6 +38,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		Nickname:         ctx.String(NicknameFlagName),
 		NotionDatabaseID: ctx.String(NotionDatabaseIDFlagName),
 		NotionToken:      ctx.String(NotionTokenFlagName),
+		WebhookURL:       ctx.String(WebhookURLFlagName),
 	}
 
 	// Notion validation
@@ -70,6 +77,11 @@ func CLIFlags(envVar string) []cli.Flag {
 			Usage:    "Notion integration token (API key)",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "NOTION_TOKEN"),
 			Required: true,
+		},
+		&cli.StringFlag{
+			Name:    WebhookURLFlagName,
+			Usage:   "Webhook URL for sending alerts (optional)",
+			EnvVars: opservice.PrefixEnvVar(envVar, "WEBHOOK_URL"),
 		},
 	}
 }

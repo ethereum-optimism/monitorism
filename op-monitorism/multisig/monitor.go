@@ -3,6 +3,7 @@ package multisig
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	gsbindings "github.com/ethereum-optimism/monitorism/op-monitorism/liveness_expiration/bindings"
@@ -31,6 +32,9 @@ type Monitor struct {
 	notionToken      string
 	notionProps      NotionProps
 
+	// Webhook configuration
+	webhookURL string
+
 	// Metrics
 	thresholdMismatch   *prometheus.GaugeVec
 	onchainThreshold    *prometheus.GaugeVec
@@ -56,7 +60,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		notionDatabaseID: cfg.NotionDatabaseID,
 		notionToken:      cfg.NotionToken,
 		notionProps:      DefaultNotionProps(),
-
+		webhookURL:       cfg.WebhookURL,
 		thresholdMismatch: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
 			Name:      "threshold_mismatch",
@@ -135,6 +139,21 @@ func (m *Monitor) Run(ctx context.Context) {
 	m.log.Info("Completed monitoring cycle", "safes_checked", len(safeRows))
 }
 
+// sendAlert sends an alert via webhook if webhook is configured
+func (m *Monitor) sendAlert(message string) {
+	if !IsWebhookEnabled(m.webhookURL) {
+		m.log.Info("Webhook not configured, skipping alert", "message", message)
+		return
+	}
+
+	if err := SendWebhookAlert(m.webhookURL, message); err != nil {
+		m.log.Error("Failed to send webhook alert", "error", err, "message", message)
+		m.unexpectedErrors.WithLabelValues("webhook", "").Inc()
+	} else {
+		m.log.Info("Webhook alert sent successfully", "message", message)
+	}
+}
+
 func (m *Monitor) monitorSafe(ctx context.Context, safeRow NotionSafeRow) {
 	addr := strings.TrimSpace(safeRow.Address)
 	safeName := safeRow.Name
@@ -167,6 +186,7 @@ func (m *Monitor) monitorSafe(ctx context.Context, safeRow NotionSafeRow) {
 
 	// Check signer count
 	m.checkSignerCount(ctx, safeCaller, safeRow, addrStr, safeName)
+
 	// TODO: Check the amount of held tokens + native tokens of the multisig
 	//m.checkTokenBalance(ctx, safeCaller, safeRow, addrStr, safeName)
 
@@ -190,7 +210,7 @@ func (m *Monitor) checkThreshold(ctx context.Context, safeCaller *gsbindings.Gno
 
 	if onchainThr != notionThr {
 		m.thresholdMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
-		m.log.Error("Threshold mismatch detected",
+		m.log.Warn("Threshold mismatch detected ⚠️",
 			"name", safeName,
 			"address", addrStr,
 			"onchain_threshold", onchainThr,
@@ -198,9 +218,10 @@ func (m *Monitor) checkThreshold(ctx context.Context, safeCaller *gsbindings.Gno
 			"networks", safeRow.Networks,
 			"risk", safeRow.Risk,
 			"multisig_lead", safeRow.MultisigLead)
+		m.sendAlert("🚨Threshold mismatch detected with the multisig: `" + safeName + "` with address: `" + addrStr + "` onchain_threshold: `" + strconv.FormatUint(onchainThr, 10) + "` notion_threshold: `" + strconv.FormatUint(notionThr, 10) + "`")
 	} else {
 		m.thresholdMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
-		m.log.Info("Threshold matches",
+		m.log.Info("Threshold matches ✅",
 			"name", safeName,
 			"address", addrStr,
 			"threshold", onchainThr)
@@ -211,6 +232,7 @@ func (m *Monitor) checkSignerCount(ctx context.Context, safeCaller *gsbindings.G
 	owners, err := safeCaller.GetOwners(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		m.log.Error("Failed to get Safe owners", "address", addrStr, "name", safeName, "err", err)
+
 		m.unexpectedErrors.WithLabelValues("owners_query", addrStr).Inc()
 		return
 	}
@@ -224,16 +246,17 @@ func (m *Monitor) checkSignerCount(ctx context.Context, safeCaller *gsbindings.G
 
 	if notionSignerCount > 0 && onchainSignerCount != notionSignerCount {
 		m.signerCountMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
-		m.log.Warn("Signer count mismatch detected",
+		m.log.Warn("Signer count mismatch detected ⚠️",
 			"name", safeName,
 			"address", addrStr,
 			"onchain_signers", onchainSignerCount,
 			"notion_signers", notionSignerCount,
 			"multisig_lead", safeRow.MultisigLead)
+		m.sendAlert("🚨Signer count mismatch detected with the multisig: `" + safeName + "` with address: `" + addrStr + "` onchain_signers: `" + strconv.FormatUint(onchainSignerCount, 10) + "` notion_signers: `" + strconv.FormatUint(notionSignerCount, 10) + "`")
 	} else {
 		m.signerCountMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
 		if notionSignerCount > 0 {
-			m.log.Info("Signer count matches",
+			m.log.Info("Signer count matches ✅",
 				"name", safeName,
 				"address", addrStr,
 				"signer_count", onchainSignerCount)
