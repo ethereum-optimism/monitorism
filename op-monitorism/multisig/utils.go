@@ -24,11 +24,11 @@ type NotionProps struct {
 	// Column/property names in your Notion database
 	Name           string // e.g. "Name"
 	Address        string // e.g. "address (evm)"
-	MultisigLead   string // e.g. "multisig lead"
-	Risk           string // e.g. "risk"
+	MultisigLead   string // e.g. "Multisig Lead"
+	Risk           string // e.g. "Risk Band"
 	Networks       string // e.g. "Networks"
-	SignerCount    string // e.g. "Signer count"
-	Threshold      string // e.g. "threshold"
+	SignerCount    string // e.g. "Signer Count"
+	Threshold      string // e.g. "Threshold"
 	Signers        string // e.g. "Signers"
 	HasMonitoring  string // e.g. "Has Monitoring"
 	HasBackupChat  string // e.g. "Has Backup Chat"
@@ -71,10 +71,6 @@ type NotionSafeRow struct {
 func QueryNotionSafes(ctx context.Context, token, databaseID string, props NotionProps) ([]NotionSafeRow, error) {
 	var out []NotionSafeRow
 	client := http.DefaultClient
-	// curl -s -X POST "https://api.notion.com/v1/databases/24ffb7d8d2cc80e8885ee1bb3bc1f53b/query" \
-	//  -H "Authorization: Bearer $NOTION_TOKEN" \
-	// -H "Notion-Version: 2022-06-28" \
-	// -H "Content-Type: application/json" | jq
 
 	endpoint := fmt.Sprintf("https://api.notion.com/v1/databases/%s/query", databaseID)
 
@@ -186,10 +182,7 @@ func extractRow(pg notionPage, props NotionProps) (NotionSafeRow, bool) {
 	pLead, _ := getProp(props.MultisigLead)
 	pRisk, _ := getProp(props.Risk)
 	pNets, _ := getProp(props.Networks)
-	pSigners, errSignerCounts := getProp(props.SignerCount)
-	if errSignerCounts {
-		fmt.Println("pSigners", *pSigners.Number)
-	}
+	pSigners, _ := getProp(props.SignerCount)
 	pThr, _ := getProp(props.Threshold)
 	//pHasMonitoring, _ := getProp(props.HasMonitoring)
 	//pHasBackupChat, _ := getProp(props.HasBackupChat)
@@ -369,46 +362,66 @@ func SendWebhookAlert(webhookURL, message string) error {
 	return nil
 }
 
+// getETHPriceUSD fetches ETH price from multiple sources with fallback
+func getETHPriceUSD(ctx context.Context, urls []string) (float64, error) {
+	// Default URLs if none provided
+	if len(urls) == 0 {
+		urls = []string{
+			"https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+			"https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT",
+		}
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// Try each URL until one works
+	for _, url := range urls {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			continue
+		}
+
+		var price float64
+
+		// Parse based on URL type
+		if strings.Contains(url, "binance") {
+			var data struct {
+				Price string `json:"price"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&data) == nil {
+				if p, err := strconv.ParseFloat(data.Price, 64); err == nil {
+					price = p
+				}
+			}
+		} else {
+			var data struct {
+				Ethereum struct {
+					USD float64 `json:"usd"`
+				} `json:"ethereum"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&data) == nil {
+				price = data.Ethereum.USD
+			}
+		}
+
+		if price > 0 {
+			return price, nil
+		}
+	}
+
+	return 0, fmt.Errorf("all price sources failed")
+}
+
 // weiToEth converts wei (big.Int) to ETH (float64)
 func weiToEth(wei *big.Int) float64 {
-	// Convert wei to ETH by dividing by 1e18
 	eth := new(big.Float).SetInt(wei)
 	ethFloat, _ := new(big.Float).Quo(eth, big.NewFloat(1e18)).Float64()
 	return ethFloat
-}
-
-// getETHPriceUSD fetches the current ETH price from CoinGecko API
-func getETHPriceUSD(ctx context.Context) (float64, error) {
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", nil)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create price request: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("failed to fetch ETH price: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("price API returned status %d", resp.StatusCode)
-	}
-
-	var priceData struct {
-		Ethereum struct {
-			USD float64 `json:"usd"`
-		} `json:"ethereum"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&priceData); err != nil {
-		return 0, fmt.Errorf("failed to decode price response: %w", err)
-	}
-
-	return priceData.Ethereum.USD, nil
 }
 
 // GetSafeBalanceInUSD is a utility function to get Safe balance in USD from anywhere
@@ -423,7 +436,7 @@ func GetSafeBalanceInUSD(ctx context.Context, client *ethclient.Client, safeAddr
 	balanceEth := weiToEth(balance)
 
 	// Get current ETH price in USD
-	ethPriceUSD, err := getETHPriceUSD(ctx)
+	ethPriceUSD, err := getETHPriceUSD(ctx, []string{}) // by default, we use the native api present in the function getETHPriceUSD.
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get ETH price: %w", err)
 	}

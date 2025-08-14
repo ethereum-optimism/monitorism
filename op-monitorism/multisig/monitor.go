@@ -45,6 +45,7 @@ type Monitor struct {
 	safeAccessibleGauge *prometheus.GaugeVec
 	unexpectedErrors    *prometheus.CounterVec
 	totalSafesMonitored *prometheus.GaugeVec
+	safeRiskMismatch    *prometheus.GaugeVec
 }
 
 func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIConfig) (*Monitor, error) {
@@ -114,6 +115,11 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			Name:      "total_safes_monitored",
 			Help:      "Total number of Safes being monitored from Notion",
 		}, []string{"nickname"}),
+		safeRiskMismatch: m.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "safe_risk_mismatch",
+			Help:      "1 if Safe has risk mismatch (high value but not marked CRITICAL in Notion), 0 if correct",
+		}, []string{"safe_address", "safe_name", "nickname"}),
 	}, nil
 }
 
@@ -187,8 +193,9 @@ func (m *Monitor) monitorSafe(ctx context.Context, safeRow NotionSafeRow) {
 	// Check signer count
 	m.checkSignerCount(ctx, safeCaller, safeRow, addrStr, safeName)
 
-	// TODO: Check the amount of held tokens + native tokens of the multisig
-	//m.checkTokenBalance(ctx, safeCaller, safeRow, addrStr, safeName)
+	// Check native token balance and USD value with risk validation
+	fmt.Println("risk", safeRow.Risk)
+	m.checkSafeAmount(ctx, common.HexToAddress(addrStr), addrStr, safeName, safeRow.Risk)
 
 	m.safeAccessibleGauge.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
 }
@@ -261,6 +268,66 @@ func (m *Monitor) checkSignerCount(ctx context.Context, safeCaller *gsbindings.G
 				"address", addrStr,
 				"signer_count", onchainSignerCount)
 		}
+	}
+}
+
+// checkSafeAmount checks the native token balance of the Safe and validates risk level
+func (m *Monitor) checkSafeAmount(ctx context.Context, safeAddress common.Address, addrStr, safeName, notionRisk string) {
+	// Get native token balance
+	balanceEth, balanceUSD, err := GetSafeBalanceInUSD(ctx, m.l1Client, safeAddress)
+	if err != nil {
+		m.log.Error("Failed to get Safe balance", "address", addrStr, "name", safeName, "err", err)
+		m.unexpectedErrors.WithLabelValues("balance_query", addrStr).Inc()
+		return
+	}
+
+	const HIGH_VALUE_THRESHOLD = 1000000 // $1M USD hardcoded TODO: make this configurable
+	if balanceUSD < HIGH_VALUE_THRESHOLD {
+		// Log successful validation
+		m.log.Info("Safe Amount Risk Validation Passed ✅",
+			"name", safeName,
+			"address", addrStr,
+			"balance_usd", balanceUSD,
+			"notion_risk", notionRisk)
+		// Set metric to 0 for safes below threshold
+		m.safeRiskMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
+		return
+	}
+
+	// Normalize the risk value for comparison (case-insensitive)
+	notionRiskUpper := strings.ToUpper(strings.TrimSpace(notionRisk))
+
+	//fmt.Println("balanceEth", balanceEth)
+	// Check if Notion risk is set to CRITICAL if not we need to send an alert since the safe has too much value.
+	if notionRiskUpper != "CRITICAL" {
+		// Set metric to 1 for mismatch
+		m.safeRiskMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(1)
+
+		// Send alert - high value Safe doesn't have CRITICAL risk in Notion
+		m.sendAlert("RISK MISMATCH: Safe `" + safeName + "` at `" + addrStr + "` has high value `$" + strconv.Itoa(balanceUSD) + " USD` (`" + fmt.Sprintf("%.2f", balanceEth) + " ETH`) but Notion risk is `" + notionRisk + "` instead of `CRITICAL`")
+
+		// Log detailed information
+		m.log.Error("High-value Safe risk mismatch detected",
+			"name", safeName,
+			"address", addrStr,
+			"balance_usd", balanceUSD,
+			"balance_eth", balanceEth,
+			"notion_risk", notionRisk,
+			"expected_risk", "CRITICAL",
+			"threshold_usd", HIGH_VALUE_THRESHOLD)
+
+		// Increment error metric
+		m.unexpectedErrors.WithLabelValues("risk_mismatch", addrStr).Inc()
+	} else {
+		// Set metric to 0 for correct risk assignment
+		m.safeRiskMismatch.WithLabelValues(addrStr, safeName, m.nickname).Set(0)
+
+		// Log successful validation
+		m.log.Info("High-value Safe risk validation passed",
+			"name", safeName,
+			"address", addrStr,
+			"balance_usd", balanceUSD,
+			"notion_risk", notionRisk)
 	}
 }
 
