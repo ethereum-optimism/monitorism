@@ -38,8 +38,8 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 		Commands: []*cli.Command{
 			{
 				Name:        "multisig",
-				Usage:       "Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password",
-				Description: "Monitors OptimismPortal pause status, Safe nonce, and Pre-Signed nonce stored in 1Password",
+				Usage:       "Monitors multisig essential values (Threshold, Signer counts number, Signer lists, Balance) from a notion database.",
+				Description: "Monitors multisig essential values (Threshold, Signer counts number, Signer lists, Balance) from a notion database.",
 				Flags:       append(multisig.CLIFlags("MULTISIG_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(MultisigMain),
 			},
