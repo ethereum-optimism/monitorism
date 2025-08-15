@@ -111,6 +111,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		cfg.NodeUrl,
 		mon.processTx,
 		nil,
+		nil,
 		&processor.Config{
 			StartBlock: big.NewInt(int64(cfg.StartBlock)),
 			Interval:   cfg.PollingInterval,
