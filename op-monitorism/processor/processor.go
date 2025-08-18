@@ -45,6 +45,7 @@ type BlockProcessor struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	metrics          Metrics
+	useLatest        bool
 
 	// dynamic backoff state
 	currentDelay      time.Duration
@@ -64,6 +65,7 @@ type BlockProcessor struct {
 type Config struct {
 	StartBlock *big.Int      // Optional: starting block number
 	Interval   time.Duration // Optional: polling interval
+	UseLatest  bool          // Optional: use latest block instead of finalized block, not reorg safe
 
 	// Dynamic backoff configuration (optional)
 	MinDelay       time.Duration // Minimum per-block delay
@@ -125,6 +127,7 @@ func NewBlockProcessor(
 		cancel:           cancel,
 		metrics:          metrics,
 		log:              log,
+		useLatest:        config.UseLatest,
 	}
 
 	// Initialize RNG for jitter
@@ -431,8 +434,15 @@ func (p *BlockProcessor) getBlockReceiptsWithRetry(block *types.Block) ([]*types
 }
 
 func (p *BlockProcessor) getLatestBlock() (*types.Block, error) {
+	var tag string
+	if p.useLatest {
+		tag = "latest"
+	} else {
+		tag = "finalized"
+	}
+
 	var header *types.Header
-	err := p.client.Client().CallContext(p.ctx, &header, "eth_getBlockByNumber", "latest", false)
+	err := p.client.Client().CallContext(p.ctx, &header, "eth_getBlockByNumber", tag, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get finalized header: %w", err)
 	}
