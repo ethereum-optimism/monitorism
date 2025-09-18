@@ -52,18 +52,9 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to dial l2: %w", err)
 	}
 
-	optimismPortal, err := bindings.NewOptimismPortalCaller(cfg.OptimismPortalAddress, l1Client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
-	}
+	log.Info("configured L2OutputOracle", "address", cfg.L2OOAddress.String())
 
-	l2OOAddress, err := optimismPortal.L2ORACLE(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query L2OO address: %w", err)
-	}
-	log.Info("configured L2OutputOracle", "address", l2OOAddress.String())
-
-	l2OO, err := bindings.NewL2OutputOracleCaller(l2OOAddress, l1Client)
+	l2OO, err := bindings.NewL2OutputOracleCaller(cfg.L2OOAddress, l1Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the L2OutputOracle: %w", err)
 	}

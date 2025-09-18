@@ -14,16 +14,16 @@ const (
 	L1NodeURLFlagName = "l1.node.url"
 	L2NodeURLFlagName = "l2.node.url"
 
-	OptimismPortalAddressFlagName = "optimismportal.address"
-	StartOutputIndexFlagName      = "start.output.index"
+	L2OOAddressFlagName      = "l2oo.address"
+	StartOutputIndexFlagName = "start.output.index"
 )
 
 type CLIConfig struct {
 	L1NodeURL string
 	L2NodeURL string
 
-	OptimismPortalAddress common.Address
-	StartOutputIndex      int64
+	L2OOAddress      common.Address
+	StartOutputIndex int64
 }
 
 func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
@@ -33,11 +33,11 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		StartOutputIndex: ctx.Int64(StartOutputIndexFlagName),
 	}
 
-	portalAddress := ctx.String(OptimismPortalAddressFlagName)
-	if !common.IsHexAddress(portalAddress) {
-		return cfg, fmt.Errorf("--%s is not a hex-encoded address", OptimismPortalAddressFlagName)
+	l2ooAddress := ctx.String(L2OOAddressFlagName)
+	if !common.IsHexAddress(l2ooAddress) {
+		return cfg, fmt.Errorf("--%s is not a hex-encoded address", L2OOAddressFlagName)
 	}
-	cfg.OptimismPortalAddress = common.HexToAddress(portalAddress)
+	cfg.L2OOAddress = common.HexToAddress(l2ooAddress)
 
 	return cfg, nil
 }
@@ -61,9 +61,9 @@ func CLIFlags(envVar string) []cli.Flag {
 			EnvVars: opservice.PrefixEnvVar(envVar, "START_OUTPUT_INDEX"),
 		},
 		&cli.StringFlag{
-			Name:     OptimismPortalAddressFlagName,
-			Usage:    "Address of the OptimismPortal contract",
-			EnvVars:  opservice.PrefixEnvVar(envVar, "OPTIMISM_PORTAL"),
+			Name:     L2OOAddressFlagName,
+			Usage:    "Address of the L2OutputOracle contract",
+			EnvVars:  opservice.PrefixEnvVar(envVar, "L2OO"),
 			Required: true,
 		},
 	}
