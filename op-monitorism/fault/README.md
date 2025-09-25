@@ -13,4 +13,4 @@ OPTIONS:
    --l2oo.address value            Address of the L2OutputOracle contract (alternative to optimismportal.address) [$FAULT_MON_L2OO_ADDRESS]
 ```
 
-On mismatch the `isCurrentlyMismatched`
+On mismatch the `isCurrentlyMismatched` metrics is set to `1`.
