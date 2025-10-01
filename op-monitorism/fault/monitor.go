@@ -29,8 +29,8 @@ type Monitor struct {
 	l1Client *ethclient.Client
 	l2Client *ethclient.Client
 
-	currOutputIndex  uint64
-	faultProofWindow uint64
+	currOutputIndex uint64
+	//faultProofWindow uint64
 
 	l2OO *bindings.L2OutputOracleCaller
 
@@ -77,10 +77,10 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the L2OutputOracle: %w", err)
 	}
-	faultProofWindow, err := l2OO.FinalizationPeriodSeconds(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query for finalization window: %w", err)
-	}
+	// faultProofWindow, err := l2OO.FinalizationPeriodSeconds(&bind.CallOpts{Context: ctx})
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to query for finalization window: %w", err)
+	// }
 
 	monitor := &Monitor{
 		log: log,
@@ -88,8 +88,8 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1Client: l1Client,
 		l2Client: l2Client,
 
-		l2OO:             l2OO,
-		faultProofWindow: faultProofWindow.Uint64(),
+		l2OO: l2OO,
+		//faultProofWindow: faultProofWindow.Uint64(),
 
 		highestOutputIndex: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
@@ -110,7 +110,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 
 	startingOutputIndex := cfg.StartOutputIndex
 	if startingOutputIndex < 0 {
-		firstUnfinalizedIndex, err := monitor.findFirstUnfinalizedOutputIndex(ctx, monitor.faultProofWindow)
+		firstUnfinalizedIndex, err := monitor.findFirstUnfinalizedOutputIndex(ctx, 12)
 		if err != nil {
 			monitor.nodeConnectionFailures.WithLabelValues("l1", "firstUnfinalizedIndex").Inc()
 			return nil, fmt.Errorf("failed to find first unfinalized output index: %w", err)
@@ -181,11 +181,17 @@ func (m *Monitor) Run(ctx context.Context) {
 
 	outputRoot := eth.OutputRoot(&eth.OutputV0{StateRoot: eth.Bytes32(block.Root()), MessagePasserStorageRoot: eth.Bytes32(proof.StorageHash), BlockHash: block.Hash()})
 	if outputRoot != eth.Bytes32(output.OutputRoot) {
+		finalizationStateRootPeriodSeconds, err := m.l2OO.StateRootPeriodSeconds(callOpts, output.OutputRoot)
+		if err != nil {
+			m.log.Error("failed to query finalization state root period seconds", "err", err)
+			m.nodeConnectionFailures.WithLabelValues("l1", "finalizationStateRootPeriodSeconds").Inc()
+			return
+		}
 		m.log.Error("output root mismatch!!!",
 			"index", m.currOutputIndex,
 			"expected_output_root", outputRoot.String(),
 			"actual_output_root", common.Hash(output.OutputRoot).String(),
-			"finalization_time", time.Unix(int64(block.Time()+m.faultProofWindow), 0).String(),
+			"finalization_time", time.Unix(int64(block.Time()+finalizationStateRootPeriodSeconds.Uint64()), 0).String(),
 		)
 
 		m.isCurrentlyMismatched.Set(1)
@@ -193,8 +199,13 @@ func (m *Monitor) Run(ctx context.Context) {
 	}
 
 	// Continue
-
-	m.log.Info("validated output", "index", m.currOutputIndex, "output_root", outputRoot.String(), "finalization_time", time.Unix(int64(block.Time()+m.faultProofWindow), 0).String())
+	finalizationStateRootPeriodSeconds, err := m.l2OO.StateRootPeriodSeconds(callOpts, outputRoot)
+	if err != nil {
+		m.log.Error("failed to query finalization state root period seconds", "err", err)
+		m.nodeConnectionFailures.WithLabelValues("l1", "finalizationStateRootPeriodSeconds").Inc()
+		return
+	}
+	m.log.Info("validated output", "index", m.currOutputIndex, "output_root", outputRoot.String(), "finalization_time", time.Unix(int64(block.Time()+finalizationStateRootPeriodSeconds.Uint64()), 0).String(), "finalizationStateRootPeriodSeconds", finalizationStateRootPeriodSeconds.Uint64())
 	m.highestOutputIndex.WithLabelValues("checked").Set(float64(m.currOutputIndex))
 
 	m.currOutputIndex++
