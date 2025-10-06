@@ -1,11 +1,18 @@
 package withdrawals
 
 import (
+	"context"
 	"fmt"
+	"math/big"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 
+	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals/bindings"
 	opservice "github.com/ethereum-optimism/optimism/op-service"
+
+	"log"
 
 	"github.com/urfave/cli/v2"
 )
@@ -38,11 +45,23 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		StartingL1BlockHeight: ctx.Uint64(StartingL1BlockHeightFlagName),
 	}
 
+	// Parse the portal address first
 	portalAddress := ctx.String(OptimismPortalAddressFlagName)
 	if !common.IsHexAddress(portalAddress) {
 		return cfg, fmt.Errorf("--%s is not a hex-encoded address", OptimismPortalAddressFlagName)
 	}
 	cfg.OptimismPortalAddress = common.HexToAddress(portalAddress)
+
+	if cfg.StartingL1BlockHeight == 0 {
+		startingBlock, err := findContractDeploymentBlock(context.Background(), cfg.L1NodeURL, cfg.OptimismPortalAddress)
+		if err != nil {
+			log.Printf("WARNING: failed to find contract deployment block: %v", err)
+			cfg.StartingL1BlockHeight = 0
+		} else {
+			log.Printf("found OptimismPortal deployment block: %d", startingBlock)
+			cfg.StartingL1BlockHeight = startingBlock
+		}
+	}
 
 	return cfg, nil
 }
@@ -66,10 +85,10 @@ func CLIFlags(envVar string) []cli.Flag {
 			EnvVars: opservice.PrefixEnvVar(envVar, "EVENT_BLOCK_RANGE"),
 		},
 		&cli.Uint64Flag{
-			Name:     StartingL1BlockHeightFlagName,
-			Usage:    "Starting height to scan for events",
-			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
-			Required: true,
+			Name:    StartingL1BlockHeightFlagName,
+			Usage:   "Starting height to scan for events",
+			EnvVars: opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
+			Value:   0,
 		},
 		&cli.StringFlag{
 			Name:     OptimismPortalAddressFlagName,
@@ -78,4 +97,42 @@ func CLIFlags(envVar string) []cli.Flag {
 			Required: true,
 		},
 	}
+}
+
+func findContractDeploymentBlock(ctx context.Context, l1NodeURL string, contractAddress common.Address) (uint64, error) {
+	client, err := ethclient.Dial(l1NodeURL)
+	if err != nil {
+		return 0, fmt.Errorf("failed to dial L1 node: %w", err)
+	}
+	defer client.Close()
+
+	latestBlock, err := client.BlockNumber(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get latest block number: %w", err)
+	}
+
+	start := uint64(0)
+	end := latestBlock
+
+	for start < end {
+		block := (start + end) / 2
+
+		callOpts := &bind.CallOpts{
+			BlockNumber: big.NewInt(int64(block)),
+		}
+
+		contract, err := bindings.NewOptimismPortalCaller(contractAddress, client)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create contract caller: %w", err)
+		}
+
+		_, err = contract.Version(callOpts)
+		if err != nil {
+			start = block + 1
+		} else {
+			end = block
+		}
+	}
+
+	return end, nil
 }
