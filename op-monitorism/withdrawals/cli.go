@@ -58,6 +58,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 			log.Printf("WARNING: failed to find contract deployment block: %v", err)
 			cfg.StartingL1BlockHeight = 0
 		} else {
+			log.Printf("found OptimismPortal deployment block: %d", startingBlock)
 			cfg.StartingL1BlockHeight = startingBlock
 		}
 	}
@@ -84,11 +85,10 @@ func CLIFlags(envVar string) []cli.Flag {
 			EnvVars: opservice.PrefixEnvVar(envVar, "EVENT_BLOCK_RANGE"),
 		},
 		&cli.Uint64Flag{
-			Name:     StartingL1BlockHeightFlagName,
-			Usage:    "Starting height to scan for events",
-			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
-			Value:    0,
-			Required: true,
+			Name:    StartingL1BlockHeightFlagName,
+			Usage:   "Starting height to scan for events",
+			EnvVars: opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
+			Value:   0,
 		},
 		&cli.StringFlag{
 			Name:     OptimismPortalAddressFlagName,
