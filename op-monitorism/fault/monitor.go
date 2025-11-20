@@ -79,7 +79,12 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 	faultProofWindow, err := l2OO.FinalizationPeriodSeconds(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return nil, fmt.Errorf("failed to query for finalization window: %w", err)
+		log.Error("failed to query for finalization window, will try another method", "err", err)
+		faultProofWindow, err = l2OO.FINALIZATIONPERIODSECONDS(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			log.Error("failed to query for finalization window with fallback method", "err", err)
+			return nil, fmt.Errorf("failed to query for finalization window: %w", err)
+		}
 	}
 
 	monitor := &Monitor{
