@@ -1,0 +1,46 @@
+name: bake
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'op-monitorism/**'
+      - 'op-defender/**'
+      - 'docker-bake.hcl'
+      - '.github/workflows/bake.yaml'
+
+jobs:
+
+  sanitize:
+    runs-on: ubuntu-24.04
+    outputs:
+      ref_name: ${{ steps.sanitize.outputs.ref_name }}
+    steps:
+      # we need to sanitize the ref_name to be a valid docker tag!
+      - name: Sanitize ref_name
+        id: sanitize
+        run: echo "ref_name=$(echo ${{ github.ref_name }} | sed 's/[^a-zA-Z0-9.]/-/g')" >> $GITHUB_OUTPUT
+
+  build:
+    needs: sanitize
+    strategy:
+      matrix:
+        image_name: [op-monitorism, op-defender]
+    uses: ethereum-optimism/factory/.github/workflows/docker-bake.yaml@6865f06d2681eccba10d4d6dfe73e4034695176c
+    with:
+      image_name: ${{ matrix.image_name }}
+      bake_file: docker-bake.hcl
+      target: ${{ matrix.image_name }}
+      platforms: linux/amd64
+      gcp_project_id: ${{ vars.GCP_PROJECT_ID_OPLABS_TOOLS_ARTIFACTS }}
+      gcp_registry: us-docker.pkg.dev/oplabs-tools-artifacts/oss
+      set: |
+        *.args.GITCOMMIT=${{ github.sha }}
+        *.args.GITDATE=${{ github.event.head_commit.timestamp }}
+        *.tags=us-docker.pkg.dev/oplabs-tools-artifacts/oss/${{ matrix.image_name }}:${{ github.sha }}
+        *.tags=us-docker.pkg.dev/oplabs-tools-artifacts/oss/${{ matrix.image_name }}:${{ needs.sanitize.outputs.ref_name }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
