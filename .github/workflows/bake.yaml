@@ -1,14 +1,15 @@
 name: bake
 
 on:
-  push:
-    branches:
-      - '**'
+  pull_request:
     paths:
       - 'op-monitorism/**'
       - 'op-defender/**'
       - 'docker-bake.hcl'
       - '.github/workflows/bake.yaml'
+  push:
+    tags:
+      - '*'
 
 jobs:
 
