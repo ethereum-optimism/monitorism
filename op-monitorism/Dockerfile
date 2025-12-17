@@ -13,17 +13,18 @@ COPY . .
 # Run the Makefile command to build the binary
 RUN make
 
-# Define the final base image
-FROM alpine:3.18
+# Use WizOS base image instead of Alpine
+FROM registry.os.wiz.io/wizos-base:latest
 
-# Install ca-certificates so that HTTPS works
+# Update package index and install ca-certificates
+# WizOS uses apk package manager like Alpine
 RUN apk update && apk add --no-cache ca-certificates
 
-# Copy the built binary from the builder stage
-COPY --from=builder /app/bin/monitorism /usr/local/bin/monitorism
+# Copy the application binary
+COPY /app/bin/monitorism /usr/local/bin/monitorism
 
-# Ensure the binary is executable
+# Make the binary executable
 RUN chmod +x /usr/local/bin/monitorism
 
-# Set the command to run the binary
+# Set the command to run the application
 CMD ["monitorism"]
