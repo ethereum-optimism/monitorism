@@ -1,5 +1,5 @@
 # Define the build stage
-FROM golang:1.22.2-alpine3.19 as builder
+FROM dhi.io/golang:1.22.2-alpine3.19 AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -14,7 +14,7 @@ COPY . .
 RUN make
 
 # Define the final base image
-FROM alpine:3.18
+FROM dhi.io/alpine:3.18
 
 # Install ca-certificates so that HTTPS works
 RUN apk update && apk add --no-cache ca-certificates
