@@ -57,6 +57,41 @@ commands:
             gcloud auth login --brief --cred-file "<< parameters.gcp_cred_config_file_path >>"
             # Configure ADC
             echo "export GOOGLE_APPLICATION_CREDENTIALS='<< parameters.gcp_cred_config_file_path >>'" | tee -a "$BASH_ENV"
+  docker-hardened-hub-login:
+    parameters:
+      token:
+        type: env_var_name
+        default: DOCKER_HARDENED_HUB_READONLY_TOKEN
+        description: "The environment variable name containing the Docker Hardened Hub token"
+      username:
+        type: string
+        description: "The username to use for Docker login"
+        default: opgitgovernance
+      registry:
+        type: string
+        description: "The Docker registry to login to"
+        default: dhi.io
+      condition:
+        type: string
+        default: "always"
+        description: "The condition to run the command. 0 and always are considered true, everything else is false"
+    steps:
+      - run:
+          name: Login to Docker Hardened Hub
+          command: |
+            if [ "<< parameters.condition >>" != "always" ] && [ "<< parameters.condition >>" != "0" ] && [ "<< parameters.condition >>" != "true" ]; then
+              echo "Skipping command because condition (<< parameters.condition >>) is not met"
+              exit 0
+            fi
+
+            if [ -z "${<< parameters.token >>}" ]; then
+              echo "Error: Docker Hardened Hub token is not set in environment variable << parameters.token >>"
+              exit 1
+            fi
+
+            echo "${<< parameters.token >>}" | docker login << parameters.registry >> -u << parameters.username >> --password-stdin
+
+
 
 jobs:
   golang-test:
@@ -161,6 +196,7 @@ jobs:
               - "<<parameters.release>>"
           steps:
             - gcp-oidc-authenticate
+      - docker-hardened-hub-login
       - run:
           name: Build
           command: |
@@ -321,6 +357,7 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
+            - circleci-repo-readonly-authenticated-github-token
           filters:
             branches:
               ignore:
@@ -333,6 +370,7 @@ workflows:
           publish: true
           context:
             - oplabs-gcr
+            - circleci-repo-readonly-authenticated-github-token
           filters:
             branches:
               ignore:
