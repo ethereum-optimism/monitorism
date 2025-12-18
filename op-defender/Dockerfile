@@ -1,5 +1,5 @@
 # Define the build stage
-FROM dhi.io/golang:1.22.2-alpine3.19 as builder
+FROM dhi.io/golang:1.24-alpine3.22-dev as builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -13,14 +13,14 @@ COPY . .
 # Run the Makefile command to build the binary
 RUN make
 
+# Ensure the binary is executable
+RUN chmod +x /app/bin/defender
+
 # Define the final base image
-FROM dhi.io/alpine:3.18
+FROM dhi.io/alpine-base:3.22
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/bin/defender /usr/local/bin/defender
-
-# Ensure the binary is executable
-RUN chmod +x /usr/local/bin/defender
 
 # Set the command to run the binary
 CMD ["defender"]
