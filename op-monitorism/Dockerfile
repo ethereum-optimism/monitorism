@@ -14,7 +14,7 @@ COPY . .
 RUN make
 
 # Define the final base image
-FROM alpine:3.18
+FROM dhi.io/alpine:3.18
 
 # Install ca-certificates so that HTTPS works
 RUN apk update && apk add --no-cache ca-certificates
