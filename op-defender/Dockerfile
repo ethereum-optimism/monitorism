@@ -1,5 +1,5 @@
 # Define the build stage
-FROM dhi.io/golang:1.24-alpine3.22-dev as builder
+FROM dhi.io/golang:1.24-alpine3.22-dev AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
