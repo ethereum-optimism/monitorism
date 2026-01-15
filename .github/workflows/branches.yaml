@@ -27,7 +27,7 @@ jobs:
       target: ${{ matrix.image_name }}
       tag: pr-${{ github.event.pull_request.number }}
       gcp_project_id: ${{ vars.GCP_PROJECT_ID_OPLABS_TOOLS_ARTIFACTS }}
-      registry: us-docker.pkg.dev/oplabs-tools-artifacts/oss
+      registry: us-docker.pkg.dev/oplabs-tools-artifacts/images
       set: |
         *.args.GIT_COMMIT=${{ github.sha }}
         *.args.GIT_DATE=${{ github.event.head_commit.timestamp }}
