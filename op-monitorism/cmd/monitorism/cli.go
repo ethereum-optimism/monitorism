@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/secrets"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/transaction_monitor"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals"
+	withdrawalsv2 "github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals-v2"
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -56,6 +57,13 @@ func newCli(GitCommit string, GitDate string) *cli.App {
 				Description: "Monitors proven withdrawals on L1 against L2",
 				Flags:       append(withdrawals.CLIFlags("WITHDRAWAL_MON"), defaultFlags...),
 				Action:      cliapp.LifecycleCmd(WithdrawalsMain),
+			},
+			{
+				Name:        "withdrawals-v2",
+				Usage:       "Monitors proven withdrawals (OptimismPortal2) on L1 against L2",
+				Description: "Monitors proven withdrawals (OptimismPortal2) on L1 against L2",
+				Flags:       append(withdrawalsv2.CLIFlags("WITHDRAWALS_V2_MON"), defaultFlags...),
+				Action:      cliapp.LifecycleCmd(WithdrawalsV2Main),
 			},
 			{
 				Name:        "balances",
@@ -199,6 +207,22 @@ func WithdrawalsMain(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp
 	monitor, err := withdrawals.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create withdrawals monitor: %w", err)
+	}
+
+	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)
+}
+
+func WithdrawalsV2Main(ctx *cli.Context, closeApp context.CancelCauseFunc) (cliapp.Lifecycle, error) {
+	log := oplog.NewLogger(oplog.AppOut(ctx), oplog.ReadCLIConfig(ctx))
+	cfg, err := withdrawalsv2.ReadCLIFlags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse withdrawals-v2 config from flags: %w", err)
+	}
+
+	metricsRegistry := opmetrics.NewRegistry()
+	monitor, err := withdrawalsv2.NewMonitor(ctx.Context, log, opmetrics.With(metricsRegistry), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create withdrawals-v2 monitor: %w", err)
 	}
 
 	return monitorism.NewCliApp(ctx, log, metricsRegistry, monitor)

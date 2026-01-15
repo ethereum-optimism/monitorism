@@ -52,18 +52,28 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, fmt.Errorf("failed to dial l2: %w", err)
 	}
 
-	optimismPortal, err := bindings.NewOptimismPortalCaller(cfg.OptimismPortalAddress, l1Client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
+	var l2OOAddress common.Address
+	var l2OO *bindings.L2OutputOracleCaller
+
+	// Check if L2OO address is provided directly
+	if cfg.L2OOAddress != (common.Address{}) {
+		l2OOAddress = cfg.L2OOAddress
+		log.Info("using provided L2OutputOracle address", "address", l2OOAddress.String())
+	} else {
+		// Fallback to extracting from OptimismPortal (backward compatibility)
+		optimismPortal, err := bindings.NewOptimismPortalCaller(cfg.OptimismPortalAddress, l1Client)
+		if err != nil {
+			return nil, fmt.Errorf("failed to bind to the OptimismPortal: %w", err)
+		}
+
+		l2OOAddress, err = optimismPortal.L2ORACLE(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return nil, fmt.Errorf("failed to query L2OO address: %w", err)
+		}
+		log.Info("extracted L2OutputOracle address from OptimismPortal", "address", l2OOAddress.String())
 	}
 
-	l2OOAddress, err := optimismPortal.L2ORACLE(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query L2OO address: %w", err)
-	}
-	log.Info("configured L2OutputOracle", "address", l2OOAddress.String())
-
-	l2OO, err := bindings.NewL2OutputOracleCaller(l2OOAddress, l1Client)
+	l2OO, err = bindings.NewL2OutputOracleCaller(l2OOAddress, l1Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind to the L2OutputOracle: %w", err)
 	}

@@ -10,6 +10,7 @@ OPTIONS:
    --l2.node.url value             Node URL of L2 peer Op-Geth node [$FAULT_MON_L2_NODE_URL]
    --start.output.index value      Output index to start from. -1 to find first unfinalized index (default: -1) [$FAULT_MON_START_OUTPUT_INDEX]
    --optimismportal.address value  Address of the OptimismPortal contract [$FAULT_MON_OPTIMISM_PORTAL]
+   --l2oo.address value            Address of the L2OutputOracle contract (alternative to optimismportal.address) [$FAULT_MON_L2OO_ADDRESS]
 ```
 
 On mismatch the `isCurrentlyMismatched` metrics is set to `1`.
