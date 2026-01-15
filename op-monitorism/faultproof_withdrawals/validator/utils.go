@@ -1,12 +1,16 @@
 package validator
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 // Raw represents raw event data associated with a blockchain transaction.
@@ -48,4 +52,26 @@ func StringToBytes32(input string) ([32]uint8, error) {
 	var array [32]uint8
 	copy(array[:], bytes)
 	return array, nil
+}
+
+// Needed so that we can mock the interface for tests
+type BlockFetcher interface {
+	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
+}
+
+type BlockFetcherWrapper struct {
+	client *ethclient.Client
+}
+
+func NewBlockFetcher(client *ethclient.Client) BlockFetcher {
+	return &BlockFetcherWrapper{client: client}
+}
+
+func (w *BlockFetcherWrapper) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
+	return w.client.BlockByNumber(ctx, number)
+}
+
+func (w *BlockFetcherWrapper) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	return w.client.HeaderByNumber(ctx, number)
 }
