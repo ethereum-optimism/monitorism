@@ -30,6 +30,10 @@ type Monitor struct {
 	LivenessGuardAddress  common.Address
 	LivenessModule        *bindings.LivenessModule
 	LivenessModuleAddress common.Address
+
+	// owners tracks the last observed set of safe owners so that we can
+	// remove per-owner metrics when an owner is no longer returned by GetOwners.
+	owners map[string]struct{}
 	/** Metrics **/
 	highestBlockNumber      *prometheus.GaugeVec
 	unexpectedRpcErrors     *prometheus.CounterVec
@@ -91,6 +95,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		LivenessGuardAddress:  cfg.LivenessGuardAddress,
 		LivenessModule:        LivenessModule,
 		LivenessModuleAddress: cfg.LivenessModuleAddress,
+		owners:                make(map[string]struct{}),
 		/** Metrics **/
 		highestBlockNumber: m.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: MetricsNamespace,
@@ -165,6 +170,26 @@ func (m *Monitor) Run(ctx context.Context) {
 		m.unexpectedRpcErrors.WithLabelValues("l1", "GetOwners").Inc()
 		return
 	}
+
+	// Build the current set of owners so that we can detect owners that have
+	// been removed since the last run and clean up their metrics.
+	currentOwners := make(map[string]struct{}, len(listOwners))
+	for _, owner := range listOwners {
+		currentOwners[owner.String()] = struct{}{}
+	}
+
+	// Remove metrics for any owners that are no longer returned by GetOwners.
+	for addr := range m.owners {
+		if _, stillOwner := currentOwners[addr]; !stillOwner {
+			m.log.Info("owner removed from safe, deleting metrics", "owner", addr)
+			m.lastLiveOfAOwner.DeleteLabelValues(addr)
+			m.ownerDaysBeforeDeadline.DeleteLabelValues(addr)
+			m.ownerStalePeriod.DeleteLabelValues(addr)
+		}
+	}
+
+	// Update the cached owners set for the next run.
+	m.owners = currentOwners
 
 	interval, err := m.LivenessModule.LivenessInterval(nil) // 2. Get the interval from the liveness module.
 	if err != nil {
