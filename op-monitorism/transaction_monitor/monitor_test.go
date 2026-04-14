@@ -36,9 +36,7 @@ func setupAnvil(t *testing.T) (*devnet.Anvil, *ethclient.Client, string) {
 	logger := log.New()
 
 	anvilRunner, err := devnet.NewAnvil(logger)
-	if err != nil {
-		t.Skipf("skipping: %v", err)
-	}
+	require.NoError(t, err)
 
 	err = anvilRunner.Start()
 	require.NoError(t, err)
