@@ -21,12 +21,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@71cf2267d89c5cb81562390fa70a37fa40b1305e # v4
       - name: Parse tag
-        uses: ethereum-optimism/factory/actions/parse-tag@f8f3cb4800e538003134fb5f50cc734c2c98d762
+        uses: ethereum-optimism/factory/actions/parse-tag@cc1794a8e99695971560f5354076fbe2ddca9f2e
         id: parse-tag
 
   release:
     needs: prep
-    uses: ethereum-optimism/factory/.github/workflows/docker.yaml@f8f3cb4800e538003134fb5f50cc734c2c98d762
+    uses: ethereum-optimism/factory/.github/workflows/docker.yaml@cc1794a8e99695971560f5354076fbe2ddca9f2e
     with:
       mode: bake
       image_name: ${{ needs.prep.outputs.image_name }}
