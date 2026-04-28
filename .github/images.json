@@ -1,20 +1,21 @@
 {
   "shared_paths": [
-    ".github/workflows/branches.yaml",
-    ".github/images.json",
-    "docker-bake.hcl"
+    ".github/workflows/factory.yaml",
+    ".github/images.json"
   ],
   "images": {
     "op-monitorism": {
-      "mode": "bake",
-      "bake_file": "docker-bake.hcl",
-      "target": "op-monitorism",
+      "mode": "ko",
+      "ko_working_directory": "op-monitorism",
+      "ko_importpath": "./cmd/monitorism",
+      "env": "VERSION=v0.0.0",
       "paths": ["op-monitorism/**"]
     },
     "op-defender": {
-      "mode": "bake",
-      "bake_file": "docker-bake.hcl",
-      "target": "op-defender",
+      "mode": "ko",
+      "ko_working_directory": "op-defender",
+      "ko_importpath": "./cmd/defender",
+      "env": "VERSION=v0.0.0",
       "paths": ["op-defender/**"]
     }
   }
