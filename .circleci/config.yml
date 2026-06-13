@@ -266,7 +266,7 @@ workflows:
           type: approval
           filters:
             tags:
-              only: /(^op-monitorism\/v.*$|^op-defender\/v.*$)/
+              only: /^op-monitorism\/v.*$/
             branches:
               ignore:
                 - /.*/
@@ -281,23 +281,6 @@ workflows:
                 - /.*/
                 - /pull\/[0-9]+/ # ignore for pull requests
           docker_name: op-monitorism
-          docker_tags: <<pipeline.git.revision>>
-          requires: ["hold"]
-          platforms: "linux/amd64,linux/arm64"
-          publish: true
-          release: true
-          context:
-            - oplabs-gcr
-      - docker-build:
-          name: op-defender-docker-release
-          filters:
-            tags:
-              only: /^op-defender\/v.*/
-            branches:
-              ignore:
-                - /.*/
-                - /pull\/[0-9]+/
-          docker_name: op-defender
           docker_tags: <<pipeline.git.revision>>
           requires: ["hold"]
           platforms: "linux/amd64,linux/arm64"
@@ -325,29 +308,11 @@ workflows:
             branches:
               ignore:
                 - /pull\/[0-9]+/ # ignore for pull requests
-      - docker-build:
-          name: op-defender-docker-build
-          docker_name: op-defender
-          docker_tags: <<pipeline.git.revision>>,<<pipeline.git.branch>>
-          platforms: "linux/amd64"
-          publish: true
-          context:
-            - oplabs-gcr
-          filters:
-            branches:
-              ignore:
-                - /pull\/[0-9]+/ # ignore for pull requests   
   test:
     jobs:
         - go-lint:
-            name: op-defender-go-lint
-            project_name: op-defender
-        - go-lint:
             name: op-monitorism-go-lint
             project_name: op-monitorism
-        - golang-test:
-            name: op-defender-golang-test
-            project_name: op-defender
         - golang-test:
             name: op-monitorism-golang-test
             project_name: op-monitorism
