@@ -1,20 +1,15 @@
 {
   "shared_paths": [
+    ".github/workflows/branches.yaml",
+    ".github/images.json",
     "docker-bake.hcl"
   ],
   "images": {
     "op-monitorism": {
       "mode": "bake",
-      "type": "bake",
-      "registry": "us-docker.pkg.dev/oplabs-tools-artifacts/images",
-      "gcp_project_id": "441280564867",
-      "target": "op-monitorism",
       "bake_file": "docker-bake.hcl",
-      "paths": [
-        "Makefile",
-        "docker-bake.hcl",
-        "op-monitorism/**"
-      ]
+      "target": "op-monitorism",
+      "paths": ["op-monitorism/**"]
     }
   }
 }

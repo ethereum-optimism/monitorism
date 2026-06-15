@@ -122,7 +122,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		log.Debug("Searching for block at approximate time",
 			"latestHeight", latestL1HeightBigInt.String(),
 			"hoursInPast", hoursInThePastToStartFrom)
-		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, l1GethClient, latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)))
+		startingL1BlockHeightBigInt, err := ret.getBlockAtApproximateTimeBinarySearch(ctx, validator.NewBlockFetcher(l1GethClient), latestL1HeightBigInt, big.NewInt(int64(hoursInThePastToStartFrom)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get block at approximate time: %w", err)
 		}
@@ -183,7 +183,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 // getBlockAtApproximateTimeBinarySearch finds the block number corresponding to the timestamp from two weeks ago using a binary search approach.
 func (m *Monitor) getBlockAtApproximateTimeBinarySearch(
 	ctx context.Context,
-	client *ethclient.Client,
+	client validator.BlockFetcher,
 	latest *big.Int,
 	hoursAgo *big.Int,
 ) (*big.Int, error) {
