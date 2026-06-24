@@ -20,7 +20,7 @@ import (
 
 const (
 	MetricsNamespace                 = "faultproof_withdrawals"
-	DefaultHoursInThePastToStartFrom = 14 * 24 //14 days
+	DefaultHoursInThePastToStartFrom = 28 * 24 // 28 days — kept under the ~29d eth_getProof state-retention window of the op-reth proofs nodes, so a (re)start always begins inside the window the L2 node can still serve proofs for.
 	acceptableDiffSec                = 3600    // 1h
 )
 
@@ -111,13 +111,13 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 			"hoursInPast", hoursInThePastToStartFrom,
 			"defaultHours", DefaultHoursInThePastToStartFrom)
 
-		// in this case is not set how many hours in the past to start from, we use default value that is 14 days.
+		// hours-in-the-past not set either: fall back to the default window (28 days).
 		if hoursInThePastToStartFrom == 0 {
 			hoursInThePastToStartFrom = DefaultHoursInThePastToStartFrom
 			log.Debug("Using default hours in past", "hours", DefaultHoursInThePastToStartFrom)
 		}
 
-		// get the block number closest to the timestamp from two weeks ago
+		// get the block number closest to the timestamp hoursInThePastToStartFrom ago
 		latestL1HeightBigInt := new(big.Int).SetUint64(latestL1Height)
 		log.Debug("Searching for block at approximate time",
 			"latestHeight", latestL1HeightBigInt.String(),
@@ -130,6 +130,12 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		log.Debug("Found starting block height", "height", startingL1BlockHeight)
 	} else {
 		startingL1BlockHeight = uint64(cfg.StartingL1BlockHeight)
+		// start.block.height takes precedence; if hours-in-the-past was also set it is silently unused, so make that explicit.
+		if cfg.HoursInThePastToStartFrom != 0 {
+			log.Warn("Both start.block.height and start.block.hours.ago are set; start.block.height takes precedence and start.block.hours.ago is ignored",
+				"startBlockHeight", startingL1BlockHeight,
+				"ignoredHoursInPast", cfg.HoursInThePastToStartFrom)
+		}
 		log.Debug("Using provided starting block height", "height", startingL1BlockHeight)
 	}
 

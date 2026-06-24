@@ -42,8 +42,8 @@ OPTIONS:
    --l2.geth.url value             L2 OP Stack execution layer client(op-geth) URL [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL]
    --l2.geth.backup.urls value     Backup L2 OP Stack execution layer client URLs (format: name=url,name2=url2) [$FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_BACKUP_URLS]
    --event.block.range value       Max block range when scanning for events (default: 1000) [$FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE]
-   --start.block.height value      Starting height to scan for events. This will take precedence if set. (default: -1) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT]
-   --start.block.hours.ago value   How many hours in the past to start to check for forgery. Default will be 336 (14 days) days if not set. The real block to start from will be found within the hour precision. (default: 0) [$FAULTPROOF_WITHDRAWAL_MON_START_HOURS_IN_THE_PAST]
+   --start.block.height value      Fixed L1 height to start scanning for events from. Takes precedence over --start.block.hours.ago when set (>= 0); leave at the default -1 to start dynamically from --start.block.hours.ago instead. (default: -1) [$FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT]
+   --start.block.hours.ago value   How many hours before the current L1 tip to start scanning for forgeries, recomputed on each (re)start. Defaults to 672 (28 days) when unset. Ignored when --start.block.height is set. The starting block is resolved to within one-hour precision. (default: 0) [$FAULTPROOF_WITHDRAWAL_MON_START_HOURS_IN_THE_PAST]
    --optimismportal.address value  Address of the OptimismPortal contract [$FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL]
    --log.level value               The lowest log level that will be output (default: INFO) [$MONITORISM_LOG_LEVEL]
    --log.format value              Format the log output. Supported formats: 'text', 'terminal', 'logfmt', 'json', 'json-pretty', (default: text) [$MONITORISM_LOG_FORMAT]
@@ -55,6 +55,19 @@ OPTIONS:
    --loop.interval.msec value      Loop interval of the monitor in milliseconds (default: 60000) [$MONITORISM_LOOP_INTERVAL_MSEC]
    --help, -h                      show help
    ```
+
+## Choosing the start point
+
+On startup the monitor needs an L1 block to begin scanning `WithdrawalProven` events from. There are two mutually exclusive ways to set it:
+
+| Env var | Meaning | Default |
+| --- | --- | --- |
+| `FAULTPROOF_WITHDRAWAL_MON_START_HOURS_IN_THE_PAST` | Start `N` hours before the **current L1 tip**, recomputed on every (re)start. | `672` (28 days) |
+| `FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT` | Start from a **fixed** L1 block height. | `-1` (unset → use hours-ago) |
+
+**Precedence:** if `START_BLOCK_HEIGHT` is set (`>= 0`) it wins and `START_HOURS_IN_THE_PAST` is ignored (the monitor logs a warning if both are set). Leave `START_BLOCK_HEIGHT` unset (`-1`) to use the dynamic window.
+
+**Prefer the hours-ago window for production.** Validating a withdrawal requires an `eth_getProof` against the L2 node at the dispute game's L2 block. Pruned / non-archive L2 nodes (e.g. op-reth) only retain trie state for a recent window (~29 days), so a fixed `START_BLOCK_HEIGHT` older than that window makes every proof fail with `failed to get proof from any node` and the monitor stalls. The 28-day default keeps each restart inside that window. Only pin `START_BLOCK_HEIGHT` when the L2 node is a full **archive** node.
 
 ## Example run on sepolia op chain
 
@@ -72,8 +85,10 @@ export FAULTPROOF_WITHDRAWAL_MON_L2_OP_NODE_URL="$L2_OP_NODE_URL"
 export FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_URL="$L2_OP_GETH_URL"
 export FAULTPROOF_WITHDRAWAL_MON_L2_OP_GETH_BACKUP_URLS="$L2_OP_GETH_BACKUP_URLS"
 export FAULTPROOF_WITHDRAWAL_MON_OPTIMISM_PORTAL="0x16Fc5058F25648194471939df75CF27A2fdC48BC"
-export FAULTPROOF_WITHDRAWAL_MON_START_BLOCK_HEIGHT=5914813
 export FAULTPROOF_WITHDRAWAL_MON_EVENT_BLOCK_RANGE=1000
+# Start 28 days before the current L1 tip (recomputed on each restart). See "Choosing the start point".
+# Leave START_BLOCK_HEIGHT unset unless the L2 node is a full archive node.
+export FAULTPROOF_WITHDRAWAL_MON_START_HOURS_IN_THE_PAST=672
 
 go run ./cmd/monitorism faultproof_withdrawals
 ```

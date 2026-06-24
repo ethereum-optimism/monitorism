@@ -91,14 +91,14 @@ func CLIFlags(envVar string) []cli.Flag {
 		},
 		&cli.Int64Flag{
 			Name:     StartingL1BlockHeightFlagName,
-			Usage:    "Starting height to scan for events. This will take precedence if set.",
+			Usage:    "Fixed L1 height to start scanning for events from. Takes precedence over --start.block.hours.ago when set (>= 0); leave at the default -1 to start dynamically from --start.block.hours.ago instead.",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK_HEIGHT"),
 			Required: false,
 			Value:    -1,
 		},
 		&cli.Uint64Flag{
 			Name:     HoursInThePastToStartFromFlagName,
-			Usage:    "How many hours in the past to start to check for forgery. Default will be 336 (14 days) days if not set. The real block to start from will be found within the hour precision.",
+			Usage:    "How many hours before the current L1 tip to start scanning for forgeries, recomputed on each (re)start. Defaults to 672 (28 days) when unset. Ignored when --start.block.height is set. The starting block is resolved to within one-hour precision.",
 			EnvVars:  opservice.PrefixEnvVar(envVar, "START_HOURS_IN_THE_PAST"),
 			Required: false,
 		},
