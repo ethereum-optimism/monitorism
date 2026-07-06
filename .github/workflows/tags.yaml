@@ -3,7 +3,7 @@ name: tag build
 on:
   push:
     tags:
-      - '*/v*' # Match tags like op-monitorism/v1.2.3
+      - 'op-monitorism/v*'
 
 jobs:
   prep:

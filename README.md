@@ -12,17 +12,15 @@
     - [Transaction Monitor](#transaction-monitor)
     - [ETH Conservation Monitor](#eth-conservation-monitor)
     - [Faultproof Withdrawals](#faultproof-withdrawal)
-  - [Defender Components](#defender-components)
-    - [HTTP API PSP Executor Service](#http-api-psp-executor-service)
   - [CLI &amp; Docs](#cli--docs)
     - [Bootstrap](#bootstrap)
     - [Command line Options](#command-line-options)
 
 # Monitorism
 
-_Monitorism_ is a tooling suite that supports monitoring and active remediation actions for the OP Stack chain.
+_Monitorism_ is a tooling suite that supports monitoring and alerting for the OP Stack chain.
 
-The suite is composed of two main components: `op-monitorism` and `op-defender`, that can be used together or separately and see below for more details.
+The suite is composed of `op-monitorism`; see below for more details.
 
 ## Docker images
 
@@ -159,22 +157,6 @@ For detailed information on how the component works and the algorithms used, ple
 | `op-monitorism/faultproof_withdrawals` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-monitorism/faultproof_withdrawals/README.md) |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 
-## Defender Components
-
-The _defenders_ are active security service allowing to provide automated defense for the OP Stack.
-There are components that are designed to make immediate actions onchain/offchain to protect the assets.
-
-The list of all the defender currently built into `op-defender` is below.
-
-### HTTP API PSP Executor Service
-
-![f112841bad84c59ea3ed1ca380740f5694f553de8755b96b1a40ece4d1c26f81](https://github.com/user-attachments/assets/17235e99-bf25-40a5-af2c-a0d9990c6276)
-
-The PSP Executor Service is made for executing PSP onchain faster to increase our readiness and speed in case of incident response.
-
-| `op-defender/psp_executor` | [README](https://github.com/ethereum-optimism/monitorism/blob/main/op-defender/psp_executor/README.md) |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-
 ## CLI & Docs
 
 ### Bootstrap
@@ -212,4 +194,3 @@ OPTIONS:
    --metrics.port value        [$MONITORISM_METRICS_PORT]        Metrics listening port (default: 7300)
    --loop.interval.msec value  [$MONITORISM_LOOP_INTERVAL_MSEC]  Loop interval of the monitor in milliseconds (default: 60000)
 ```
-

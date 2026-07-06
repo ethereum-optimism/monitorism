@@ -6,7 +6,6 @@ on:
       - 'main'
     paths:
       - 'op-monitorism/**'
-      - 'op-defender/**'
       - 'docker-bake.hcl'
       - '.github/workflows/branches.yaml'
       - '.github/images.json'

@@ -10,12 +10,6 @@
       "bake_file": "docker-bake.hcl",
       "target": "op-monitorism",
       "paths": ["op-monitorism/**"]
-    },
-    "op-defender": {
-      "mode": "bake",
-      "bake_file": "docker-bake.hcl",
-      "target": "op-defender",
-      "paths": ["op-defender/**"]
     }
   }
 }
