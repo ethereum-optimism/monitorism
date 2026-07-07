@@ -33,6 +33,7 @@ type EnrichedProvenWithdrawalEvent struct {
 	Enriched                      bool                             // Indicates if the event is enriched.
 	ProcessedTimeStamp            float64                          // Unix TimeStamp seconds when the event was processed.
 	ClientUsed                    string                           // Client used to get the proof
+	PreIsthmusUnverifiable        bool                             // Game's L2 block predates Isthmus; cannot be header-verified, flagged for security triage.
 }
 
 // ProvenWithdrawalValidator validates proven withdrawal events.
@@ -146,13 +147,23 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 			return fmt.Errorf("failed to get latest known L2 block number: %w", err)
 		}
 		if latest_known_l2_block >= event.DisputeGame.DisputeGameData.L2blockNumber.Uint64() {
-			trustedRootClaim, withdrawalHashPresentOnL2, clientUsed, err := wv.L2Proxy.VerifyRootClaimAndWithdrawalHash(event.DisputeGame.DisputeGameData.L2blockNumber, event.DisputeGame.DisputeGameData.RootClaim, event.Event.WithdrawalHash)
+			trustedRootClaim, preIsthmus, err := wv.L2Proxy.VerifyRootClaimFromHeader(event.DisputeGame.DisputeGameData.L2blockNumber, event.DisputeGame.DisputeGameData.RootClaim)
 			if err != nil {
-				return fmt.Errorf("failed to get trustedRootClaim from L2 clients '%s': %w", clientUsed, err)
+				return fmt.Errorf("failed to verify root claim from header: %w", err)
 			}
-			event.DisputeGameRootClaimIsTrusted = trustedRootClaim
-			event.WithdrawalHashPresentOnL2 = withdrawalHashPresentOnL2
-			event.ClientUsed = clientUsed
+			if preIsthmus {
+				// Cannot header-verify a pre-Isthmus block. Not treated as valid nor as a
+				// forgery: flagged for security triage (see monitor.ConsumeEvent).
+				event.PreIsthmusUnverifiable = true
+				event.DisputeGameRootClaimIsTrusted = false
+				event.WithdrawalHashPresentOnL2 = false
+			} else {
+				event.DisputeGameRootClaimIsTrusted = trustedRootClaim
+				// Presence is subsumed by a canonical root claim plus the OptimismPortal's
+				// on-chain inclusion-proof check performed at prove time, so it tracks the
+				// root-claim result rather than a separate eth_getProof.
+				event.WithdrawalHashPresentOnL2 = trustedRootClaim
+			}
 		} else {
 			event.DisputeGameRootClaimIsTrusted = false
 		}
@@ -258,7 +269,12 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 		return false, fmt.Errorf("game not enriched")
 	}
 
-	return enrichedWithdrawalEvent.DisputeGameRootClaimIsTrusted && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2, nil
+	// A canonical root claim (verified from the L2 block header) is the forgery
+	// check. Withdrawal presence is enforced on-chain by the OptimismPortal at
+	// prove time and is subsumed by a canonical root claim, so it is not a
+	// separate condition here. Pre-Isthmus events are routed for triage before
+	// this check and never reach it as "valid".
+	return enrichedWithdrawalEvent.DisputeGameRootClaimIsTrusted, nil
 }
 
 func (wv *ProvenWithdrawalValidator) GetL2BlockNumber() (uint64, error) {

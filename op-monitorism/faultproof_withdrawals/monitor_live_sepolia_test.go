@@ -56,7 +56,6 @@ func NewTestMonitorSepolia() *Monitor {
 }
 
 // TestSingleRunSepolia tests a single execution of the monitor's Run method.
-// It verifies that the state updates correctly after running.
 func TestSingleRunSepolia(t *testing.T) {
 	test_monitor := NewTestMonitorSepolia()
 
@@ -75,7 +74,6 @@ func TestSingleRunSepolia(t *testing.T) {
 }
 
 // TestConsumeEventsSepolia tests the consumption of enriched withdrawal events.
-// It verifies that new events can be processed correctly.
 func TestConsumeEventsSepolia(t *testing.T) {
 	test_monitor := NewTestMonitorSepolia()
 
@@ -91,254 +89,126 @@ func TestConsumeEventsSepolia(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestConsumeEventValid_DEFENDER_WINS_Sepolia tests the consumption of a valid event where the defender wins.
-// It checks that the state updates correctly after processing the event.
+// newEnrichedEvent builds an already-enriched withdrawal event so that
+// ConsumeEvent's categorization can be exercised deterministically, without
+// depending on live enrichment against historical (possibly pruned or
+// pre-Isthmus) L2 state.
+func newEnrichedEvent(status validator.GameStatus, trusted, blacklisted, preIsthmus bool) *validator.EnrichedProvenWithdrawalEvent {
+	return &validator.EnrichedProvenWithdrawalEvent{
+		DisputeGame: &validator.FaultDisputeGameProxy{
+			DisputeGameData: &validator.DisputeGameData{
+				ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
+				RootClaim:     common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597"),
+				L2blockNumber: big.NewInt(12030787),
+				L2ChainID:     big.NewInt(11155420),
+				Status:        status,
+				CreatedAt:     1730000000,
+				ResolvedAt:    1730000000,
+			},
+			FaultDisputeGame: nil,
+		},
+		DisputeGameRootClaimIsTrusted: trusted,
+		WithdrawalHashPresentOnL2:     trusted,
+		PreIsthmusUnverifiable:        preIsthmus,
+		Blacklisted:                   blacklisted,
+		Enriched:                      true,
+		Event: &validator.WithdrawalProvenExtension1Event{
+			WithdrawalHash: common.HexToHash("0xedbe26c8f9b11835295aee42123335f920599f01448e0ec697e9a47e69ed673e"),
+			ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
+			Raw: validator.Raw{
+				BlockNumber: 5915676,
+				TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
+			},
+		},
+	}
+}
+
+// TestConsumeEventValid_DEFENDER_WINS_Sepolia: a canonical root claim on a
+// resolved game is a valid withdrawal.
 func TestConsumeEventValid_DEFENDER_WINS_Sepolia(t *testing.T) {
-	test_monitor := NewTestMonitorSepolia()
+	m := NewTestMonitorSepolia()
 
-	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
-
-	validEvent := validator.EnrichedProvenWithdrawalEvent{
-		ExpectedRootClaim: expectedRootClaim,
-		DisputeGame: &validator.FaultDisputeGameProxy{
-			DisputeGameData: &validator.DisputeGameData{
-				ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
-				RootClaim:     expectedRootClaim,
-				L2blockNumber: big.NewInt(12030787),
-				L2ChainID:     big.NewInt(11155420),
-				Status:        validator.DEFENDER_WINS,
-				CreatedAt:     1730000000,
-				ResolvedAt:    1730000000,
-			},
-			FaultDisputeGame: nil,
-		},
-		WithdrawalHashPresentOnL2: true,
-		Blacklisted:               false,
-		Event: &validator.WithdrawalProvenExtension1Event{
-			WithdrawalHash: func() [32]byte {
-				var arr [32]byte
-				copy(arr[:], common.Hex2Bytes("edbe26c8f9b11835295aee42123335f920599f01448e0ec697e9a47e69ed673e"))
-				return arr
-			}(),
-			ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
-			Raw: validator.Raw{
-				BlockNumber: 5915676,
-				TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
-			},
-		},
-	}
-
-	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
-		validEvent.Event.WithdrawalHash: &validEvent,
-	}
-	err := test_monitor.ConsumeEvents(eventsMap)
+	err := m.ConsumeEvent(newEnrichedEvent(validator.DEFENDER_WINS, true, false, false))
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
-	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
-	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
 
+	require.Equal(t, uint64(1), m.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), m.state.eventsProcessed)
+	require.Equal(t, 0, len(m.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(m.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, m.state.suspiciousEventsOnChallengerWinsGames.Len())
+	require.Equal(t, uint64(0), m.state.numberOfPreIsthmusUnverifiable)
 }
 
-// TestConsumeEventValid_CHALLENGER_WINS_Sepolia tests the consumption of a valid event where the challenger wins.
-// It checks that the state updates correctly after processing the event.
-func TestConsumeEventValid_CHALLENGER_WINS_Sepolia(t *testing.T) {
-	test_monitor := NewTestMonitorSepolia()
+// TestConsumeEventForgeryDefenderWinsSepolia: a non-canonical root claim on a
+// resolved DEFENDER_WINS game is a forgery on a resolved game.
+func TestConsumeEventForgeryDefenderWinsSepolia(t *testing.T) {
+	m := NewTestMonitorSepolia()
 
-	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
-	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
-
-	event := validator.EnrichedProvenWithdrawalEvent{
-		ExpectedRootClaim: expectedRootClaim,
-		DisputeGame: &validator.FaultDisputeGameProxy{
-			DisputeGameData: &validator.DisputeGameData{
-				ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
-				RootClaim:     rootClaim,
-				L2blockNumber: big.NewInt(12030787),
-				L2ChainID:     big.NewInt(11155420),
-				Status:        validator.CHALLENGER_WINS,
-				CreatedAt:     1730000000,
-				ResolvedAt:    1730000000,
-			},
-			FaultDisputeGame: nil,
-		},
-		WithdrawalHashPresentOnL2: true,
-		Blacklisted:               false,
-		Event: &validator.WithdrawalProvenExtension1Event{
-			WithdrawalHash: func() [32]byte {
-				var arr [32]byte
-				copy(arr[:], common.Hex2Bytes("edbe26c8f9b11835295aee42123335f920599f01448e0ec697e9a47e69ed673e"))
-				return arr
-			}(),
-			ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
-			Raw: validator.Raw{
-				BlockNumber: 5915676,
-				TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
-			},
-		},
-	}
-
-	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
-		event.Event.WithdrawalHash: &event,
-	}
-	err := test_monitor.ConsumeEvents(eventsMap)
+	err := m.ConsumeEvent(newEnrichedEvent(validator.DEFENDER_WINS, false, false, false))
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
-	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
-	require.Equal(t, 1, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
 
+	require.Equal(t, uint64(1), m.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), m.state.eventsProcessed)
+	require.Equal(t, 1, len(m.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(m.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, m.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
 
-// TestConsumeEventValid_BlacklistedSepolia tests the consumption of a valid event that is blacklisted.
-// It checks that the state updates correctly after processing the event.
-func TestConsumeEventValid_BlacklistedSepolia(t *testing.T) {
-	test_monitor := NewTestMonitorSepolia()
+// TestConsumeEventForgeryInProgressSepolia: a non-canonical root claim on a game
+// still in progress is a potential attack pending fault-proof resolution.
+func TestConsumeEventForgeryInProgressSepolia(t *testing.T) {
+	m := NewTestMonitorSepolia()
 
-	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
-	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
-
-	event := validator.EnrichedProvenWithdrawalEvent{
-		ExpectedRootClaim: expectedRootClaim,
-		DisputeGame: &validator.FaultDisputeGameProxy{
-			DisputeGameData: &validator.DisputeGameData{
-				ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
-				RootClaim:     rootClaim,
-				L2blockNumber: big.NewInt(12030787),
-				L2ChainID:     big.NewInt(11155420),
-				Status:        validator.DEFENDER_WINS,
-				CreatedAt:     1730000000,
-				ResolvedAt:    1730000000,
-			},
-			FaultDisputeGame: nil,
-		},
-		WithdrawalHashPresentOnL2: true,
-		Blacklisted:               true,
-		Event: &validator.WithdrawalProvenExtension1Event{
-			WithdrawalHash: func() [32]byte {
-				var arr [32]byte
-				copy(arr[:], common.Hex2Bytes("edbe26c8f9b11835295aee42123335f920599f01448e0ec697e9a47e69ed673e"))
-				return arr
-			}(),
-			ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
-			Raw: validator.Raw{
-				BlockNumber: 5915676,
-				TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
-			},
-		},
-	}
-
-	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
-		event.Event.WithdrawalHash: &event,
-	}
-	err := test_monitor.ConsumeEvents(eventsMap)
+	err := m.ConsumeEvent(newEnrichedEvent(validator.IN_PROGRESS, false, false, false))
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
-	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
-	require.Equal(t, 1, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
-	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
 
+	require.Equal(t, uint64(1), m.state.eventsProcessed)
+	require.Equal(t, 0, len(m.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 1, len(m.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, m.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
 
-// TestConsumeEventForgery1Sepolia tests the consumption of an event that indicates a forgery.
-// It checks that the state updates correctly after processing the event.
-func TestConsumeEventForgery1Sepolia(t *testing.T) {
-	test_monitor := NewTestMonitorSepolia()
+// TestConsumeEventChallengerWinsSepolia: a withdrawal proven against a game that
+// resolved CHALLENGER_WINS is suspicious but not a resolved-game forgery.
+func TestConsumeEventChallengerWinsSepolia(t *testing.T) {
+	m := NewTestMonitorSepolia()
 
-	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
-
-	validEvent := validator.EnrichedProvenWithdrawalEvent{
-		ExpectedRootClaim: expectedRootClaim,
-		DisputeGame: &validator.FaultDisputeGameProxy{
-			DisputeGameData: &validator.DisputeGameData{
-				ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
-				RootClaim:     expectedRootClaim,
-				L2blockNumber: big.NewInt(12030787),
-				L2ChainID:     big.NewInt(11155420),
-				Status:        validator.DEFENDER_WINS,
-				CreatedAt:     1730000000,
-				ResolvedAt:    1730000000,
-			},
-			FaultDisputeGame: nil,
-		},
-		WithdrawalHashPresentOnL2: false, // this is the forgery
-		Blacklisted:               false,
-		Event: &validator.WithdrawalProvenExtension1Event{
-			WithdrawalHash: func() [32]byte {
-				var arr [32]byte
-				copy(arr[:], common.Hex2Bytes("edbe26c8f9b11835295aee42123335f920599f01448e0ec697e9a47e69ed673e"))
-				return arr
-			}(),
-			ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
-			Raw: validator.Raw{
-				BlockNumber: 5915676,
-				TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
-			},
-		},
-	}
-
-	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
-		validEvent.Event.WithdrawalHash: &validEvent,
-	}
-	err := test_monitor.ConsumeEvents(eventsMap)
+	err := m.ConsumeEvent(newEnrichedEvent(validator.CHALLENGER_WINS, false, false, false))
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
-	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
-	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
+
+	require.Equal(t, uint64(1), m.state.withdrawalsProcessed)
+	require.Equal(t, uint64(1), m.state.eventsProcessed)
+	require.Equal(t, 0, len(m.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(m.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 1, m.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
 
-// TestConsumeEventForgery2Sepolia tests the consumption of another event that indicates a forgery.
-// It checks that the state updates correctly after processing the event.
-func TestConsumeEventForgery2Sepolia(t *testing.T) {
-	test_monitor := NewTestMonitorSepolia()
+// TestConsumeEventBlacklistedSepolia: an invalid withdrawal on a blacklisted game
+// is routed to the suspicious bucket, not the resolved-game forgery bucket.
+func TestConsumeEventBlacklistedSepolia(t *testing.T) {
+	m := NewTestMonitorSepolia()
 
-	expectedRootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7597")
-	rootClaim := common.HexToHash("0x763d50048ccdb85fded935ff88c9e6b2284fd981da8ed7ae892f36b8761f7596") // different root claim, last number is 6 instead of 7
-
-	event := validator.EnrichedProvenWithdrawalEvent{
-		ExpectedRootClaim: expectedRootClaim,
-		DisputeGame: &validator.FaultDisputeGameProxy{
-			DisputeGameData: &validator.DisputeGameData{
-				ProxyAddress:  common.HexToAddress("0xFA6b748abc490d3356585A1228c73BEd8DA2A3a7"),
-				RootClaim:     rootClaim,
-				L2blockNumber: big.NewInt(12030787),
-				L2ChainID:     big.NewInt(11155420),
-				Status:        validator.DEFENDER_WINS,
-				CreatedAt:     1730000000,
-				ResolvedAt:    1730000000,
-			},
-			FaultDisputeGame: nil,
-		},
-		WithdrawalHashPresentOnL2: true,
-		Blacklisted:               false,
-		Event: &validator.WithdrawalProvenExtension1Event{
-			WithdrawalHash: func() [32]byte {
-				var arr [32]byte
-				copy(arr[:], common.Hex2Bytes("edbe26c8f9b11835295aee42123335f920599f01448e0ec697e9a47e69ed673e"))
-				return arr
-			}(),
-			ProofSubmitter: common.HexToAddress("0x4444d38c385d0969C64c4C8f996D7536d16c28B9"),
-			Raw: validator.Raw{
-				BlockNumber: 5915676,
-				TxHash:      common.HexToHash("0x38227b45af7eb20bfa341df89955f142a4de85add67e05cbac5d80c0d9cc6132"),
-			},
-		},
-	}
-
-	eventsMap := map[common.Hash]*validator.EnrichedProvenWithdrawalEvent{
-		event.Event.WithdrawalHash: &event,
-	}
-	err := test_monitor.ConsumeEvents(eventsMap)
+	err := m.ConsumeEvent(newEnrichedEvent(validator.DEFENDER_WINS, false, true, false))
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), test_monitor.state.withdrawalsProcessed)
-	require.Equal(t, uint64(1), test_monitor.state.eventsProcessed)
-	require.Equal(t, 1, len(test_monitor.state.potentialAttackOnDefenderWinsGames))
-	require.Equal(t, 0, len(test_monitor.state.potentialAttackOnInProgressGames))
-	require.Equal(t, 0, test_monitor.state.suspiciousEventsOnChallengerWinsGames.Len())
 
+	require.Equal(t, uint64(1), m.state.eventsProcessed)
+	require.Equal(t, 0, len(m.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(m.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 1, m.state.suspiciousEventsOnChallengerWinsGames.Len())
+}
+
+// TestConsumeEventPreIsthmusSepolia: a withdrawal against a pre-Isthmus L2 block
+// cannot be header-verified and is flagged for security triage — never counted
+// as valid nor as a forgery.
+func TestConsumeEventPreIsthmusSepolia(t *testing.T) {
+	m := NewTestMonitorSepolia()
+
+	err := m.ConsumeEvent(newEnrichedEvent(validator.DEFENDER_WINS, false, false, true))
+	require.NoError(t, err)
+
+	require.Equal(t, uint64(1), m.state.eventsProcessed)
+	require.Equal(t, uint64(1), m.state.numberOfPreIsthmusUnverifiable)
+	require.Equal(t, 0, len(m.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(m.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, m.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
