@@ -430,6 +430,20 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 	m.log.Debug("Validating withdrawal event",
 		"gameStatus", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status)
 
+	// Pre-Isthmus games cannot be verified from the L2 block header (the header
+	// carries no message-passer storage root). Surface them for security triage
+	// rather than treating them as valid or as a forgery, and advance the cursor.
+	if enrichedWithdrawalEvent.PreIsthmusUnverifiable {
+		m.log.Warn("WITHDRAWAL: pre-Isthmus block, cannot header-verify; flagging for triage",
+			"TxHash", enrichedWithdrawalEvent.Event.Raw.TxHash,
+			"withdrawalHash", common.BytesToHash(enrichedWithdrawalEvent.Event.WithdrawalHash[:]),
+			"L2blockNumber", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.L2blockNumber)
+		m.state.IncrementPreIsthmusUnverifiable(enrichedWithdrawalEvent)
+		m.state.eventsProcessed++
+		m.metrics.UpdateMetricsFromState(&m.state)
+		return nil
+	}
+
 	valid, err := m.withdrawalValidator.IsWithdrawalEventValid(enrichedWithdrawalEvent)
 	if err != nil {
 		m.log.Error("Failed to check if forgery detected",

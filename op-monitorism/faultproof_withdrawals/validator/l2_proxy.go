@@ -5,16 +5,17 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"strings"
-
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/predeploys"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethereum "github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
+
+// sentMessagesSelector is the 4-byte selector of L2ToL1MessagePasser.sentMessages(bytes32).
+var sentMessagesSelector = crypto.Keccak256([]byte("sentMessages(bytes32)"))[:4]
 
 type L2Proxy struct {
 	l2GethClient          *ethclient.Client
@@ -60,106 +61,85 @@ func (l2Proxy *L2Proxy) BlockNumber() (uint64, error) {
 	return blockNumber, nil
 }
 
-// GetOutputRootFromCalculation retrieves the output root by calculating it from the given block number.
-// It returns the calculated output root as a Bytes32 array.
-func (l2Proxy *L2Proxy) VerifyWithdrawalHashAndClaim(blockNumber *big.Int, withdrawalHash [32]byte, claim [32]byte) (bool, bool, string, error) {
-	// We get the block from our trusted op-geth node
-	block, err := l2Proxy.l2GethClient.BlockByNumber(l2Proxy.ctx, blockNumber)
-	l2Proxy.Connections["default"]++
-	if err != nil {
-		l2Proxy.ConnectionError["default"]++
-		return false, false, "", fmt.Errorf("failed to get output at block for game blockInt:%v error:%w", blockNumber, err)
-	}
-
-	// We get proof from our trusted op-geth node if present
-	accountResult, clientUsed, err := l2Proxy.RetrieveEthProof(blockNumber, withdrawalHash)
-	l2Proxy.Connections["default"]++
-	if err != nil {
-		l2Proxy.ConnectionError["default"]++
-		return false, false, "", fmt.Errorf("failed to get proof: %w", err)
-	}
-	// verify the proof when this comes from untrusted node (merkle trie)
-	err = accountResult.Verify(block.Root())
-	if err != nil {
-		return false, false, "", fmt.Errorf("failed to verify proof: %w", err)
-	}
-	outputRoot := eth.OutputRoot(&eth.OutputV0{StateRoot: [32]byte(block.Root()), MessagePasserStorageRoot: [32]byte(accountResult.StorageHash), BlockHash: block.Hash()})
-
-	return bytes.Equal(outputRoot[:], claim[:]), false, clientUsed, nil
-}
-
-// VerifyRootClaimAndWithdrawalHash verifies that a given root claim matches the computed output root
-// for a block and that the withdrawal hash proof is valid.
+// VerifyRootClaimFromHeader recomputes the L2 output root purely from the block
+// header and compares it against the dispute game's root claim.
 //
-// Parameters:
-//   - blockNumber: The L2 block number to verify
-//   - rootClaim: The claimed output root to verify against
-//   - withdrawalHash: The withdrawal hash to verify
+// Post-Isthmus, the header's WithdrawalsRoot IS the L2ToL1MessagePasser storage
+// root, so the output root can be reconstructed without any historical trie state
+// (no eth_getProof). Validation therefore works for arbitrarily old games and can
+// never stall on pruned state.
+//
+// Pre-Isthmus blocks carry the empty-trie root in WithdrawalsRoot rather than the
+// message-passer storage root, so they cannot be verified this way. Those are
+// reported (preIsthmus=true) so the monitor can surface them for security triage
+// rather than validate them here.
 //
 // Returns:
-//   - bool: True if the computed output root matches the claim
-//   - bool: True if the withdrawal proof is valid
-//   - string: The name of the client used to retrieve the proof
-//   - error: Any error that occurred during verification
-func (l2Proxy *L2Proxy) VerifyRootClaimAndWithdrawalHash(blockNumber *big.Int, rootClaim [32]byte, withdrawalHash [32]byte) (bool, bool, string, error) {
-	// We get the block from our trusted op-geth node
+//   - trusted: true if the recomputed output root matches the root claim
+//   - preIsthmus: true if the block predates Isthmus and cannot be header-verified
+//   - error: any error encountered fetching the block
+func (l2Proxy *L2Proxy) VerifyRootClaimFromHeader(blockNumber *big.Int, rootClaim [32]byte) (trusted bool, preIsthmus bool, err error) {
 	block, err := l2Proxy.l2GethClient.BlockByNumber(l2Proxy.ctx, blockNumber)
 	l2Proxy.Connections["default"]++
 	if err != nil {
 		l2Proxy.ConnectionError["default"]++
-		return false, false, "", fmt.Errorf("failed to get output at block for game blockInt:%v error:%w", blockNumber, err)
+		return false, false, fmt.Errorf("failed to get block for game blockInt:%v error:%w", blockNumber, err)
 	}
 
-	// We get proof from our trusted op-geth node if present
-	accountResult, clientUsed, err := l2Proxy.RetrieveEthProof(blockNumber, withdrawalHash)
-	l2Proxy.Connections["default"]++
-	if err != nil {
-		l2Proxy.ConnectionError["default"]++
-		return false, false, clientUsed, fmt.Errorf("failed to get proof: %w", err)
-	} else {
-
-		// verify the proof when this comes from untrusted node (merkle trie)
-		err = accountResult.Verify(block.Root())
-
-		outputRoot := eth.OutputRoot(&eth.OutputV0{StateRoot: [32]byte(block.Root()), MessagePasserStorageRoot: [32]byte(accountResult.StorageHash), BlockHash: block.Hash()})
-		return bytes.Equal(outputRoot[:], rootClaim[:]), err == nil, clientUsed, nil
+	header := block.Header()
+	// Note: the Go field is WithdrawalsHash; its JSON/RLP tag is "withdrawalsRoot".
+	// Pre-Isthmus the header does not commit to the message-passer storage root: it is
+	// nil (pre-Canyon) or types.EmptyWithdrawalsHash (Canyon..Isthmus — op-geth's
+	// EmptyWithdrawalsHash is the OP pre-Isthmus withdrawals-root sentinel).
+	//
+	// NOTE: this is a heuristic. The robust, chain-agnostic check is the rollup
+	// config's isthmus_time compared against header.Time; the sentinel could in
+	// principle collide with a genuinely-empty post-Isthmus message-passer storage
+	// root on a brand-new low-activity chain. Revisit before relying on other chains.
+	if header.WithdrawalsHash == nil || *header.WithdrawalsHash == types.EmptyWithdrawalsHash {
+		return false, true, nil
 	}
+
+	outputRoot := eth.OutputRoot(&eth.OutputV0{
+		StateRoot:                [32]byte(header.Root),
+		MessagePasserStorageRoot: [32]byte(*header.WithdrawalsHash),
+		BlockHash:                header.Hash(),
+	})
+	return bytes.Equal(outputRoot[:], rootClaim[:]), false, nil
 }
 
-// we retrieve the proof from the truested op-geth node and eventually from backup nodes if present
-func (l2Proxy *L2Proxy) RetrieveEthProof(blockNumber *big.Int, withdrawalHash [32]byte) (eth.AccountResult, string, error) {
-	accountResult := eth.AccountResult{}
-	encodedBlock := hexutil.EncodeBig(blockNumber)
+// IsWithdrawalPresentAtHead reports whether the withdrawal hash is recorded in the
+// L2ToL1MessagePasser's sentMessages mapping at the current L2 head.
+//
+// L2ToL1MessagePasser.sentMessages is append-only (only ever set to true, never
+// cleared), so a withdrawal present at its dispute game's (possibly old, possibly
+// pruned) L2 block is still present at head. Querying head therefore yields the same
+// presence answer as the historical block WITHOUT any archive-state dependency —
+// head state is never pruned, so this can never stall. A fabricated withdrawal that
+// was never initiated on L2 is absent at head and gets flagged.
+//
+// This is an independent re-check of what the OptimismPortal enforces on-chain
+// (defense-in-depth against a Portal inclusion-proof bug). It reads the trusted
+// primary L2 node's public getter via eth_call, so no merkle proof (eth_getProof)
+// is needed.
+func (l2Proxy *L2Proxy) IsWithdrawalPresentAtHead(withdrawalHash [32]byte) (bool, error) {
+	data := append(append([]byte{}, sentMessagesSelector...), withdrawalHash[:]...)
+	to := predeploys.L2ToL1MessagePasserAddr
 
-	// Concatenate withdrawalHash with bytes(0) directly
-	combined := append(withdrawalHash[:], make([]byte, 32)...) // append 32 zero bytes
-	hash := crypto.Keccak256Hash(combined)
-
-	storageKeys := []common.Hash{hash}
-	// fmt.Printf("Storage Keys: %v\n", storageKeys)
-
-	usedClients := []string{"default"}
 	l2Proxy.Connections["default"]++
-	err := l2Proxy.l2GethClient.Client().CallContext(l2Proxy.ctx, &accountResult, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, storageKeys, encodedBlock)
-	fmt.Printf("Used Clients: %v\n", usedClients)
+	res, err := l2Proxy.l2GethClient.CallContract(l2Proxy.ctx, ethereum.CallMsg{To: &to, Data: data}, nil)
 	if err != nil {
 		l2Proxy.ConnectionError["default"]++
-		for clientName, client := range l2Proxy.l2OpGethBackupClients {
-			l2Proxy.Connections[clientName]++
-			client_err := client.Client().CallContext(l2Proxy.ctx, &accountResult, "eth_getProof", predeploys.L2ToL1MessagePasserAddr, storageKeys, encodedBlock)
-			// if we get a proof, we return it
-			if client_err == nil {
-				usedClients = append(usedClients, clientName)
-				break
-			}
-			l2Proxy.ConnectionError[clientName]++
-		}
+		return false, fmt.Errorf("failed to query sentMessages at head: %w", err)
+	}
 
+	// ABI bool: a 32-byte word, non-zero => true.
+	for _, b := range res {
+		if b != 0 {
+			return true, nil
+		}
 	}
-	if accountResult.StorageHash == (common.Hash{}) {
-		return eth.AccountResult{}, strings.Join(usedClients, ","), fmt.Errorf("failed to get proof from any node")
-	}
-	return accountResult, strings.Join(usedClients, ","), nil
+	return false, nil
 }
 
 func (l2Proxy *L2Proxy) GetTotalConnections() uint64 {

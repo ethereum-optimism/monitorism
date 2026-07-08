@@ -16,6 +16,7 @@ import (
 
 const (
 	suspiciousEventsOnChallengerWinsGamesCacheSize = 1000
+	preIsthmusUnverifiableCacheSize                = 1000
 )
 
 type State struct {
@@ -47,6 +48,11 @@ type State struct {
 	suspiciousEventsOnChallengerWinsGames         *lru.Cache
 	numberOfSuspiciousEventsOnChallengerWinsGames uint64
 
+	// Pre-Isthmus withdrawals we cannot header-verify (no message-passer storage
+	// root in the block header). Not a forgery — surfaced for security triage.
+	preIsthmusUnverifiable         *lru.Cache
+	numberOfPreIsthmusUnverifiable uint64
+
 	provenWithdrawalValidator *validator.ProvenWithdrawalValidator
 }
 
@@ -76,6 +82,16 @@ func NewState(logger log.Logger, provenWithdrawalValidator *validator.ProvenWith
 			return cache
 		}(),
 		numberOfSuspiciousEventsOnChallengerWinsGames: 0,
+
+		preIsthmusUnverifiable: func() *lru.Cache {
+			cache, err := lru.New(preIsthmusUnverifiableCacheSize)
+			if err != nil {
+				logger.Error("Failed to create LRU cache", "error", err)
+				return nil
+			}
+			return cache
+		}(),
+		numberOfPreIsthmusUnverifiable: 0,
 
 		potentialAttackOnInProgressGames:         make(map[common.Hash]*validator.EnrichedProvenWithdrawalEvent),
 		numberOfPotentialAttackOnInProgressGames: 0,
@@ -124,6 +140,7 @@ func (s *State) LogState() {
 		"potentialAttackOnDefenderWinsGames", fmt.Sprintf("%d", s.numberOfPotentialAttacksOnDefenderWinsGames),
 		"potentialAttackOnInProgressGames", fmt.Sprintf("%d", s.numberOfPotentialAttackOnInProgressGames),
 		"suspiciousEventsOnChallengerWinsGames", fmt.Sprintf("%d", s.numberOfSuspiciousEventsOnChallengerWinsGames),
+		"preIsthmusUnverifiable", fmt.Sprintf("%d", s.numberOfPreIsthmusUnverifiable),
 	)
 }
 
@@ -184,6 +201,17 @@ func (s *State) IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawa
 	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
 }
 
+func (s *State) IncrementPreIsthmusUnverifiable(enrichedWithdrawalEvent *validator.EnrichedProvenWithdrawalEvent) {
+	key := enrichedWithdrawalEvent.Event.Raw.TxHash
+
+	s.logger.Warn("STATE WITHDRAWAL: pre-Isthmus block, cannot header-verify — flagged for security triage", "TxHash", fmt.Sprintf("%v", key), "enrichedWithdrawalEvent", enrichedWithdrawalEvent)
+	s.preIsthmusUnverifiable.Add(key, enrichedWithdrawalEvent)
+	s.numberOfPreIsthmusUnverifiable++
+
+	s.withdrawalsProcessed++
+	enrichedWithdrawalEvent.ProcessedTimeStamp = float64(time.Now().Unix())
+}
+
 func (s *State) GetPercentages() (uint64, uint64) {
 	blockToProcess := s.latestL1Height - s.nextL1Height
 	divisor := float64(s.latestL1Height) * 100
@@ -215,11 +243,17 @@ type Metrics struct {
 	PotentialAttackOnInProgressGamesGaugeVec      *prometheus.GaugeVec
 	SuspiciousEventsOnChallengerWinsGamesGaugeVec *prometheus.GaugeVec
 
+	// Pre-Isthmus withdrawals that cannot be header-verified (security triage).
+	PreIsthmusUnverifiableGauge        prometheus.Gauge
+	PreIsthmusUnverifiableTotalCounter prometheus.Counter
+	PreIsthmusUnverifiableGaugeVec     *prometheus.GaugeVec
+
 	// Previous values for counters
 	previousEventsProcessed        uint64
 	previousWithdrawalsProcessed   uint64
 	previousNodeConnectionFailures uint64
 	previousNodeConnections        uint64
+	previousPreIsthmusUnverifiable uint64
 }
 
 func (m *Metrics) String() string {
@@ -384,6 +418,24 @@ func NewMetrics(m metrics.Factory) *Metrics {
 			},
 			[]string{"withdrawal_hash", "proof_submitter", "status", "TxHash", "TxL1BlockNumber", "ProxyAddress", "L2blockNumber", "RootClaim", "blacklisted", "withdrawal_hash_present", "enriched", "event_block_number", "event_tx_hash"},
 		),
+		PreIsthmusUnverifiableGauge: m.NewGauge(prometheus.GaugeOpts{
+			Namespace: MetricsNamespace,
+			Name:      "pre_isthmus_unverifiable_count",
+			Help:      "Number of proven withdrawals against pre-Isthmus L2 blocks that cannot be header-verified (awaiting security triage)",
+		}),
+		PreIsthmusUnverifiableTotalCounter: m.NewCounter(prometheus.CounterOpts{
+			Namespace: MetricsNamespace,
+			Name:      "pre_isthmus_unverifiable_total",
+			Help:      "Total number of proven withdrawals flagged as pre-Isthmus unverifiable",
+		}),
+		PreIsthmusUnverifiableGaugeVec: m.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: MetricsNamespace,
+				Name:      "pre_isthmus_unverifiable_info",
+				Help:      "Identifying info for pre-Isthmus unverifiable withdrawals for triage; value is the detection unix timestamp.",
+			},
+			[]string{"proving_tx_hash", "withdrawal_hash", "l2_block_number", "game_proxy", "root_claim", "proof_submitter", "game_status"},
+		),
 	}
 
 	return ret
@@ -403,6 +455,7 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 	m.PotentialAttackOnDefenderWinsGamesGauge.Set(float64(state.numberOfPotentialAttacksOnDefenderWinsGames))
 	m.PotentialAttackOnInProgressGamesGauge.Set(float64(state.numberOfPotentialAttackOnInProgressGames))
 	m.SuspiciousEventsOnChallengerWinsGamesGauge.Set(float64(state.numberOfSuspiciousEventsOnChallengerWinsGames))
+	m.PreIsthmusUnverifiableGauge.Set(float64(state.numberOfPreIsthmusUnverifiable))
 
 	// Update Counters by calculating deltas
 	// Processed Withdrawals
@@ -431,6 +484,13 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 		m.NodeConnectionsCounter.Add(float64(nodeConnectionsDelta))
 	}
 	m.previousNodeConnections = state.GetNodeConnections()
+
+	// Pre-Isthmus Unverifiable
+	preIsthmusUnverifiableDelta := state.numberOfPreIsthmusUnverifiable - m.previousPreIsthmusUnverifiable
+	if preIsthmusUnverifiableDelta > 0 {
+		m.PreIsthmusUnverifiableTotalCounter.Add(float64(preIsthmusUnverifiableDelta))
+	}
+	m.previousPreIsthmusUnverifiable = state.numberOfPreIsthmusUnverifiable
 
 	// Clear the previous values
 	m.PotentialAttackOnDefenderWinsGamesGaugeVec.Reset()
@@ -510,6 +570,25 @@ func (m *Metrics) UpdateMetricsFromState(state *State) {
 				fmt.Sprintf("%v", event.Event.Raw.BlockNumber),
 				event.Event.Raw.TxHash.String(),
 			).Set(event.ProcessedTimeStamp) // Set the timestamp of when the event was processed
+		}
+	}
+
+	// Clear the previous values
+	m.PreIsthmusUnverifiableGaugeVec.Reset()
+	// Populate identifying info for pre-Isthmus unverifiable withdrawals (security triage)
+	for _, key := range state.preIsthmusUnverifiable.Keys() {
+		enrichedEvent, ok := state.preIsthmusUnverifiable.Get(key)
+		if ok {
+			event := enrichedEvent.(*validator.EnrichedProvenWithdrawalEvent)
+			m.PreIsthmusUnverifiableGaugeVec.WithLabelValues(
+				event.Event.Raw.TxHash.String(),
+				common.BytesToHash(event.Event.WithdrawalHash[:]).Hex(),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.L2blockNumber),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.ProxyAddress),
+				fmt.Sprintf("%v", event.DisputeGame.DisputeGameData.RootClaim),
+				event.Event.ProofSubmitter.String(),
+				event.DisputeGame.DisputeGameData.Status.String(),
+			).Set(event.ProcessedTimeStamp) // detection timestamp
 		}
 	}
 }

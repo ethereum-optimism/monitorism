@@ -33,6 +33,7 @@ type EnrichedProvenWithdrawalEvent struct {
 	Enriched                      bool                             // Indicates if the event is enriched.
 	ProcessedTimeStamp            float64                          // Unix TimeStamp seconds when the event was processed.
 	ClientUsed                    string                           // Client used to get the proof
+	PreIsthmusUnverifiable        bool                             // Game's L2 block predates Isthmus; cannot be header-verified, flagged for security triage.
 }
 
 // ProvenWithdrawalValidator validates proven withdrawal events.
@@ -146,13 +147,28 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 			return fmt.Errorf("failed to get latest known L2 block number: %w", err)
 		}
 		if latest_known_l2_block >= event.DisputeGame.DisputeGameData.L2blockNumber.Uint64() {
-			trustedRootClaim, withdrawalHashPresentOnL2, clientUsed, err := wv.L2Proxy.VerifyRootClaimAndWithdrawalHash(event.DisputeGame.DisputeGameData.L2blockNumber, event.DisputeGame.DisputeGameData.RootClaim, event.Event.WithdrawalHash)
+			trustedRootClaim, preIsthmus, err := wv.L2Proxy.VerifyRootClaimFromHeader(event.DisputeGame.DisputeGameData.L2blockNumber, event.DisputeGame.DisputeGameData.RootClaim)
 			if err != nil {
-				return fmt.Errorf("failed to get trustedRootClaim from L2 clients '%s': %w", clientUsed, err)
+				return fmt.Errorf("failed to verify root claim from header: %w", err)
 			}
-			event.DisputeGameRootClaimIsTrusted = trustedRootClaim
-			event.WithdrawalHashPresentOnL2 = withdrawalHashPresentOnL2
-			event.ClientUsed = clientUsed
+			if preIsthmus {
+				// Cannot header-verify a pre-Isthmus block. Not treated as valid nor as a
+				// forgery: flagged for security triage (see monitor.ConsumeEvent).
+				event.PreIsthmusUnverifiable = true
+				event.DisputeGameRootClaimIsTrusted = false
+				event.WithdrawalHashPresentOnL2 = false
+			} else {
+				event.DisputeGameRootClaimIsTrusted = trustedRootClaim
+				// Independently re-check that the withdrawal is genuinely present in the
+				// L2ToL1MessagePasser (defense-in-depth against an OptimismPortal
+				// inclusion-proof bug). sentMessages is append-only, so we query it at
+				// head — no archive state, no eth_getProof, and it can never stall.
+				present, err := wv.L2Proxy.IsWithdrawalPresentAtHead(event.Event.WithdrawalHash)
+				if err != nil {
+					return fmt.Errorf("failed to check withdrawal presence at head: %w", err)
+				}
+				event.WithdrawalHashPresentOnL2 = present
+			}
 		} else {
 			event.DisputeGameRootClaimIsTrusted = false
 		}
@@ -258,6 +274,11 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 		return false, fmt.Errorf("game not enriched")
 	}
 
+	// Valid iff (a) the game's root claim is canonical (recomputed from the L2
+	// header) AND (b) the withdrawal is genuinely present in the L2ToL1MessagePasser
+	// (checked at head — see IsWithdrawalPresentAtHead). (a) catches a dishonest
+	// game; (b) is an independent re-check against an OptimismPortal inclusion-proof
+	// bug. Pre-Isthmus events are routed for triage before this and never reach it.
 	return enrichedWithdrawalEvent.DisputeGameRootClaimIsTrusted && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2, nil
 }
 
