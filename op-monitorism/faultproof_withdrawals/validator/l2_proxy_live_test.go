@@ -52,3 +52,28 @@ func TestVerifyRootClaimFromHeaderMainnet(t *testing.T) {
 		require.False(t, trusted)
 	})
 }
+
+// TestIsWithdrawalPresentAtHeadMainnet checks the head-based presence re-check
+// against real OP Mainnet message-passer state. Set FPW_L2_RPC.
+func TestIsWithdrawalPresentAtHeadMainnet(t *testing.T) {
+	l2URL := os.Getenv("FPW_L2_RPC")
+	require.NotEmpty(t, l2URL, "FPW_L2_RPC must be set")
+
+	l2, err := NewL2Proxy(context.Background(), l2URL, nil)
+	require.NoError(t, err)
+
+	t.Run("real proven withdrawal is present", func(t *testing.T) {
+		// Withdrawal proven in L1 tx 0x4b4cf0681ae913d4124e10347464987535756ebb0be16da5a420b8f7242f0205.
+		h := [32]byte(common.HexToHash("0xd8cb1f2e261f75e825964593ac85a22d295061ad99ebd34fd5b994c8033adfb8"))
+		present, err := l2.IsWithdrawalPresentAtHead(h)
+		require.NoError(t, err)
+		require.True(t, present)
+	})
+
+	t.Run("fabricated withdrawal is absent (would be flagged)", func(t *testing.T) {
+		h := [32]byte(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000deadbeef"))
+		present, err := l2.IsWithdrawalPresentAtHead(h)
+		require.NoError(t, err)
+		require.False(t, present)
+	})
+}

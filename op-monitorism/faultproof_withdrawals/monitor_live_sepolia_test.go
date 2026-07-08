@@ -212,3 +212,22 @@ func TestConsumeEventPreIsthmusSepolia(t *testing.T) {
 	require.Equal(t, 0, len(m.state.potentialAttackOnInProgressGames))
 	require.Equal(t, 0, m.state.suspiciousEventsOnChallengerWinsGames.Len())
 }
+
+// TestConsumeEventTrustedButAbsentSepolia: a canonical root claim whose withdrawal
+// is NOT present in the message passer at head (the Portal-inclusion-bug / fabricated
+// withdrawal case). Presence is an independent condition, so this is a forgery on a
+// resolved game even though the root claim is trusted.
+func TestConsumeEventTrustedButAbsentSepolia(t *testing.T) {
+	m := NewTestMonitorSepolia()
+
+	event := newEnrichedEvent(validator.DEFENDER_WINS, true, false, false)
+	event.WithdrawalHashPresentOnL2 = false // canonical root, but withdrawal absent at head
+
+	err := m.ConsumeEvent(event)
+	require.NoError(t, err)
+
+	require.Equal(t, uint64(1), m.state.eventsProcessed)
+	require.Equal(t, 1, len(m.state.potentialAttackOnDefenderWinsGames))
+	require.Equal(t, 0, len(m.state.potentialAttackOnInProgressGames))
+	require.Equal(t, 0, m.state.suspiciousEventsOnChallengerWinsGames.Len())
+}

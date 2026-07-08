@@ -159,10 +159,15 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 				event.WithdrawalHashPresentOnL2 = false
 			} else {
 				event.DisputeGameRootClaimIsTrusted = trustedRootClaim
-				// Presence is subsumed by a canonical root claim plus the OptimismPortal's
-				// on-chain inclusion-proof check performed at prove time, so it tracks the
-				// root-claim result rather than a separate eth_getProof.
-				event.WithdrawalHashPresentOnL2 = trustedRootClaim
+				// Independently re-check that the withdrawal is genuinely present in the
+				// L2ToL1MessagePasser (defense-in-depth against an OptimismPortal
+				// inclusion-proof bug). sentMessages is append-only, so we query it at
+				// head — no archive state, no eth_getProof, and it can never stall.
+				present, err := wv.L2Proxy.IsWithdrawalPresentAtHead(event.Event.WithdrawalHash)
+				if err != nil {
+					return fmt.Errorf("failed to check withdrawal presence at head: %w", err)
+				}
+				event.WithdrawalHashPresentOnL2 = present
 			}
 		} else {
 			event.DisputeGameRootClaimIsTrusted = false
@@ -269,12 +274,12 @@ func (wv *ProvenWithdrawalValidator) IsWithdrawalEventValid(enrichedWithdrawalEv
 		return false, fmt.Errorf("game not enriched")
 	}
 
-	// A canonical root claim (verified from the L2 block header) is the forgery
-	// check. Withdrawal presence is enforced on-chain by the OptimismPortal at
-	// prove time and is subsumed by a canonical root claim, so it is not a
-	// separate condition here. Pre-Isthmus events are routed for triage before
-	// this check and never reach it as "valid".
-	return enrichedWithdrawalEvent.DisputeGameRootClaimIsTrusted, nil
+	// Valid iff (a) the game's root claim is canonical (recomputed from the L2
+	// header) AND (b) the withdrawal is genuinely present in the L2ToL1MessagePasser
+	// (checked at head — see IsWithdrawalPresentAtHead). (a) catches a dishonest
+	// game; (b) is an independent re-check against an OptimismPortal inclusion-proof
+	// bug. Pre-Isthmus events are routed for triage before this and never reach it.
+	return enrichedWithdrawalEvent.DisputeGameRootClaimIsTrusted && enrichedWithdrawalEvent.WithdrawalHashPresentOnL2, nil
 }
 
 func (wv *ProvenWithdrawalValidator) GetL2BlockNumber() (uint64, error) {

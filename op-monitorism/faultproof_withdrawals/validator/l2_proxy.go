@@ -7,9 +7,15 @@ import (
 	"math/big"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/predeploys"
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
+
+// sentMessagesSelector is the 4-byte selector of L2ToL1MessagePasser.sentMessages(bytes32).
+var sentMessagesSelector = crypto.Keccak256([]byte("sentMessages(bytes32)"))[:4]
 
 type L2Proxy struct {
 	l2GethClient          *ethclient.Client
@@ -100,6 +106,40 @@ func (l2Proxy *L2Proxy) VerifyRootClaimFromHeader(blockNumber *big.Int, rootClai
 		BlockHash:                header.Hash(),
 	})
 	return bytes.Equal(outputRoot[:], rootClaim[:]), false, nil
+}
+
+// IsWithdrawalPresentAtHead reports whether the withdrawal hash is recorded in the
+// L2ToL1MessagePasser's sentMessages mapping at the current L2 head.
+//
+// L2ToL1MessagePasser.sentMessages is append-only (only ever set to true, never
+// cleared), so a withdrawal present at its dispute game's (possibly old, possibly
+// pruned) L2 block is still present at head. Querying head therefore yields the same
+// presence answer as the historical block WITHOUT any archive-state dependency —
+// head state is never pruned, so this can never stall. A fabricated withdrawal that
+// was never initiated on L2 is absent at head and gets flagged.
+//
+// This is an independent re-check of what the OptimismPortal enforces on-chain
+// (defense-in-depth against a Portal inclusion-proof bug). It reads the trusted
+// primary L2 node's public getter via eth_call, so no merkle proof (eth_getProof)
+// is needed.
+func (l2Proxy *L2Proxy) IsWithdrawalPresentAtHead(withdrawalHash [32]byte) (bool, error) {
+	data := append(append([]byte{}, sentMessagesSelector...), withdrawalHash[:]...)
+	to := predeploys.L2ToL1MessagePasserAddr
+
+	l2Proxy.Connections["default"]++
+	res, err := l2Proxy.l2GethClient.CallContract(l2Proxy.ctx, ethereum.CallMsg{To: &to, Data: data}, nil)
+	if err != nil {
+		l2Proxy.ConnectionError["default"]++
+		return false, fmt.Errorf("failed to query sentMessages at head: %w", err)
+	}
+
+	// ABI bool: a 32-byte word, non-zero => true.
+	for _, b := range res {
+		if b != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (l2Proxy *L2Proxy) GetTotalConnections() uint64 {
