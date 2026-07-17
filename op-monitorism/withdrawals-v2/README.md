@@ -33,13 +33,16 @@ There is **no L2 dependency** — the monitor only talks to an L1 archive+trace 
 ### Metrics
 
 - `withdrawals_v2_valid_withdrawals_total`: withdrawals whose proof re-verified correctly.
-- `withdrawals_v2_invalid_withdrawals_total{reason,txhash,wdhash}`: **P0** — the portal
-  accepted a proof a correct verifier rejects. `reason` is one of:
+- `withdrawals_v2_invalid_withdrawals_total{reason}`: **P0** — the portal accepted a proof
+  a correct verifier rejects. `reason` is one of:
   - `bad_withdrawal_proof`: storage-inclusion proof does not prove inclusion.
   - `bad_output_root_binding`: `keccak(outputRootProof)` does not equal the game root claim.
-- `withdrawals_v2_unverifiable_withdrawals_total{reason,txhash,wdhash}`: counts each prove
-  event that could not be re-verified on first sight (then parked for async retry). `reason`
-  is one of `trace_unavailable`, `no_prove_call_found`, `decode_error`, `game_read_error`.
+- `withdrawals_v2_unverifiable_withdrawals_total{reason}`: counts each prove event that
+  could not be re-verified on first sight (then parked for async retry). `reason` is one of
+  `trace_unavailable`, `no_prove_call_found`, `decode_error`, `game_read_error`.
+
+Counters are labelled only by `reason` (aggregate) to keep cardinality bounded; the
+offending tx and withdrawal hashes are in the structured logs and the pending store.
 - `withdrawals_v2_pending_withdrawals`: **gauge** — prove events awaiting a terminal
   valid/invalid verdict. The async retry loop drives each to a verdict, so no event is
   ever silently dropped after a transient RPC failure.

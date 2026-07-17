@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -58,6 +59,13 @@ const (
 	// pendingRetryInterval is how often the async loop re-evaluates events that
 	// have not yet reached a terminal valid/invalid verdict.
 	pendingRetryInterval = 60 * time.Second
+
+	// assessTimeout bounds the RPC work (trace + game reads + receipt) for a single
+	// event. ethclient.Dial sets no HTTP timeout, so without this a stuck
+	// debug_traceTransaction could wedge the processor or the retry loop
+	// indefinitely. Derived from the cancellable run context, so shutdown also
+	// aborts an in-flight trace.
+	assessTimeout = 30 * time.Second
 )
 
 // Metrics holds the Prometheus counters and gauges for the monitor.
@@ -87,6 +95,11 @@ type Monitor struct {
 	wdTxArgs      abi.Arguments
 	processor     *processor.BlockProcessor
 	metrics       Metrics
+
+	// baseCtx is the cancellable run context; per-event work derives a timeout from
+	// it so shutdown aborts in-flight RPCs. Set in Run; defaults to Background so
+	// the monitor is usable (e.g. in tests) before Run is called.
+	baseCtx context.Context
 
 	// l2ChainID is read lazily (only for super-game root claims) and cached. A
 	// dedicated mutex lets the processor and the async retry loop resolve it
@@ -242,7 +255,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	// index (immutable), not via provenWithdrawals (mutable — a re-prove
 	// overwrites it), so the monitor always re-verifies against the exact game a
 	// given prove call targeted.
-	factoryAddr, err := portal.DisputeGameFactory(nil)
+	factoryAddr, err := portal.DisputeGameFactory(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, fmt.Errorf("read disputeGameFactory: %w", err)
 	}
@@ -254,7 +267,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	// Bind SystemConfig so we can read l2ChainId when a super game is encountered
 	// (mirrors the portal's super-game predicate). The chain id itself is read
 	// lazily, so a SystemConfig without l2ChainId() never breaks legacy chains.
-	systemConfigAddr, err := portal.SystemConfig(nil)
+	systemConfigAddr, err := portal.SystemConfig(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, fmt.Errorf("read systemConfig: %w", err)
 	}
@@ -286,6 +299,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		portal:        portal,
 		dgf:           dgf,
 		systemConfig:  systemConfig,
+		baseCtx:       context.Background(),
 		pending:       make(map[string]*pendingEvent),
 		portalAddress: portalAddress,
 		portalABI:     portalABI,
@@ -304,17 +318,17 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 				prometheus.CounterOpts{
 					Namespace: MetricsNamespace,
 					Name:      "invalid_withdrawals_total",
-					Help:      "Withdrawals the portal accepted but a correct verifier rejects (P0)",
+					Help:      "Withdrawals the portal accepted but a correct verifier rejects (P0). Offending tx/withdrawal hashes are in the logs.",
 				},
-				[]string{"reason", "txhash", "wdhash"},
+				[]string{"reason"},
 			),
 			unverifiable: m.NewCounterVec(
 				prometheus.CounterOpts{
 					Namespace: MetricsNamespace,
 					Name:      "unverifiable_withdrawals_total",
-					Help:      "Withdrawals the monitor could not re-verify on first sight (parked for async retry)",
+					Help:      "Withdrawals the monitor could not re-verify on first sight (parked for async retry). Hashes are in the logs and the pending store.",
 				},
-				[]string{"reason", "txhash", "wdhash"},
+				[]string{"reason"},
 			),
 			pending: m.NewGauge(
 				prometheus.GaugeOpts{
@@ -384,6 +398,10 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 // Run starts the block processor and the async pending-retry loop until the
 // context is cancelled.
 func (m *Monitor) Run(ctx context.Context) {
+	// Adopt the run context as the base for per-event timeouts BEFORE starting any
+	// goroutine, so shutdown cancels in-flight traces.
+	m.baseCtx = ctx
+
 	go func() {
 		<-ctx.Done()
 		m.processor.Stop()
@@ -587,27 +605,28 @@ func isSuperGame(gameType uint32) bool {
 // per-chain output root via rootClaimByChainId(l2ChainId); legacy games use
 // rootClaim. This is a plain data read — NOT a validity gate. The game address is
 // returned even when the root-claim read fails, so it can still be logged.
-func (m *Monitor) gameInfo(index *big.Int) (common.Address, [32]byte, error) {
-	game, err := m.dgf.GameAtIndex(nil, index)
+func (m *Monitor) gameInfo(ctx context.Context, index *big.Int) (common.Address, [32]byte, error) {
+	opts := &bind.CallOpts{Context: ctx}
+	game, err := m.dgf.GameAtIndex(opts, index)
 	if err != nil {
 		return common.Address{}, [32]byte{}, err
 	}
 	if isSuperGame(game.GameType) {
-		rootClaim, err := m.superGameRootClaim(game.Proxy)
+		rootClaim, err := m.superGameRootClaim(ctx, game.Proxy)
 		return game.Proxy, rootClaim, err
 	}
 	fdg, err := bindings.NewFaultDisputeGame(game.Proxy, m.l1Client)
 	if err != nil {
 		return game.Proxy, [32]byte{}, err
 	}
-	rootClaim, err := fdg.RootClaim(nil)
+	rootClaim, err := fdg.RootClaim(opts)
 	return game.Proxy, rootClaim, err
 }
 
 // superGameRootClaim reads a super game's output root for this chain, matching
 // the portal's rootClaimByChainId(systemConfig.l2ChainId()) branch.
-func (m *Monitor) superGameRootClaim(proxy common.Address) ([32]byte, error) {
-	chainID, err := m.getL2ChainID()
+func (m *Monitor) superGameRootClaim(ctx context.Context, proxy common.Address) ([32]byte, error) {
+	chainID, err := m.getL2ChainID(ctx)
 	if err != nil {
 		return [32]byte{}, err
 	}
@@ -615,18 +634,18 @@ func (m *Monitor) superGameRootClaim(proxy common.Address) ([32]byte, error) {
 	if err != nil {
 		return [32]byte{}, err
 	}
-	return sg.RootClaimByChainId(nil, chainID)
+	return sg.RootClaimByChainId(&bind.CallOpts{Context: ctx}, chainID)
 }
 
 // getL2ChainID reads and caches the L2 chain id from SystemConfig. It is only
 // consulted for super games, and the cached value never changes for a chain.
-func (m *Monitor) getL2ChainID() (*big.Int, error) {
+func (m *Monitor) getL2ChainID(ctx context.Context) (*big.Int, error) {
 	m.l2ChainIDMu.Lock()
 	defer m.l2ChainIDMu.Unlock()
 	if m.l2ChainID != nil {
 		return m.l2ChainID, nil
 	}
-	id, err := m.systemConfig.L2ChainId(nil)
+	id, err := m.systemConfig.L2ChainId(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, fmt.Errorf("read l2ChainId: %w", err)
 	}
@@ -689,31 +708,35 @@ func (m *Monitor) processLog(block *types.Block, lg types.Log, client *ethclient
 		// A malformed event with the right topic is unexpected; surface it rather
 		// than returning an error (which the shared processor would retry forever).
 		m.log.Error("⚠️  could not parse WithdrawalProvenExtension1 event", "txHash", lg.TxHash.String(), "err", err)
-		m.metrics.unverifiable.WithLabelValues(reasonDecodeError, lg.TxHash.String(), "").Inc()
+		m.metrics.unverifiable.WithLabelValues(reasonDecodeError).Inc()
 		return nil
 	}
 	if provenWithdrawal == nil {
 		return nil
 	}
-	m.evaluateAndApply(context.Background(), lg, provenWithdrawal.WithdrawalHash)
+	m.evaluateAndApply(lg, provenWithdrawal.WithdrawalHash)
 	return nil
 }
 
 // evaluateAndApply assesses one event and records the outcome. Shared by the
 // processor (first sighting) and the async retry loop (subsequent attempts).
-func (m *Monitor) evaluateAndApply(ctx context.Context, lg types.Log, wdHash [32]byte) {
-	m.applyAssessment(m.assess(ctx, lg, wdHash), lg, wdHash)
+func (m *Monitor) evaluateAndApply(lg types.Log, wdHash [32]byte) {
+	m.applyAssessment(m.assess(lg, wdHash), lg, wdHash)
 }
 
 // assess re-verifies one prove event from L1 only and returns its verdict. It has
 // NO side effects (no metrics, no pending mutation), so it is safe to call from
-// both the processor and the retry loop.
-func (m *Monitor) assess(ctx context.Context, lg types.Log, wdHash [32]byte) assessment {
+// both the processor and the retry loop. All RPC work runs under a per-event
+// timeout derived from the run context, so a stuck trace cannot wedge the caller.
+func (m *Monitor) assess(lg types.Log, wdHash [32]byte) assessment {
+	ctx, cancel := context.WithTimeout(m.baseCtx, assessTimeout)
+	defer cancel()
+
 	dp, reason := m.recoverProof(ctx, lg, wdHash)
 	if dp == nil {
 		return assessment{v: verdictUnresolved, reason: reason}
 	}
-	gameProxy, rootClaim, err := m.gameInfo(dp.disputeGameIndex)
+	gameProxy, rootClaim, err := m.gameInfo(ctx, dp.disputeGameIndex)
 	if err != nil {
 		m.log.Warn("could not read dispute game", "txHash", lg.TxHash.Hex(), "factoryGameIndex", dp.disputeGameIndex, "err", err)
 		return assessment{v: verdictUnresolved, reason: reasonGameReadError, gameProxy: gameProxy, gameIndex: dp.disputeGameIndex}
@@ -740,14 +763,14 @@ func (m *Monitor) applyAssessment(a assessment, lg types.Log, wdHash [32]byte) {
 		// whether the dispute game is valid.
 		m.log.Error("❌ INVALID WITHDRAWAL PROOF ACCEPTED BY PORTAL (P0)", "txHash", txHashStr, "wdHash", wdHashStr,
 			"reason", a.reason, "disputeGame", a.gameProxy.Hex(), "factoryGameIndex", a.gameIndex)
-		m.metrics.invalidWithdrawals.WithLabelValues(a.reason, txHashStr, wdHashStr).Inc()
+		m.metrics.invalidWithdrawals.WithLabelValues(a.reason).Inc()
 		m.resolvePending(lg)
 	case verdictUnresolved:
 		if m.enqueuePending(lg, wdHash) {
 			// Count each event once, at first sighting, to keep the counter bounded;
 			// ongoing backlog is tracked by the pending/oldest gauges.
 			m.log.Warn("⚠️  withdrawal not yet verifiable — parked for retry", "txHash", txHashStr, "wdHash", wdHashStr, "reason", a.reason)
-			m.metrics.unverifiable.WithLabelValues(a.reason, txHashStr, wdHashStr).Inc()
+			m.metrics.unverifiable.WithLabelValues(a.reason).Inc()
 		} else {
 			m.log.Debug("withdrawal still pending", "txHash", txHashStr, "wdHash", wdHashStr, "reason", a.reason)
 		}
@@ -794,7 +817,8 @@ func (m *Monitor) retryPending(ctx context.Context) {
 	}
 }
 
-// retryPendingOnce re-evaluates every currently-pending event once.
+// retryPendingOnce re-evaluates every currently-pending event once, stopping early
+// if the run context is cancelled.
 func (m *Monitor) retryPendingOnce(ctx context.Context) {
 	m.pendingMu.Lock()
 	snapshot := make([]*pendingEvent, 0, len(m.pending))
@@ -804,8 +828,11 @@ func (m *Monitor) retryPendingOnce(ctx context.Context) {
 	m.pendingMu.Unlock()
 
 	for _, e := range snapshot {
+		if ctx.Err() != nil {
+			return
+		}
 		e.attempts++
-		m.evaluateAndApply(ctx, e.log, e.wdHash)
+		m.evaluateAndApply(e.log, e.wdHash)
 	}
 	m.updatePendingGauges()
 }
