@@ -182,6 +182,46 @@ func TestCollectProveInputs_NonPortalIgnored(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// TestIsSuperGame proves the review comment #3 fix: super game types are routed
+// to rootClaimByChainId and legacy types to rootClaim, exactly as the portal's
+// GameTypes.isSuperGame decides. Kept in sync with src/dispute/lib/Types.sol.
+func TestIsSuperGame(t *testing.T) {
+	super := []uint32{4, 5, 7, 9} // SUPER_CANNON, SUPER_PERMISSIONED_CANNON, SUPER_ASTERISC_KONA, SUPER_CANNON_KONA
+	legacy := []uint32{0, 1, 2, 3, 6, 8, 10, 254, 255}
+	for _, gt := range super {
+		assert.True(t, isSuperGame(gt), "game type %d is a super game", gt)
+	}
+	for _, gt := range legacy {
+		assert.False(t, isSuperGame(gt), "game type %d is a legacy game", gt)
+	}
+}
+
+// TestCollectProveInputs_SkipsRevertedDecoy proves the review comment #1 fix: a
+// relayer prepends a reverting portal call carrying the prove selector (a decoy),
+// then makes the real successful prove call. The reverted frame must be skipped
+// so only the real prove input is collected.
+func TestCollectProveInputs_SkipsRevertedDecoy(t *testing.T) {
+	m := newTestMonitor(t)
+	real := packProve(t, bindings.TypesOutputRootProof{}, [][]byte{{0x01}})
+	decoy := "0x" + common.Bytes2Hex(m.proveSelector[:]) + "deadbeef" // selector + garbage args
+
+	frame := &callFrame{
+		Type: "CALL", To: "0x43edb88c4b80fdd2adff2412a7bebf9df42cb40e", Input: "0xabcdef",
+		Calls: []callFrame{
+			// Reverted decoy to the portal, with a subtree that must also be skipped.
+			{Type: "CALL", To: m.portalAddress.Hex(), Input: decoy, Error: "execution reverted",
+				Calls: []callFrame{{Type: "CALL", To: m.portalAddress.Hex(), Input: decoy}}},
+			// The real, successful prove call.
+			{Type: "CALL", To: m.portalAddress.Hex(), Input: "0x" + common.Bytes2Hex(real)},
+		},
+	}
+
+	var got [][]byte
+	m.collectProveInputs(frame, &got)
+	require.Len(t, got, 1, "only the successful prove call is collected")
+	assert.Equal(t, real, got[0])
+}
+
 // packProveTx builds calldata for a proveWithdrawalTransaction call with an
 // explicit withdrawal tx and dispute-game index, so tests can construct several
 // prove calls for the SAME withdrawal against DIFFERENT games.

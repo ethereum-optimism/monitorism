@@ -70,6 +70,8 @@ type Monitor struct {
 	l1Raw         *rpc.Client
 	portal        *bindings.OptimismPortal2
 	dgf           *bindings.DisputeGameFactory
+	systemConfig  *bindings.SystemConfig
+	l2ChainID     *big.Int // lazily read; only needed for super-game root claims
 	portalAddress common.Address
 	portalABI     *abi.ABI
 	proveSelector [4]byte
@@ -200,6 +202,18 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, err
 	}
 
+	// Bind SystemConfig so we can read l2ChainId when a super game is encountered
+	// (mirrors the portal's super-game predicate). The chain id itself is read
+	// lazily, so a SystemConfig without l2ChainId() never breaks legacy chains.
+	systemConfigAddr, err := portal.SystemConfig(nil)
+	if err != nil {
+		return nil, fmt.Errorf("read systemConfig: %w", err)
+	}
+	systemConfig, err := bindings.NewSystemConfig(systemConfigAddr, l1Client)
+	if err != nil {
+		return nil, err
+	}
+
 	portalABI, err := bindings.OptimismPortal2MetaData.GetAbi()
 	if err != nil {
 		return nil, err
@@ -222,6 +236,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1Raw:         l1Client.Client(),
 		portal:        portal,
 		dgf:           dgf,
+		systemConfig:  systemConfig,
 		portalAddress: portalAddress,
 		portalABI:     portalABI,
 		proveSelector: proveSelector,
@@ -321,6 +336,7 @@ type callFrame struct {
 	Type  string      `json:"type"`
 	To    string      `json:"to"`
 	Input string      `json:"input"`
+	Error string      `json:"error"`
 	Calls []callFrame `json:"calls"`
 }
 
@@ -334,7 +350,16 @@ type callFrame struct {
 // ephemeral (never stored on-chain) and a wrapper contract can construct it
 // internally so it never appears in the top-level tx calldata — but the internal
 // CALL to the portal always carries it.
+//
+// Reverted frames are skipped entirely, together with their subtree: a frame
+// that carries a callTracer `error` did not take effect (no state change, no
+// event), so its calldata proves nothing. Without this, a relayer could prepend
+// a deliberately reverting portal call carrying the prove selector to poison the
+// candidate set before making the real successful prove call.
 func (m *Monitor) collectProveInputs(frame *callFrame, out *[][]byte) {
+	if frame.Error != "" {
+		return
+	}
 	if strings.EqualFold(frame.To, m.portalAddress.Hex()) {
 		input := common.FromHex(frame.Input)
 		if len(input) >= 4 && bytes.Equal(input[:4], m.proveSelector[:]) {
@@ -431,19 +456,46 @@ func verifyProof(wdHash [32]byte, rootClaim [32]byte, dp *decodedProof) string {
 	return ""
 }
 
+// Super-root game types. These commit to a super root spanning many chains, so
+// the portal reads this chain's output root via rootClaimByChainId rather than
+// rootClaim. Kept in sync with GameTypes.isSuperGame in the monorepo
+// (src/dispute/lib/Types.sol).
+const (
+	gameTypeSuperCannon             uint32 = 4
+	gameTypeSuperPermissionedCannon uint32 = 5
+	gameTypeSuperAsteriscKona       uint32 = 7
+	gameTypeSuperCannonKona         uint32 = 9
+)
+
+// isSuperGame mirrors OptimismPortal2's GameTypes.isSuperGame.
+func isSuperGame(gameType uint32) bool {
+	switch gameType {
+	case gameTypeSuperCannon, gameTypeSuperPermissionedCannon, gameTypeSuperAsteriscKona, gameTypeSuperCannonKona:
+		return true
+	default:
+		return false
+	}
+}
+
 // gameInfo reads the dispute game a prove call targeted, by its factory index:
-// the game proxy and its root claim. The index is decoded from the prove call
-// itself (the _disputeGameIndex argument), so we resolve the exact game that
-// call proved against — not whatever provenWithdrawals currently points to,
-// which a later re-prove could have overwritten. gameAtIndex is immutable, so
-// reading it at latest L1 state is correct.
+// the game proxy and the output-root claim to verify against. The index is
+// decoded from the prove call itself (the _disputeGameIndex argument), so we
+// resolve the exact game that call proved against — not whatever provenWithdrawals
+// currently points to, which a later re-prove could have overwritten. gameAtIndex
+// is immutable, so reading it at latest L1 state is correct.
 //
-// This is a plain data read — NOT a validity gate. The game address is returned
-// even when the root-claim read fails, so it can still be logged.
+// The claim is selected exactly as the portal does: super game types expose the
+// per-chain output root via rootClaimByChainId(l2ChainId); legacy games use
+// rootClaim. This is a plain data read — NOT a validity gate. The game address is
+// returned even when the root-claim read fails, so it can still be logged.
 func (m *Monitor) gameInfo(index *big.Int) (common.Address, [32]byte, error) {
 	game, err := m.dgf.GameAtIndex(nil, index)
 	if err != nil {
 		return common.Address{}, [32]byte{}, err
+	}
+	if isSuperGame(game.GameType) {
+		rootClaim, err := m.superGameRootClaim(game.Proxy)
+		return game.Proxy, rootClaim, err
 	}
 	fdg, err := bindings.NewFaultDisputeGame(game.Proxy, m.l1Client)
 	if err != nil {
@@ -451,6 +503,34 @@ func (m *Monitor) gameInfo(index *big.Int) (common.Address, [32]byte, error) {
 	}
 	rootClaim, err := fdg.RootClaim(nil)
 	return game.Proxy, rootClaim, err
+}
+
+// superGameRootClaim reads a super game's output root for this chain, matching
+// the portal's rootClaimByChainId(systemConfig.l2ChainId()) branch.
+func (m *Monitor) superGameRootClaim(proxy common.Address) ([32]byte, error) {
+	chainID, err := m.getL2ChainID()
+	if err != nil {
+		return [32]byte{}, err
+	}
+	sg, err := bindings.NewSuperFaultDisputeGame(proxy, m.l1Client)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return sg.RootClaimByChainId(nil, chainID)
+}
+
+// getL2ChainID reads and caches the L2 chain id from SystemConfig. It is only
+// consulted for super games, and the cached value never changes for a chain.
+func (m *Monitor) getL2ChainID() (*big.Int, error) {
+	if m.l2ChainID != nil {
+		return m.l2ChainID, nil
+	}
+	id, err := m.systemConfig.L2ChainId(nil)
+	if err != nil {
+		return nil, fmt.Errorf("read l2ChainId: %w", err)
+	}
+	m.l2ChainID = id
+	return id, nil
 }
 
 // traceProveInputs traces the L1 transaction and returns every
@@ -567,20 +647,21 @@ func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byt
 	}
 
 	// Decode every prove call and keep those matching this withdrawal hash, in
-	// call (== event) order.
+	// call (== event) order. A malformed candidate is skipped, not fatal: a
+	// relayer could otherwise include a well-formed-selector-but-garbage-args
+	// portal call to abort processing before the real prove call is reached. We
+	// only give up (unverifiable) if NO candidate matches this hash.
 	var candidates []*decodedProof
 	for _, input := range inputs {
 		dp, derr := m.decodeProveInput(input)
 		if derr != nil {
-			m.log.Error("⚠️  could not decode proof input (UNVERIFIABLE)", "txHash", txHashStr, "wdHash", wdHashStr, "err", derr)
-			m.metrics.unverifiable.WithLabelValues(reasonDecodeError, txHashStr, wdHashStr).Inc()
-			return nil
+			m.log.Warn("skipping undecodable prove candidate", "txHash", txHashStr, "wdHash", wdHashStr, "err", derr)
+			continue
 		}
 		candidate, herr := m.withdrawalHash(dp.withdrawalTx)
 		if herr != nil {
-			m.log.Error("⚠️  could not recompute withdrawal hash (UNVERIFIABLE)", "txHash", txHashStr, "wdHash", wdHashStr, "err", herr)
-			m.metrics.unverifiable.WithLabelValues(reasonDecodeError, txHashStr, wdHashStr).Inc()
-			return nil
+			m.log.Warn("skipping prove candidate with unhashable withdrawal tx", "txHash", txHashStr, "wdHash", wdHashStr, "err", herr)
+			continue
 		}
 		if candidate == wdHash {
 			candidates = append(candidates, dp)
