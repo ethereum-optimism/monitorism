@@ -2,6 +2,7 @@ package withdrawalsv2
 
 import (
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals-v2/bindings"
@@ -14,6 +15,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestRedactURL proves the review comment #6 fix: the startup log shows only the
+// ends of the RPC URL, never the embedded credential/token in the middle.
+func TestRedactURL(t *testing.T) {
+	secret := "https://user:SUPERSECRETTOKEN@ci-mainnet-l1-archive.optimism.io/rpc?key=abcdef123456"
+	got := redactURL(secret)
+	assert.NotContains(t, got, "SUPERSECRETTOKEN")
+	assert.NotContains(t, got, "abcdef123456")
+	assert.True(t, strings.HasPrefix(got, "https://user"))
+	assert.Contains(t, got, "...")
+
+	// Short strings reveal nothing.
+	assert.Equal(t, "***", redactURL("http://short"))
+	assert.Equal(t, "***", redactURL(""))
+}
 
 // TestPendingStore proves the review comment #4 fix: unresolved events are parked
 // and only released on a terminal verdict, and the tracking gauges reflect the

@@ -143,6 +143,18 @@ func newWithdrawalTxArgs() (abi.Arguments, error) {
 // logStartupConfig reports which env vars are set vs. unset and the full resolved
 // configuration values, so debugging is easy: every effective value — the node URL,
 // portal, start block, poll interval — is printed at startup.
+// redactURL masks the middle of an RPC URL so startup logs reveal only enough to
+// identify which endpoint is configured (for debugging) without exposing embedded
+// credentials or tokens — RPC URLs from the ExternalSecret commonly include both.
+// Only the first and last few characters are shown; short strings are fully masked.
+func redactURL(u string) string {
+	const keepStart, keepEnd = 12, 6
+	if len(u) <= keepStart+keepEnd {
+		return "***"
+	}
+	return u[:keepStart] + "..." + u[len(u)-keepEnd:]
+}
+
 func logStartupConfig(log log.Logger, cfg CLIConfig) {
 	envVars := []string{
 		"WITHDRAWALS_V2_MON_L1_NODE_URL",
@@ -161,7 +173,7 @@ func logStartupConfig(log log.Logger, cfg CLIConfig) {
 	}
 	log.Info("environment variables", "set", strings.Join(set, ","), "unset", strings.Join(unset, ","))
 	log.Info("resolved config",
-		"l1_node_url", cfg.L1NodeURL,
+		"l1_node_url", redactURL(cfg.L1NodeURL),
 		"optimism_portal", cfg.OptimismPortalAddress,
 		"start_block", cfg.StartBlock,
 		"start_block_note", "inclusive (this block is scanned); 0 means start near finalized and re-scan lookback_blocks",
