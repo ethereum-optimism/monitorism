@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/processor"
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals-v2/bindings"
@@ -47,19 +50,26 @@ const (
 	reasonDecodeError      = "decode_error"
 	reasonGameReadError    = "game_read_error"
 
-	// traceAttempts bounds transient-error retries before we give up on a log and
-	// advance. We never block the processor indefinitely on a single withdrawal.
+	// traceAttempts bounds the immediate in-line trace retries for a single log.
+	// Events that still don't resolve are parked in the pending set and retried
+	// asynchronously (see retryPending), so the processor is never blocked.
 	traceAttempts = 3
 
-	// logSeparator visually delimits each withdrawal verdict in the logs.
-	logSeparator = "===================================================================="
+	// pendingRetryInterval is how often the async loop re-evaluates events that
+	// have not yet reached a terminal valid/invalid verdict.
+	pendingRetryInterval = 60 * time.Second
 )
 
-// Metrics holds the Prometheus counters for the monitor.
+// Metrics holds the Prometheus counters and gauges for the monitor.
 type Metrics struct {
 	validWithdrawals   *prometheus.CounterVec
 	invalidWithdrawals *prometheus.CounterVec
 	unverifiable       *prometheus.CounterVec
+	// pending is the current number of prove events awaiting a terminal verdict.
+	pending prometheus.Gauge
+	// oldestPendingSeconds is the age of the oldest such event — the alert signal:
+	// a value that keeps growing means an event never reached valid/invalid.
+	oldestPendingSeconds prometheus.Gauge
 }
 
 // Monitor re-verifies, from L1 only, that every withdrawal the OptimismPortal2
@@ -71,13 +81,38 @@ type Monitor struct {
 	portal        *bindings.OptimismPortal2
 	dgf           *bindings.DisputeGameFactory
 	systemConfig  *bindings.SystemConfig
-	l2ChainID     *big.Int // lazily read; only needed for super-game root claims
 	portalAddress common.Address
 	portalABI     *abi.ABI
 	proveSelector [4]byte
 	wdTxArgs      abi.Arguments
 	processor     *processor.BlockProcessor
 	metrics       Metrics
+
+	// l2ChainID is read lazily (only for super-game root claims) and cached. A
+	// dedicated mutex lets the processor and the async retry loop resolve it
+	// concurrently without racing on the first read.
+	l2ChainIDMu sync.Mutex
+	l2ChainID   *big.Int
+
+	// pending holds prove events that have not yet reached a terminal verdict,
+	// keyed by "<txHash>:<logIndex>". The async retryPending loop drives each to
+	// valid/invalid so no event is ever silently dropped after a transient RPC
+	// failure. Guarded by pendingMu (processor and retry goroutines both touch it).
+	pendingMu sync.Mutex
+	pending   map[string]*pendingEvent
+}
+
+// pendingEvent is a prove event awaiting a terminal verdict.
+type pendingEvent struct {
+	log       types.Log
+	wdHash    [32]byte
+	firstSeen time.Time
+	attempts  int
+}
+
+// pendingKey uniquely identifies a prove event by its log position.
+func pendingKey(lg types.Log) string {
+	return lg.TxHash.Hex() + ":" + strconv.FormatUint(uint64(lg.Index), 10)
 }
 
 // newWithdrawalTxArgs builds the ABI argument list used to recompute a withdrawal
@@ -112,6 +147,7 @@ func logStartupConfig(log log.Logger, cfg CLIConfig) {
 	envVars := []string{
 		"WITHDRAWALS_V2_MON_L1_NODE_URL",
 		"WITHDRAWALS_V2_MON_START_BLOCK",
+		"WITHDRAWALS_V2_MON_LOOKBACK_BLOCKS",
 		"WITHDRAWALS_V2_MON_POLL_INTERVAL",
 		"WITHDRAWALS_V2_MON_OPTIMISM_PORTAL",
 	}
@@ -128,7 +164,8 @@ func logStartupConfig(log log.Logger, cfg CLIConfig) {
 		"l1_node_url", cfg.L1NodeURL,
 		"optimism_portal", cfg.OptimismPortalAddress,
 		"start_block", cfg.StartBlock,
-		"start_block_note", "inclusive (this block is scanned); 0 means start from latest finalized block",
+		"start_block_note", "inclusive (this block is scanned); 0 means start near finalized and re-scan lookback_blocks",
+		"lookback_blocks", cfg.LookbackBlocks,
 		"poll_interval", cfg.PollingInterval,
 	)
 }
@@ -237,6 +274,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		portal:        portal,
 		dgf:           dgf,
 		systemConfig:  systemConfig,
+		pending:       make(map[string]*pendingEvent),
 		portalAddress: portalAddress,
 		portalABI:     portalABI,
 		proveSelector: proveSelector,
@@ -262,9 +300,23 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 				prometheus.CounterOpts{
 					Namespace: MetricsNamespace,
 					Name:      "unverifiable_withdrawals_total",
-					Help:      "Withdrawals the monitor could not re-verify (blind spot, needs operator attention)",
+					Help:      "Withdrawals the monitor could not re-verify on first sight (parked for async retry)",
 				},
 				[]string{"reason", "txhash", "wdhash"},
+			),
+			pending: m.NewGauge(
+				prometheus.GaugeOpts{
+					Namespace: MetricsNamespace,
+					Name:      "pending_withdrawals",
+					Help:      "Prove events awaiting a terminal valid/invalid verdict (retried asynchronously)",
+				},
+			),
+			oldestPendingSeconds: m.NewGauge(
+				prometheus.GaugeOpts{
+					Namespace: MetricsNamespace,
+					Name:      "oldest_pending_seconds",
+					Help:      "Age of the oldest prove event still awaiting a verdict; alert if it keeps growing",
+				},
 			),
 		},
 	}
@@ -274,8 +326,20 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	// user names is the first block scanned. StartBlock == 0 is left untouched so
 	// the processor's "start from latest finalized block" behavior is preserved.
 	procStartBlock := big.NewInt(int64(cfg.StartBlock))
-	if cfg.StartBlock > 0 {
+	switch {
+	case cfg.StartBlock > 0:
 		procStartBlock = big.NewInt(int64(cfg.StartBlock) - 1)
+	case !cfg.UseLatest && cfg.LookbackBlocks > 0:
+		// No explicit start block: re-scan a lookback window below the finalized
+		// head so events proven while the monitor was down are re-evaluated and
+		// re-parked as pending if still unresolved. This is what makes the
+		// in-memory pending set durable across restarts without external storage.
+		start, err := lookbackStartBlock(ctx, l1Client, cfg.LookbackBlocks)
+		if err != nil {
+			return nil, err
+		}
+		procStartBlock = start
+		log.Info("re-scanning lookback window on startup", "startBlock", start, "lookbackBlocks", cfg.LookbackBlocks)
 	}
 
 	proc, err := processor.NewBlockProcessor(
@@ -305,12 +369,16 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	return mon, nil
 }
 
-// Run starts the block processor until the context is cancelled.
+// Run starts the block processor and the async pending-retry loop until the
+// context is cancelled.
 func (m *Monitor) Run(ctx context.Context) {
 	go func() {
 		<-ctx.Done()
 		m.processor.Stop()
 	}()
+
+	// Drive parked events to a terminal verdict independently of block processing.
+	go m.retryPending(ctx)
 
 	if err := m.processor.Start(); err != nil {
 		m.log.Error("processor error", "err", err)
@@ -322,6 +390,25 @@ func (m *Monitor) Close(ctx context.Context) error {
 	m.processor.Stop()
 	m.l1Client.Close()
 	return nil
+}
+
+// lookbackStartBlock returns the processor start block for a startup re-scan:
+// `lookback` blocks below the current finalized head (never negative). The extra
+// -1 accounts for the processor scanning from StartBlock+1, so the first block
+// actually scanned is exactly finalized-lookback.
+func lookbackStartBlock(ctx context.Context, l1Client *ethclient.Client, lookback uint64) (*big.Int, error) {
+	var header *types.Header
+	if err := l1Client.Client().CallContext(ctx, &header, "eth_getBlockByNumber", "finalized", false); err != nil {
+		return nil, fmt.Errorf("read finalized header for lookback: %w", err)
+	}
+	if header == nil {
+		return nil, fmt.Errorf("finalized block is null (node may not support the \"finalized\" tag)")
+	}
+	start := new(big.Int).Sub(header.Number, new(big.Int).SetUint64(lookback+1))
+	if start.Sign() < 0 {
+		start = big.NewInt(0)
+	}
+	return start, nil
 }
 
 // computeWithdrawalStorageKey computes the storage slot of a withdrawal hash in the
@@ -522,6 +609,8 @@ func (m *Monitor) superGameRootClaim(proxy common.Address) ([32]byte, error) {
 // getL2ChainID reads and caches the L2 chain id from SystemConfig. It is only
 // consulted for super games, and the cached value never changes for a chain.
 func (m *Monitor) getL2ChainID() (*big.Int, error) {
+	m.l2ChainIDMu.Lock()
+	defer m.l2ChainIDMu.Unlock()
 	if m.l2ChainID != nil {
 		return m.l2ChainID, nil
 	}
@@ -560,63 +649,174 @@ func (m *Monitor) parseWithdrawalEvent(lg types.Log) (*bindings.OptimismPortal2W
 	return m.portal.ParseWithdrawalProvenExtension1(lg)
 }
 
-// processLog handles one L1 log. It NEVER returns a non-nil error: the shared
-// processor retries forever on error (processor.processLogWithRetry), so a single
-// un-traceable withdrawal must not stall the whole monitor. Blind spots are
-// surfaced via the unverifiable metric instead.
-func (m *Monitor) processLog(block *types.Block, lg types.Log, client *ethclient.Client) error {
-	ctx := context.Background()
+// verdict classifies the outcome of evaluating a prove event.
+type verdict int
 
+const (
+	verdictValid      verdict = iota // proof re-verified correctly
+	verdictInvalid                   // portal accepted a proof a correct verifier rejects (P0)
+	verdictUnresolved                // could not re-verify yet — parked for async retry
+)
+
+// assessment is the result of evaluating one prove event.
+type assessment struct {
+	v         verdict
+	reason    string // set for invalid and unresolved
+	gameProxy common.Address
+	gameIndex *big.Int
+}
+
+// processLog handles one L1 log from the block processor. It NEVER returns a
+// non-nil error: the shared processor retries forever on error, which would stall
+// the whole monitor. Instead, an event that does not reach a terminal verdict is
+// parked in the pending set and retried asynchronously (retryPending), so no prove
+// event is ever silently dropped after a transient RPC failure.
+func (m *Monitor) processLog(block *types.Block, lg types.Log, client *ethclient.Client) error {
 	provenWithdrawal, err := m.parseWithdrawalEvent(lg)
 	if err != nil {
-		// A malformed event with the right topic is unexpected; treat it as an
-		// unverifiable blind spot rather than returning an error (which the shared
-		// processor would retry forever, stalling the monitor).
-		m.log.Error("⚠️  could not parse WithdrawalProvenExtension1 event (UNVERIFIABLE)", "txHash", lg.TxHash.String(), "err", err)
+		// A malformed event with the right topic is unexpected; surface it rather
+		// than returning an error (which the shared processor would retry forever).
+		m.log.Error("⚠️  could not parse WithdrawalProvenExtension1 event", "txHash", lg.TxHash.String(), "err", err)
 		m.metrics.unverifiable.WithLabelValues(reasonDecodeError, lg.TxHash.String(), "").Inc()
 		return nil
 	}
 	if provenWithdrawal == nil {
 		return nil
 	}
+	m.evaluateAndApply(context.Background(), lg, provenWithdrawal.WithdrawalHash)
+	return nil
+}
 
-	wdHash := provenWithdrawal.WithdrawalHash
-	txHash := lg.TxHash
-	txHashStr := txHash.String()
-	wdHashStr := common.BytesToHash(wdHash[:]).String()
-	m.log.Info("processing withdrawal proven event", "txHash", txHashStr, "wdHash", wdHashStr)
-	// Every withdrawal we start processing ends with a visual separator.
-	defer m.log.Info(logSeparator)
+// evaluateAndApply assesses one event and records the outcome. Shared by the
+// processor (first sighting) and the async retry loop (subsequent attempts).
+func (m *Monitor) evaluateAndApply(ctx context.Context, lg types.Log, wdHash [32]byte) {
+	m.applyAssessment(m.assess(ctx, lg, wdHash), lg, wdHash)
+}
 
-	dp := m.recoverProof(ctx, lg, wdHash, txHashStr, wdHashStr)
+// assess re-verifies one prove event from L1 only and returns its verdict. It has
+// NO side effects (no metrics, no pending mutation), so it is safe to call from
+// both the processor and the retry loop.
+func (m *Monitor) assess(ctx context.Context, lg types.Log, wdHash [32]byte) assessment {
+	dp, reason := m.recoverProof(ctx, lg, wdHash)
 	if dp == nil {
-		return nil
+		return assessment{v: verdictUnresolved, reason: reason}
 	}
-
 	gameProxy, rootClaim, err := m.gameInfo(dp.disputeGameIndex)
 	if err != nil {
-		m.log.Error("⚠️  could not read dispute game (UNVERIFIABLE)",
-			"txHash", txHashStr, "wdHash", wdHashStr,
-			"disputeGame", gameProxy.Hex(), "factoryGameIndex", dp.disputeGameIndex, "err", err)
-		m.metrics.unverifiable.WithLabelValues(reasonGameReadError, txHashStr, wdHashStr).Inc()
-		return nil
+		m.log.Warn("could not read dispute game", "txHash", lg.TxHash.Hex(), "factoryGameIndex", dp.disputeGameIndex, "err", err)
+		return assessment{v: verdictUnresolved, reason: reasonGameReadError, gameProxy: gameProxy, gameIndex: dp.disputeGameIndex}
 	}
-
-	if reason := verifyProof(wdHash, rootClaim, dp); reason != "" {
-		// The portal accepted a proof a correct verifier rejects. This is P0 and
-		// holds regardless of whether the dispute game is valid.
-		m.log.Error("❌ INVALID WITHDRAWAL PROOF ACCEPTED BY PORTAL (P0)",
-			"txHash", txHashStr, "wdHash", wdHashStr, "reason", reason,
-			"disputeGame", gameProxy.Hex(), "factoryGameIndex", dp.disputeGameIndex)
-		m.metrics.invalidWithdrawals.WithLabelValues(reason, txHashStr, wdHashStr).Inc()
-		return nil
+	if r := verifyProof(wdHash, rootClaim, dp); r != "" {
+		return assessment{v: verdictInvalid, reason: r, gameProxy: gameProxy, gameIndex: dp.disputeGameIndex}
 	}
+	return assessment{v: verdictValid, gameProxy: gameProxy, gameIndex: dp.disputeGameIndex}
+}
 
-	m.log.Info("✅ withdrawal proof re-verified",
-		"txHash", txHashStr, "wdHash", wdHashStr,
-		"disputeGame", gameProxy.Hex(), "factoryGameIndex", dp.disputeGameIndex)
-	m.metrics.validWithdrawals.WithLabelValues().Inc()
-	return nil
+// applyAssessment records an assessment: emits metrics, logs, and updates the
+// pending set — parking unresolved events, releasing terminal ones.
+func (m *Monitor) applyAssessment(a assessment, lg types.Log, wdHash [32]byte) {
+	txHashStr := lg.TxHash.Hex()
+	wdHashStr := common.BytesToHash(wdHash[:]).Hex()
+	switch a.v {
+	case verdictValid:
+		m.log.Info("✅ withdrawal proof re-verified", "txHash", txHashStr, "wdHash", wdHashStr,
+			"disputeGame", a.gameProxy.Hex(), "factoryGameIndex", a.gameIndex)
+		m.metrics.validWithdrawals.WithLabelValues().Inc()
+		m.resolvePending(lg)
+	case verdictInvalid:
+		// The portal accepted a proof a correct verifier rejects. P0, regardless of
+		// whether the dispute game is valid.
+		m.log.Error("❌ INVALID WITHDRAWAL PROOF ACCEPTED BY PORTAL (P0)", "txHash", txHashStr, "wdHash", wdHashStr,
+			"reason", a.reason, "disputeGame", a.gameProxy.Hex(), "factoryGameIndex", a.gameIndex)
+		m.metrics.invalidWithdrawals.WithLabelValues(a.reason, txHashStr, wdHashStr).Inc()
+		m.resolvePending(lg)
+	case verdictUnresolved:
+		if m.enqueuePending(lg, wdHash) {
+			// Count each event once, at first sighting, to keep the counter bounded;
+			// ongoing backlog is tracked by the pending/oldest gauges.
+			m.log.Warn("⚠️  withdrawal not yet verifiable — parked for retry", "txHash", txHashStr, "wdHash", wdHashStr, "reason", a.reason)
+			m.metrics.unverifiable.WithLabelValues(a.reason, txHashStr, wdHashStr).Inc()
+		} else {
+			m.log.Debug("withdrawal still pending", "txHash", txHashStr, "wdHash", wdHashStr, "reason", a.reason)
+		}
+	}
+}
+
+// enqueuePending parks an unresolved event for async retry. Returns true if the
+// event was newly added (not already pending).
+func (m *Monitor) enqueuePending(lg types.Log, wdHash [32]byte) bool {
+	key := pendingKey(lg)
+	m.pendingMu.Lock()
+	_, exists := m.pending[key]
+	if !exists {
+		m.pending[key] = &pendingEvent{log: lg, wdHash: wdHash, firstSeen: time.Now()}
+	}
+	n := len(m.pending)
+	m.pendingMu.Unlock()
+	m.metrics.pending.Set(float64(n))
+	return !exists
+}
+
+// resolvePending removes an event that has reached a terminal verdict.
+func (m *Monitor) resolvePending(lg types.Log) {
+	key := pendingKey(lg)
+	m.pendingMu.Lock()
+	delete(m.pending, key)
+	n := len(m.pending)
+	m.pendingMu.Unlock()
+	m.metrics.pending.Set(float64(n))
+}
+
+// retryPending re-evaluates parked events on a fixed cadence until each reaches a
+// terminal valid/invalid verdict. Runs until ctx is cancelled.
+func (m *Monitor) retryPending(ctx context.Context) {
+	ticker := time.NewTicker(pendingRetryInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.retryPendingOnce(ctx)
+		}
+	}
+}
+
+// retryPendingOnce re-evaluates every currently-pending event once.
+func (m *Monitor) retryPendingOnce(ctx context.Context) {
+	m.pendingMu.Lock()
+	snapshot := make([]*pendingEvent, 0, len(m.pending))
+	for _, e := range m.pending {
+		snapshot = append(snapshot, e)
+	}
+	m.pendingMu.Unlock()
+
+	for _, e := range snapshot {
+		e.attempts++
+		m.evaluateAndApply(ctx, e.log, e.wdHash)
+	}
+	m.updatePendingGauges()
+}
+
+// updatePendingGauges refreshes the pending-count and oldest-age gauges. The
+// oldest-age gauge is the alert signal: a value that keeps climbing means an event
+// never reached a terminal verdict.
+func (m *Monitor) updatePendingGauges() {
+	m.pendingMu.Lock()
+	n := len(m.pending)
+	var oldest time.Time
+	for _, e := range m.pending {
+		if oldest.IsZero() || e.firstSeen.Before(oldest) {
+			oldest = e.firstSeen
+		}
+	}
+	m.pendingMu.Unlock()
+	m.metrics.pending.Set(float64(n))
+	if n == 0 {
+		m.metrics.oldestPendingSeconds.Set(0)
+	} else {
+		m.metrics.oldestPendingSeconds.Set(time.Since(oldest).Seconds())
+	}
 }
 
 // recoverProof traces the transaction and returns the decoded proof for THIS
@@ -625,9 +825,11 @@ func (m *Monitor) processLog(block *types.Block, lg types.Log, client *ethclient
 // call order equals event-emission order, so we collect every prove call whose
 // recomputed hash matches this event and, when there is more than one, pair the
 // event to its call by position (the k-th matching log is the k-th matching
-// call). It emits an unverifiable metric and returns nil if it cannot (never
-// propagates an error to the processor).
-func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byte, txHashStr, wdHashStr string) *decodedProof {
+// call). On success it returns the decoded proof and an empty reason; otherwise
+// it returns (nil, reason) so the caller can park the event as pending. It has no
+// metric side effects, so it is safe to call repeatedly from the retry loop.
+func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byte) (*decodedProof, string) {
+	txHashStr := lg.TxHash.Hex()
 	var inputs [][]byte
 	var err error
 	for attempt := 0; attempt < traceAttempts; attempt++ {
@@ -641,26 +843,25 @@ func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byt
 		if strings.Contains(err.Error(), proveMethodName) {
 			reason = reasonNoProveCallFound
 		}
-		m.log.Error("⚠️  could not recover proof from trace (UNVERIFIABLE)", "txHash", txHashStr, "wdHash", wdHashStr, "reason", reason, "err", err)
-		m.metrics.unverifiable.WithLabelValues(reason, txHashStr, wdHashStr).Inc()
-		return nil
+		m.log.Warn("could not recover proof from trace", "txHash", txHashStr, "reason", reason, "err", err)
+		return nil, reason
 	}
 
 	// Decode every prove call and keep those matching this withdrawal hash, in
 	// call (== event) order. A malformed candidate is skipped, not fatal: a
 	// relayer could otherwise include a well-formed-selector-but-garbage-args
 	// portal call to abort processing before the real prove call is reached. We
-	// only give up (unverifiable) if NO candidate matches this hash.
+	// only give up if NO candidate matches this hash.
 	var candidates []*decodedProof
 	for _, input := range inputs {
 		dp, derr := m.decodeProveInput(input)
 		if derr != nil {
-			m.log.Warn("skipping undecodable prove candidate", "txHash", txHashStr, "wdHash", wdHashStr, "err", derr)
+			m.log.Warn("skipping undecodable prove candidate", "txHash", txHashStr, "err", derr)
 			continue
 		}
 		candidate, herr := m.withdrawalHash(dp.withdrawalTx)
 		if herr != nil {
-			m.log.Warn("skipping prove candidate with unhashable withdrawal tx", "txHash", txHashStr, "wdHash", wdHashStr, "err", herr)
+			m.log.Warn("skipping prove candidate with unhashable withdrawal tx", "txHash", txHashStr, "err", herr)
 			continue
 		}
 		if candidate == wdHash {
@@ -670,22 +871,19 @@ func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byt
 
 	switch len(candidates) {
 	case 0:
-		m.log.Error("⚠️  no prove call in tx matched the withdrawal hash (UNVERIFIABLE)", "txHash", txHashStr, "wdHash", wdHashStr)
-		m.metrics.unverifiable.WithLabelValues(reasonNoProveCallFound, txHashStr, wdHashStr).Inc()
-		return nil
+		return nil, reasonNoProveCallFound
 	case 1:
-		return candidates[0]
+		return candidates[0], ""
 	default:
 		// The same hash is proven multiple times in this tx; disambiguate by the
 		// event's position among the matching logs.
 		ordinal, oerr := m.eventOrdinal(ctx, lg, wdHash)
 		if oerr != nil || ordinal < 0 || ordinal >= len(candidates) {
-			m.log.Error("⚠️  could not position-match duplicate prove call (UNVERIFIABLE)",
-				"txHash", txHashStr, "wdHash", wdHashStr, "ordinal", ordinal, "candidates", len(candidates), "err", oerr)
-			m.metrics.unverifiable.WithLabelValues(reasonNoProveCallFound, txHashStr, wdHashStr).Inc()
-			return nil
+			m.log.Warn("could not position-match duplicate prove call",
+				"txHash", txHashStr, "ordinal", ordinal, "candidates", len(candidates), "err", oerr)
+			return nil, reasonNoProveCallFound
 		}
-		return candidates[ordinal]
+		return candidates[ordinal], ""
 	}
 }
 

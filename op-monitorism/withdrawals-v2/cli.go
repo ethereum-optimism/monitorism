@@ -10,6 +10,7 @@ import (
 const (
 	L1NodeURLFlagName             = "l1.node.url"
 	StartBlockFlagName            = "start.block"
+	LookbackBlocksFlagName        = "lookback.blocks"
 	PollingIntervalFlagName       = "poll.interval"
 	OptimismPortalAddressFlagName = "optimism.portal.address"
 	UseLatestFlagName             = "use.latest"
@@ -19,6 +20,7 @@ type CLIConfig struct {
 	L1NodeURL             string
 	OptimismPortalAddress string
 	StartBlock            uint64
+	LookbackBlocks        uint64
 	PollingInterval       time.Duration
 	UseLatest             bool
 }
@@ -28,6 +30,7 @@ func ReadCLIFlags(ctx *cli.Context) (CLIConfig, error) {
 		L1NodeURL:             ctx.String(L1NodeURLFlagName),
 		OptimismPortalAddress: ctx.String(OptimismPortalAddressFlagName),
 		StartBlock:            ctx.Uint64(StartBlockFlagName),
+		LookbackBlocks:        ctx.Uint64(LookbackBlocksFlagName),
 		PollingInterval:       ctx.Duration(PollingIntervalFlagName),
 		UseLatest:             ctx.Bool(UseLatestFlagName),
 	}
@@ -44,10 +47,15 @@ func CLIFlags(envVar string) []cli.Flag {
 			Required: true,
 		},
 		&cli.Uint64Flag{
-			Name:     StartBlockFlagName,
-			Usage:    "Starting L1 block number to scan",
-			EnvVars:  opservice.PrefixEnvVar(envVar, "START_BLOCK"),
-			Required: true,
+			Name:    StartBlockFlagName,
+			Usage:   "Starting L1 block number to scan (one-time backfill). Omit for steady-state, which starts near the finalized head and re-scans --lookback.blocks on startup.",
+			EnvVars: opservice.PrefixEnvVar(envVar, "START_BLOCK"),
+		},
+		&cli.Uint64Flag{
+			Name:    LookbackBlocksFlagName,
+			Usage:   "When no --start.block is set, re-scan this many L1 blocks below the finalized head on startup, so events proven during downtime are re-evaluated. Makes the in-memory pending set durable across restarts.",
+			EnvVars: opservice.PrefixEnvVar(envVar, "LOOKBACK_BLOCKS"),
+			Value:   900,
 		},
 		&cli.DurationFlag{
 			Name:    PollingIntervalFlagName,

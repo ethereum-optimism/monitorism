@@ -37,9 +37,22 @@ There is **no L2 dependency** — the monitor only talks to an L1 archive+trace 
   accepted a proof a correct verifier rejects. `reason` is one of:
   - `bad_withdrawal_proof`: storage-inclusion proof does not prove inclusion.
   - `bad_output_root_binding`: `keccak(outputRootProof)` does not equal the game root claim.
-- `withdrawals_v2_unverifiable_withdrawals_total{reason,txhash,wdhash}`: **blind spot**
-  (not P0) — the monitor could not re-verify and needs operator attention. `reason` is
-  one of `trace_unavailable`, `no_prove_call_found`, `decode_error`, `game_read_error`.
+- `withdrawals_v2_unverifiable_withdrawals_total{reason,txhash,wdhash}`: counts each prove
+  event that could not be re-verified on first sight (then parked for async retry). `reason`
+  is one of `trace_unavailable`, `no_prove_call_found`, `decode_error`, `game_read_error`.
+- `withdrawals_v2_pending_withdrawals`: **gauge** — prove events awaiting a terminal
+  valid/invalid verdict. The async retry loop drives each to a verdict, so no event is
+  ever silently dropped after a transient RPC failure.
+- `withdrawals_v2_oldest_pending_seconds`: **gauge** — age of the oldest still-pending
+  event. This is the alert signal: a value that keeps climbing means an event never
+  reached a verdict and needs an operator.
+
+Every prove event reaches a terminal verdict: `valid`, `invalid` (P0), or it stays
+counted in the pending gauges until it does. Dispute games are resolved by the traced
+`_disputeGameIndex` via `gameAtIndex` (immutable), and the output-root claim is selected
+exactly as the portal does — `rootClaimByChainId(l2ChainId)` for super game types
+(4/5/7/9), `rootClaim()` for legacy — so the re-verification mirrors on-chain semantics
+for all supported game types.
 
 ## Requirements
 
@@ -47,8 +60,17 @@ There is **no L2 dependency** — the monitor only talks to an L1 archive+trace 
   blocks being scanned. A pruned full node only retains ~128 blocks of state, so it
   can only trace withdrawals proven in the last ~25 minutes; scanning older blocks
   (or backfilling) requires a true archive (`--gcmode=archive --state.scheme=hash`).
-  When a trace is unavailable the monitor emits `unverifiable_withdrawals_total`
-  rather than stalling.
+  When a trace is unavailable the monitor parks the event as pending and retries it
+  asynchronously (see the pending gauges) rather than stalling or dropping it.
+
+### Startup modes
+
+- **Backfill** (one-time): set `--start.block` to a historical block; the monitor scans
+  forward from there (inclusive).
+- **Steady-state** (default): omit `--start.block`. The monitor starts near the finalized
+  head and, on each startup, re-scans `--lookback.blocks` (default 900) below the head so
+  any events proven while it was down are re-evaluated. This makes the in-memory pending
+  set durable across restarts without external storage.
 
 ## CLI Usage
 
@@ -63,7 +85,8 @@ go run ../cmd/monitorism withdrawals-v2 [options]
 ```bash
 OPTIONS:
    --l1.node.url value             Node URL of L1 archive+trace Geth node (must serve debug_traceTransaction) [$WITHDRAWALS_V2_MON_L1_NODE_URL]
-   --start.block value             Starting L1 block number to scan [$WITHDRAWALS_V2_MON_START_BLOCK]
+   --start.block value             Starting L1 block number to scan (one-time backfill); omit for steady-state [$WITHDRAWALS_V2_MON_START_BLOCK]
+   --lookback.blocks value         When no --start.block is set, re-scan this many blocks below finalized on startup (default: 900) [$WITHDRAWALS_V2_MON_LOOKBACK_BLOCKS]
    --poll.interval value           Polling interval for scanning L1 blocks (default: 1s) [$WITHDRAWALS_V2_MON_POLL_INTERVAL]
    --optimism.portal.address value Address of the OptimismPortal2 contract [$WITHDRAWALS_V2_MON_OPTIMISM_PORTAL]
    --log.level value               The lowest log level that will be output (default: INFO) [$MONITORISM_LOG_LEVEL]

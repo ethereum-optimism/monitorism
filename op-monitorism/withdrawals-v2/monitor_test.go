@@ -7,10 +7,42 @@ import (
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals-v2/bindings"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestPendingStore proves the review comment #4 fix: unresolved events are parked
+// and only released on a terminal verdict, and the tracking gauges reflect the
+// backlog. enqueue is idempotent (one entry per event, counter-friendly).
+func TestPendingStore(t *testing.T) {
+	m := newTestMonitor(t)
+	m.pending = make(map[string]*pendingEvent)
+	m.metrics.pending = prometheus.NewGauge(prometheus.GaugeOpts{Name: "pending"})
+	m.metrics.oldestPendingSeconds = prometheus.NewGauge(prometheus.GaugeOpts{Name: "oldest"})
+
+	logA := types.Log{TxHash: common.HexToHash("0xaa"), Index: 0}
+	logB := types.Log{TxHash: common.HexToHash("0xaa"), Index: 1} // same tx, different log
+
+	assert.True(t, m.enqueuePending(logA, [32]byte{0x1}), "first enqueue is new")
+	assert.False(t, m.enqueuePending(logA, [32]byte{0x1}), "re-enqueue of same event is not new")
+	assert.True(t, m.enqueuePending(logB, [32]byte{0x2}), "distinct log position is a distinct event")
+	assert.Equal(t, float64(2), testutil.ToFloat64(m.metrics.pending))
+
+	m.updatePendingGauges()
+	assert.GreaterOrEqual(t, testutil.ToFloat64(m.metrics.oldestPendingSeconds), float64(0))
+
+	m.resolvePending(logA)
+	assert.Equal(t, float64(1), testutil.ToFloat64(m.metrics.pending))
+	m.resolvePending(logB)
+	assert.Equal(t, float64(0), testutil.ToFloat64(m.metrics.pending))
+
+	m.updatePendingGauges()
+	assert.Equal(t, float64(0), testutil.ToFloat64(m.metrics.oldestPendingSeconds), "no pending -> oldest age resets to 0")
+}
 
 func TestComputeWithdrawalStorageKey(t *testing.T) {
 	tests := []struct {
