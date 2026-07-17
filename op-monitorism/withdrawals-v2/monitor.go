@@ -69,6 +69,7 @@ type Monitor struct {
 	l1Client      *ethclient.Client
 	l1Raw         *rpc.Client
 	portal        *bindings.OptimismPortal2
+	dgf           *bindings.DisputeGameFactory
 	portalAddress common.Address
 	portalABI     *abi.ABI
 	proveSelector [4]byte
@@ -186,6 +187,19 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, err
 	}
 
+	// Resolve the DisputeGameFactory once. Games are looked up by their factory
+	// index (immutable), not via provenWithdrawals (mutable — a re-prove
+	// overwrites it), so the monitor always re-verifies against the exact game a
+	// given prove call targeted.
+	factoryAddr, err := portal.DisputeGameFactory(nil)
+	if err != nil {
+		return nil, fmt.Errorf("read disputeGameFactory: %w", err)
+	}
+	dgf, err := bindings.NewDisputeGameFactory(factoryAddr, l1Client)
+	if err != nil {
+		return nil, err
+	}
+
 	portalABI, err := bindings.OptimismPortal2MetaData.GetAbi()
 	if err != nil {
 		return nil, err
@@ -207,6 +221,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1Client:      l1Client,
 		l1Raw:         l1Client.Client(),
 		portal:        portal,
+		dgf:           dgf,
 		portalAddress: portalAddress,
 		portalABI:     portalABI,
 		proveSelector: proveSelector,
@@ -416,21 +431,26 @@ func verifyProof(wdHash [32]byte, rootClaim [32]byte, dp *decodedProof) string {
 	return ""
 }
 
-// gameInfo reads the dispute game the withdrawal was proven against: its proxy
-// address and root claim. This is a plain data read of current L1 state — NOT a
-// validity gate. The game address is returned even when the root-claim read fails,
-// so it can still be logged.
-func (m *Monitor) gameInfo(wdHash [32]byte, proofSubmitter common.Address) (common.Address, [32]byte, error) {
-	proven, err := m.portal.ProvenWithdrawals(nil, wdHash, proofSubmitter)
+// gameInfo reads the dispute game a prove call targeted, by its factory index:
+// the game proxy and its root claim. The index is decoded from the prove call
+// itself (the _disputeGameIndex argument), so we resolve the exact game that
+// call proved against — not whatever provenWithdrawals currently points to,
+// which a later re-prove could have overwritten. gameAtIndex is immutable, so
+// reading it at latest L1 state is correct.
+//
+// This is a plain data read — NOT a validity gate. The game address is returned
+// even when the root-claim read fails, so it can still be logged.
+func (m *Monitor) gameInfo(index *big.Int) (common.Address, [32]byte, error) {
+	game, err := m.dgf.GameAtIndex(nil, index)
 	if err != nil {
 		return common.Address{}, [32]byte{}, err
 	}
-	game, err := bindings.NewFaultDisputeGame(proven.DisputeGameProxy, m.l1Client)
+	fdg, err := bindings.NewFaultDisputeGame(game.Proxy, m.l1Client)
 	if err != nil {
-		return proven.DisputeGameProxy, [32]byte{}, err
+		return game.Proxy, [32]byte{}, err
 	}
-	rootClaim, err := game.RootClaim(nil)
-	return proven.DisputeGameProxy, rootClaim, err
+	rootClaim, err := fdg.RootClaim(nil)
+	return game.Proxy, rootClaim, err
 }
 
 // traceProveInputs traces the L1 transaction and returns every
@@ -488,12 +508,12 @@ func (m *Monitor) processLog(block *types.Block, lg types.Log, client *ethclient
 	// Every withdrawal we start processing ends with a visual separator.
 	defer m.log.Info(logSeparator)
 
-	dp := m.recoverProof(ctx, txHash, wdHash, txHashStr, wdHashStr)
+	dp := m.recoverProof(ctx, lg, wdHash, txHashStr, wdHashStr)
 	if dp == nil {
 		return nil
 	}
 
-	gameProxy, rootClaim, err := m.gameInfo(wdHash, provenWithdrawal.ProofSubmitter)
+	gameProxy, rootClaim, err := m.gameInfo(dp.disputeGameIndex)
 	if err != nil {
 		m.log.Error("⚠️  could not read dispute game (UNVERIFIABLE)",
 			"txHash", txHashStr, "wdHash", wdHashStr,
@@ -519,14 +539,19 @@ func (m *Monitor) processLog(block *types.Block, lg types.Log, client *ethclient
 	return nil
 }
 
-// recoverProof traces the transaction, then finds and decodes the prove call whose
-// withdrawal hash matches the event's. It emits an unverifiable metric and returns
-// nil if it cannot (never propagates an error to the processor).
-func (m *Monitor) recoverProof(ctx context.Context, txHash common.Hash, wdHash [32]byte, txHashStr, wdHashStr string) *decodedProof {
+// recoverProof traces the transaction and returns the decoded proof for THIS
+// event. A single tx may prove the same withdrawal hash more than once (e.g. a
+// batch that re-proves against a different game). Trace order equals on-chain
+// call order equals event-emission order, so we collect every prove call whose
+// recomputed hash matches this event and, when there is more than one, pair the
+// event to its call by position (the k-th matching log is the k-th matching
+// call). It emits an unverifiable metric and returns nil if it cannot (never
+// propagates an error to the processor).
+func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byte, txHashStr, wdHashStr string) *decodedProof {
 	var inputs [][]byte
 	var err error
 	for attempt := 0; attempt < traceAttempts; attempt++ {
-		inputs, err = m.traceProveInputs(ctx, txHash)
+		inputs, err = m.traceProveInputs(ctx, lg.TxHash)
 		if err == nil {
 			break
 		}
@@ -541,8 +566,9 @@ func (m *Monitor) recoverProof(ctx context.Context, txHash common.Hash, wdHash [
 		return nil
 	}
 
-	// A batch tx contains one prove call per withdrawal; select the one whose
-	// recomputed withdrawal hash matches this event.
+	// Decode every prove call and keep those matching this withdrawal hash, in
+	// call (== event) order.
+	var candidates []*decodedProof
 	for _, input := range inputs {
 		dp, derr := m.decodeProveInput(input)
 		if derr != nil {
@@ -557,11 +583,51 @@ func (m *Monitor) recoverProof(ctx context.Context, txHash common.Hash, wdHash [
 			return nil
 		}
 		if candidate == wdHash {
-			return dp
+			candidates = append(candidates, dp)
 		}
 	}
 
-	m.log.Error("⚠️  no prove call in tx matched the withdrawal hash (UNVERIFIABLE)", "txHash", txHashStr, "wdHash", wdHashStr)
-	m.metrics.unverifiable.WithLabelValues(reasonNoProveCallFound, txHashStr, wdHashStr).Inc()
-	return nil
+	switch len(candidates) {
+	case 0:
+		m.log.Error("⚠️  no prove call in tx matched the withdrawal hash (UNVERIFIABLE)", "txHash", txHashStr, "wdHash", wdHashStr)
+		m.metrics.unverifiable.WithLabelValues(reasonNoProveCallFound, txHashStr, wdHashStr).Inc()
+		return nil
+	case 1:
+		return candidates[0]
+	default:
+		// The same hash is proven multiple times in this tx; disambiguate by the
+		// event's position among the matching logs.
+		ordinal, oerr := m.eventOrdinal(ctx, lg, wdHash)
+		if oerr != nil || ordinal < 0 || ordinal >= len(candidates) {
+			m.log.Error("⚠️  could not position-match duplicate prove call (UNVERIFIABLE)",
+				"txHash", txHashStr, "wdHash", wdHashStr, "ordinal", ordinal, "candidates", len(candidates), "err", oerr)
+			m.metrics.unverifiable.WithLabelValues(reasonNoProveCallFound, txHashStr, wdHashStr).Inc()
+			return nil
+		}
+		return candidates[ordinal]
+	}
+}
+
+// eventOrdinal returns the zero-based position of log lg among all
+// WithdrawalProvenExtension1 logs for the same withdrawal hash in its
+// transaction. It is only consulted when a single tx proves one hash more than
+// once, to pair each event with the correct prove call by position.
+func (m *Monitor) eventOrdinal(ctx context.Context, lg types.Log, wdHash [32]byte) (int, error) {
+	receipt, err := m.l1Client.TransactionReceipt(ctx, lg.TxHash)
+	if err != nil {
+		return -1, err
+	}
+	ext1 := m.portalABI.Events["WithdrawalProvenExtension1"].ID
+	target := common.BytesToHash(wdHash[:])
+	ordinal := 0
+	for _, rl := range receipt.Logs {
+		if rl.Address != m.portalAddress || len(rl.Topics) < 2 || rl.Topics[0] != ext1 || rl.Topics[1] != target {
+			continue
+		}
+		if rl.Index == lg.Index {
+			return ordinal, nil
+		}
+		ordinal++
+	}
+	return -1, fmt.Errorf("event log %d not found in receipt for tx %s", lg.Index, lg.TxHash.Hex())
 }

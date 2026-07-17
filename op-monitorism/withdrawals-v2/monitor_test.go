@@ -182,6 +182,83 @@ func TestCollectProveInputs_NonPortalIgnored(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// packProveTx builds calldata for a proveWithdrawalTransaction call with an
+// explicit withdrawal tx and dispute-game index, so tests can construct several
+// prove calls for the SAME withdrawal against DIFFERENT games.
+func packProveTx(t *testing.T, tx bindings.TypesWithdrawalTransaction, index *big.Int, orp bindings.TypesOutputRootProof, proof [][]byte) []byte {
+	t.Helper()
+	a := proveABI(t)
+	packed, err := a.Pack(proveMethodName, tx, index, orp, proof)
+	require.NoError(t, err)
+	return packed
+}
+
+// TestDecodeProveInput_DisputeGameIndex proves the game index is recovered from
+// the prove call itself. This is the core of PR #176 review comment #2: the game
+// is resolved by the call's own _disputeGameIndex (immutable via gameAtIndex),
+// not by reading the mutable provenWithdrawals mapping which a re-prove overwrites.
+func TestDecodeProveInput_DisputeGameIndex(t *testing.T) {
+	m := newTestMonitor(t)
+	tx := bindings.TypesWithdrawalTransaction{
+		Nonce: big.NewInt(9), Sender: common.HexToAddress("0xaa"), Target: common.HexToAddress("0xbb"),
+		Value: big.NewInt(0), GasLimit: big.NewInt(21000), Data: []byte{},
+	}
+	for _, idx := range []int64{7, 42, 100} {
+		input := packProveTx(t, tx, big.NewInt(idx), bindings.TypesOutputRootProof{}, [][]byte{{0x01}})
+		dp, err := m.decodeProveInput(input)
+		require.NoError(t, err)
+		assert.Equal(t, big.NewInt(idx), dp.disputeGameIndex)
+	}
+}
+
+// TestPositionalPairing_SameHashTwoGames proves the same-tx duplicate case from
+// review comment #2: a single tx proves ONE withdrawal hash twice, against two
+// different games. collectProveInputs must preserve call order, and the two
+// decoded calls must share the withdrawal hash but carry distinct game indices —
+// so pairing the k-th event to the k-th call selects the correct game.
+func TestPositionalPairing_SameHashTwoGames(t *testing.T) {
+	m := newTestMonitor(t)
+	tx := bindings.TypesWithdrawalTransaction{
+		Nonce: big.NewInt(1), Sender: common.HexToAddress("0xaa"), Target: common.HexToAddress("0xbb"),
+		Value: big.NewInt(0), GasLimit: big.NewInt(21000), Data: []byte{},
+	}
+	wdHash, err := m.withdrawalHash(tx)
+	require.NoError(t, err)
+
+	first := packProveTx(t, tx, big.NewInt(7), bindings.TypesOutputRootProof{}, [][]byte{{0x01}})
+	second := packProveTx(t, tx, big.NewInt(42), bindings.TypesOutputRootProof{}, [][]byte{{0x02}})
+
+	// Two sibling internal calls to the portal, in order, inside a wrapper tx.
+	frame := &callFrame{
+		Type: "CALL", To: "0x43edb88c4b80fdd2adff2412a7bebf9df42cb40e", Input: "0xabcdef",
+		Calls: []callFrame{
+			{Type: "CALL", To: m.portalAddress.Hex(), Input: "0x" + common.Bytes2Hex(first)},
+			{Type: "CALL", To: m.portalAddress.Hex(), Input: "0x" + common.Bytes2Hex(second)},
+		},
+	}
+
+	var inputs [][]byte
+	m.collectProveInputs(frame, &inputs)
+	require.Len(t, inputs, 2)
+
+	// Collect candidates for this hash in call order, mirroring recoverProof.
+	var candidates []*decodedProof
+	for _, in := range inputs {
+		dp, derr := m.decodeProveInput(in)
+		require.NoError(t, derr)
+		h, herr := m.withdrawalHash(dp.withdrawalTx)
+		require.NoError(t, herr)
+		if h == wdHash {
+			candidates = append(candidates, dp)
+		}
+	}
+
+	require.Len(t, candidates, 2, "both proves target the same withdrawal hash")
+	// Positional pairing: ordinal 0 -> game 7, ordinal 1 -> game 42.
+	assert.Equal(t, big.NewInt(7), candidates[0].disputeGameIndex)
+	assert.Equal(t, big.NewInt(42), candidates[1].disputeGameIndex)
+}
+
 // TestWithdrawalHashMatching proves the batcher disambiguation: a tx with two
 // prove calls yields two inputs, and each decodes to a distinct withdrawal hash so
 // the right proof is selected per event.
