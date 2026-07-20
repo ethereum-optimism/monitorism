@@ -48,12 +48,12 @@ func CLIFlags(envVar string) []cli.Flag {
 		},
 		&cli.Uint64Flag{
 			Name:    StartBlockFlagName,
-			Usage:   "Starting L1 block number to scan (one-time backfill). Omit for steady-state, which starts near the finalized head and re-scans --lookback.blocks on startup.",
+			Usage:   "Starting L1 block number to scan (one-time backfill). Omit for steady-state, which replays the portal proof-maturity window plus a safety margin on startup.",
 			EnvVars: opservice.PrefixEnvVar(envVar, "START_BLOCK"),
 		},
 		&cli.Uint64Flag{
 			Name:    LookbackBlocksFlagName,
-			Usage:   "When no --start.block is set, re-scan this many L1 blocks below the finalized head on startup, so events proven during downtime are re-evaluated. Makes the in-memory pending set durable across restarts.",
+			Usage:   "Minimum L1 block-count replay on steady-state startup, in addition to the automatically enforced proof-maturity window plus safety margin.",
 			EnvVars: opservice.PrefixEnvVar(envVar, "LOOKBACK_BLOCKS"),
 			Value:   900,
 		},

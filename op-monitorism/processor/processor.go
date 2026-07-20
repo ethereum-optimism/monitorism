@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"sort"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -54,6 +55,7 @@ type BlockProcessor struct {
 	// batch eth_getBlockReceipts for a given block (e.g. anvil fork-base blocks).
 	logFilterAddresses []common.Address
 	logFilterTopics    [][]common.Hash
+	retryDelay         time.Duration
 
 	// dynamic backoff state
 	currentDelay      time.Duration
@@ -145,6 +147,7 @@ func NewBlockProcessor(
 
 		logFilterAddresses: config.LogFilterAddresses,
 		logFilterTopics:    config.LogFilterTopics,
+		retryDelay:         time.Second,
 	}
 
 	// Initialize RNG for jitter
@@ -279,14 +282,8 @@ func (p *BlockProcessor) processBlock(blockNumber *big.Int) error {
 	// batch eth_getBlockReceipts for the block); otherwise pull every receipt.
 	if p.logProcessFunc != nil {
 		if len(p.logFilterAddresses) > 0 {
-			logs, err := p.getFilteredLogsWithRetry(block.Number())
-			if err != nil {
-				return err // Context cancellation
-			}
-			for _, lg := range logs {
-				if err := p.processLogWithRetry(block, lg); err != nil {
-					return err // Context cancellation
-				}
+			if err := p.processFilteredLogs(block); err != nil {
+				return err
 			}
 		} else {
 			receipts, err := p.getBlockReceiptsWithRetry(block)
@@ -307,6 +304,26 @@ func (p *BlockProcessor) processBlock(blockNumber *big.Int) error {
 	p.lastProcessed = new(big.Int).Set(blockNumber)
 	p.metrics.highestBlockProcessed.Set(float64(p.lastProcessed.Int64()))
 
+	return nil
+}
+
+// processFilteredLogs fetches and dispatches one block's filtered logs in
+// canonical block-log order. Nodes normally return eth_getLogs results ordered,
+// but sorting by the global log index makes the processor's callback contract
+// explicit and protects event/call positional matching from a non-conforming RPC.
+func (p *BlockProcessor) processFilteredLogs(block *types.Block) error {
+	logs, err := p.getFilteredLogsWithRetry(block.Number())
+	if err != nil {
+		return err
+	}
+	sort.SliceStable(logs, func(i, j int) bool {
+		return logs[i].Index < logs[j].Index
+	})
+	for _, lg := range logs {
+		if err := p.processLogWithRetry(block, lg); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -464,8 +481,25 @@ func (p *BlockProcessor) getFilteredLogsWithRetry(blockNumber *big.Int) ([]types
 			p.log.Error("error getting filtered logs", "block", blockNumber.String(), "err", err)
 			p.metrics.processingErrors.Inc()
 			p.errorsThisBlock++
-			time.Sleep(1 * time.Second)
+			if err := p.waitForRetry(); err != nil {
+				return nil, err
+			}
 		}
+	}
+}
+
+func (p *BlockProcessor) waitForRetry() error {
+	delay := p.retryDelay
+	if delay <= 0 {
+		delay = time.Second
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 

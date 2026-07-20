@@ -60,6 +60,11 @@ const (
 	// have not yet reached a terminal valid/invalid verdict.
 	pendingRetryInterval = 60 * time.Second
 
+	// replaySafetyMarginSeconds extends startup replay beyond the portal's proof
+	// maturity window. This covers finality/polling lag and makes a steady-state
+	// restart rediscover every withdrawal that could still be awaiting finalization.
+	replaySafetyMarginSeconds = uint64((24 * time.Hour) / time.Second)
+
 	// assessTimeout bounds the RPC work (trace + game reads + receipt) for a single
 	// event. ethclient.Dial sets no HTTP timeout, so without this a stuck
 	// debug_traceTransaction could wedge the processor or the retry loop
@@ -87,7 +92,6 @@ type Monitor struct {
 	l1Client      *ethclient.Client
 	l1Raw         *rpc.Client
 	portal        *bindings.OptimismPortal2
-	dgf           *bindings.DisputeGameFactory
 	systemConfig  *bindings.SystemConfig
 	portalAddress common.Address
 	portalABI     *abi.ABI
@@ -120,7 +124,6 @@ type pendingEvent struct {
 	log       types.Log
 	wdHash    [32]byte
 	firstSeen time.Time
-	attempts  int
 }
 
 // pendingKey uniquely identifies a prove event by its log position.
@@ -189,7 +192,7 @@ func logStartupConfig(log log.Logger, cfg CLIConfig) {
 		"l1_node_url", redactURL(cfg.L1NodeURL),
 		"optimism_portal", cfg.OptimismPortalAddress,
 		"start_block", cfg.StartBlock,
-		"start_block_note", "inclusive (this block is scanned); 0 means start near finalized and re-scan lookback_blocks",
+		"start_block_note", "inclusive (this block is scanned); 0 means replay proof maturity + safety margin at startup",
 		"lookback_blocks", cfg.LookbackBlocks,
 		"poll_interval", cfg.PollingInterval,
 	)
@@ -251,19 +254,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		return nil, err
 	}
 
-	// Resolve the DisputeGameFactory once. Games are looked up by their factory
-	// index (immutable), not via provenWithdrawals (mutable — a re-prove
-	// overwrites it), so the monitor always re-verifies against the exact game a
-	// given prove call targeted.
-	factoryAddr, err := portal.DisputeGameFactory(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return nil, fmt.Errorf("read disputeGameFactory: %w", err)
-	}
-	dgf, err := bindings.NewDisputeGameFactory(factoryAddr, l1Client)
-	if err != nil {
-		return nil, err
-	}
-
 	// Bind SystemConfig so we can read l2ChainId when a super game is encountered
 	// (mirrors the portal's super-game predicate). The chain id itself is read
 	// lazily, so a SystemConfig without l2ChainId() never breaks legacy chains.
@@ -297,7 +287,6 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 		l1Client:      l1Client,
 		l1Raw:         l1Client.Client(),
 		portal:        portal,
-		dgf:           dgf,
 		systemConfig:  systemConfig,
 		baseCtx:       context.Background(),
 		pending:       make(map[string]*pendingEvent),
@@ -355,17 +344,30 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	switch {
 	case cfg.StartBlock > 0:
 		procStartBlock = big.NewInt(int64(cfg.StartBlock) - 1)
-	case !cfg.UseLatest && cfg.LookbackBlocks > 0:
-		// No explicit start block: re-scan a lookback window below the finalized
-		// head so events proven while the monitor was down are re-evaluated and
-		// re-parked as pending if still unresolved. This is what makes the
-		// in-memory pending set durable across restarts without external storage.
-		start, err := lookbackStartBlock(ctx, l1Client, cfg.LookbackBlocks)
+	default:
+		// No explicit start block: replay at least the full on-chain withdrawal
+		// maturity window plus a safety margin. This makes in-memory pending state
+		// recoverable across restarts even when an event has been unresolved for far
+		// longer than the optional block-count lookback.
+		maturity, err := portal.ProofMaturityDelaySeconds(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return nil, fmt.Errorf("read proofMaturityDelaySeconds: %w", err)
+		}
+		if !maturity.IsUint64() || maturity.Uint64() > ^uint64(0)-replaySafetyMarginSeconds {
+			return nil, fmt.Errorf("proof maturity delay does not fit uint64 seconds: %s", maturity)
+		}
+		replayWindowSeconds := maturity.Uint64() + replaySafetyMarginSeconds
+		start, err := replayStartBlock(ctx, l1Client, cfg.UseLatest, cfg.LookbackBlocks, replayWindowSeconds)
 		if err != nil {
 			return nil, err
 		}
 		procStartBlock = start
-		log.Info("re-scanning lookback window on startup", "startBlock", start, "lookbackBlocks", cfg.LookbackBlocks)
+		log.Info("replaying withdrawal maturity window on startup",
+			"processorStartBlock", start,
+			"proofMaturitySeconds", maturity,
+			"safetyMarginSeconds", replaySafetyMarginSeconds,
+			"configuredLookbackBlocks", cfg.LookbackBlocks,
+		)
 	}
 
 	proc, err := processor.NewBlockProcessor(
@@ -422,23 +424,92 @@ func (m *Monitor) Close(ctx context.Context) error {
 	return nil
 }
 
-// lookbackStartBlock returns the processor start block for a startup re-scan:
-// `lookback` blocks below the current finalized head (never negative). The extra
-// -1 accounts for the processor scanning from StartBlock+1, so the first block
-// actually scanned is exactly finalized-lookback.
-func lookbackStartBlock(ctx context.Context, l1Client *ethclient.Client, lookback uint64) (*big.Int, error) {
+type headerReader interface {
+	HeaderByNumber(context.Context, *big.Int) (*types.Header, error)
+}
+
+// replayStartBlock returns the already-processed cursor for steady-state startup.
+// The next block scanned is the earlier of:
+//   - the configured block-count lookback; and
+//   - the first block inside proof-maturity + safety-margin seconds.
+//
+// The time-based floor is what makes pending-event recovery safe across restarts:
+// it cannot silently shrink below the portal's withdrawal maturity window when L1
+// block cadence changes. A cursor of -1 is intentional when replay begins at
+// genesis; BlockProcessor then scans block 0 next.
+func replayStartBlock(
+	ctx context.Context,
+	l1Client *ethclient.Client,
+	useLatest bool,
+	lookback uint64,
+	replayWindowSeconds uint64,
+) (*big.Int, error) {
+	tag := "finalized"
+	if useLatest {
+		tag = "latest"
+	}
 	var header *types.Header
-	if err := l1Client.Client().CallContext(ctx, &header, "eth_getBlockByNumber", "finalized", false); err != nil {
-		return nil, fmt.Errorf("read finalized header for lookback: %w", err)
+	if err := l1Client.Client().CallContext(ctx, &header, "eth_getBlockByNumber", tag, false); err != nil {
+		return nil, fmt.Errorf("read %s header for replay: %w", tag, err)
 	}
 	if header == nil {
-		return nil, fmt.Errorf("finalized block is null (node may not support the \"finalized\" tag)")
+		return nil, fmt.Errorf("%s block is null (node may not support the %q tag)", tag, tag)
 	}
-	start := new(big.Int).Sub(header.Number, new(big.Int).SetUint64(lookback+1))
-	if start.Sign() < 0 {
-		start = big.NewInt(0)
+	return replayStartBlockFromHead(ctx, l1Client, header, lookback, replayWindowSeconds)
+}
+
+func replayStartBlockFromHead(
+	ctx context.Context,
+	reader headerReader,
+	head *types.Header,
+	lookback uint64,
+	replayWindowSeconds uint64,
+) (*big.Int, error) {
+	if head == nil || head.Number == nil || !head.Number.IsUint64() {
+		return nil, fmt.Errorf("invalid replay head")
 	}
-	return start, nil
+
+	configuredFirst := new(big.Int).Sub(head.Number, new(big.Int).SetUint64(lookback))
+	if configuredFirst.Sign() < 0 {
+		configuredFirst.SetUint64(0)
+	}
+	configuredCursor := new(big.Int).Sub(configuredFirst, common.Big1)
+
+	targetTimestamp := uint64(0)
+	if head.Time > replayWindowSeconds {
+		targetTimestamp = head.Time - replayWindowSeconds
+	}
+	timeFirst, err := firstBlockAtOrAfter(ctx, reader, head.Number.Uint64(), targetTimestamp)
+	if err != nil {
+		return nil, err
+	}
+	timeCursor := new(big.Int).Sub(new(big.Int).SetUint64(timeFirst), common.Big1)
+	if timeCursor.Cmp(configuredCursor) < 0 {
+		return timeCursor, nil
+	}
+	return configuredCursor, nil
+}
+
+// firstBlockAtOrAfter binary-searches monotonically increasing L1 block
+// timestamps and returns the first block whose timestamp is at least target.
+func firstBlockAtOrAfter(ctx context.Context, reader headerReader, headNumber, target uint64) (uint64, error) {
+	lo, hi := uint64(0), headNumber
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		header, err := reader.HeaderByNumber(ctx, new(big.Int).SetUint64(mid))
+		if err != nil {
+			return 0, fmt.Errorf("read block %d while locating replay window: %w", mid, err)
+		}
+		if header == nil {
+			return 0, fmt.Errorf("block %d is null while locating replay window", mid)
+		}
+		if header.Time >= target {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo, nil
 }
 
 // computeWithdrawalStorageKey computes the storage slot of a withdrawal hash in the
@@ -450,15 +521,21 @@ func computeWithdrawalStorageKey(withdrawalHash [32]byte) common.Hash {
 
 // callFrame is the shape returned by geth's callTracer (recursive).
 type callFrame struct {
-	Type  string      `json:"type"`
-	To    string      `json:"to"`
-	Input string      `json:"input"`
-	Error string      `json:"error"`
-	Calls []callFrame `json:"calls"`
+	Type   string      `json:"type"`
+	To     string      `json:"to"`
+	Input  string      `json:"input"`
+	Output string      `json:"output"`
+	Error  string      `json:"error"`
+	Calls  []callFrame `json:"calls"`
 }
 
-// collectProveInputs walks the call tree (depth-first, including the root frame)
-// and returns the input of every frame that calls the portal with the
+type tracedProveCall struct {
+	input []byte
+	frame *callFrame
+}
+
+// collectProveCalls walks the call tree (depth-first, including the root frame)
+// and returns every frame that calls the portal with the
 // proveWithdrawalTransaction selector. A single transaction can prove many
 // withdrawals (a batch relayer emits one internal call each), so we collect all
 // of them and let the caller match by withdrawal hash.
@@ -473,18 +550,29 @@ type callFrame struct {
 // event), so its calldata proves nothing. Without this, a relayer could prepend
 // a deliberately reverting portal call carrying the prove selector to poison the
 // candidate set before making the real successful prove call.
-func (m *Monitor) collectProveInputs(frame *callFrame, out *[][]byte) {
+func (m *Monitor) collectProveCalls(frame *callFrame, out *[]tracedProveCall) {
 	if frame.Error != "" {
 		return
 	}
 	if strings.EqualFold(frame.To, m.portalAddress.Hex()) {
 		input := common.FromHex(frame.Input)
 		if len(input) >= 4 && bytes.Equal(input[:4], m.proveSelector[:]) {
-			*out = append(*out, input)
+			*out = append(*out, tracedProveCall{input: input, frame: frame})
 		}
 	}
 	for i := range frame.Calls {
-		m.collectProveInputs(&frame.Calls[i], out)
+		m.collectProveCalls(&frame.Calls[i], out)
+	}
+}
+
+// collectProveInputs is retained as a small test/helper surface for callers that
+// only need calldata. Proof assessment uses collectProveCalls so it also retains
+// the exact successful frame and can bind the historical factory/game lookup.
+func (m *Monitor) collectProveInputs(frame *callFrame, out *[][]byte) {
+	var calls []tracedProveCall
+	m.collectProveCalls(frame, &calls)
+	for _, call := range calls {
+		*out = append(*out, call.input)
 	}
 }
 
@@ -494,6 +582,13 @@ type decodedProof struct {
 	disputeGameIndex *big.Int
 	outputRootProof  bindings.TypesOutputRootProof
 	withdrawalProof  [][]byte
+}
+
+type recoveredProof struct {
+	proof     *decodedProof
+	factory   common.Address
+	gameType  uint32
+	gameProxy common.Address
 }
 
 // decodeProveInput ABI-decodes a recovered call input into the proof arguments.
@@ -594,33 +689,77 @@ func isSuperGame(gameType uint32) bool {
 	}
 }
 
-// gameInfo reads the dispute game a prove call targeted, by its factory index:
-// the game proxy and the output-root claim to verify against. The index is
-// decoded from the prove call itself (the _disputeGameIndex argument), so we
-// resolve the exact game that call proved against — not whatever provenWithdrawals
-// currently points to, which a later re-prove could have overwritten. gameAtIndex
-// is immutable, so reading it at latest L1 state is correct.
-//
-// The claim is selected exactly as the portal does: super game types expose the
-// per-chain output root via rootClaimByChainId(l2ChainId); legacy games use
-// rootClaim. This is a plain data read — NOT a validity gate. The game address is
-// returned even when the root-claim read fails, so it can still be logged.
-func (m *Monitor) gameInfo(ctx context.Context, index *big.Int) (common.Address, [32]byte, error) {
+// gameRootClaim reads the output-root claim from the exact game returned by the
+// historical prove call's gameAtIndex trace. The claim is selected exactly as the
+// portal does: super game types expose the per-chain output root via
+// rootClaimByChainId(l2ChainId); legacy games use rootClaim. This is a plain data
+// read — NOT a validity gate.
+func (m *Monitor) gameRootClaim(ctx context.Context, gameType uint32, gameProxy common.Address) ([32]byte, error) {
 	opts := &bind.CallOpts{Context: ctx}
-	game, err := m.dgf.GameAtIndex(opts, index)
+	if isSuperGame(gameType) {
+		return m.superGameRootClaim(ctx, gameProxy)
+	}
+	fdg, err := bindings.NewFaultDisputeGame(gameProxy, m.l1Client)
 	if err != nil {
-		return common.Address{}, [32]byte{}, err
+		return [32]byte{}, err
 	}
-	if isSuperGame(game.GameType) {
-		rootClaim, err := m.superGameRootClaim(ctx, game.Proxy)
-		return game.Proxy, rootClaim, err
+	return fdg.RootClaim(opts)
+}
+
+var gameAtIndexSelector = func() (selector [4]byte) {
+	copy(selector[:], crypto.Keccak256([]byte("gameAtIndex(uint256)"))[:4])
+	return selector
+}()
+
+// gameFromProveTrace recovers the exact factory identity and immutable game tuple
+// used by this accepted prove call. Both values come from the successful
+// gameAtIndex call frame, so a later AnchorStateRegistry/factory migration cannot
+// make a running monitor or restarted backfill resolve the same index in the
+// wrong factory.
+func gameFromProveTrace(proveFrame *callFrame, index *big.Int) (common.Address, uint32, common.Address, error) {
+	if proveFrame == nil {
+		return common.Address{}, 0, common.Address{}, fmt.Errorf("missing prove call frame")
 	}
-	fdg, err := bindings.NewFaultDisputeGame(game.Proxy, m.l1Client)
-	if err != nil {
-		return game.Proxy, [32]byte{}, err
+	for i := range proveFrame.Calls {
+		factory, gameType, proxy, found, err := findGameAtIndexCall(&proveFrame.Calls[i], index)
+		if err != nil {
+			return common.Address{}, 0, common.Address{}, err
+		}
+		if found {
+			return factory, gameType, proxy, nil
+		}
 	}
-	rootClaim, err := fdg.RootClaim(opts)
-	return game.Proxy, rootClaim, err
+	return common.Address{}, 0, common.Address{}, fmt.Errorf("successful gameAtIndex(%s) call not found in prove trace", index)
+}
+
+func findGameAtIndexCall(frame *callFrame, index *big.Int) (common.Address, uint32, common.Address, bool, error) {
+	if frame.Error != "" {
+		return common.Address{}, 0, common.Address{}, false, nil
+	}
+	input := common.FromHex(frame.Input)
+	if len(input) == 36 && bytes.Equal(input[:4], gameAtIndexSelector[:]) && new(big.Int).SetBytes(input[4:]).Cmp(index) == 0 {
+		output := common.FromHex(frame.Output)
+		if len(output) < 96 {
+			return common.Address{}, 0, common.Address{}, false, fmt.Errorf("gameAtIndex trace output is %d bytes, want at least 96", len(output))
+		}
+		gameTypeWord := new(big.Int).SetBytes(output[:32])
+		if gameTypeWord.BitLen() > 32 {
+			return common.Address{}, 0, common.Address{}, false, fmt.Errorf("gameAtIndex game type does not fit uint32: %s", gameTypeWord)
+		}
+		factory := common.HexToAddress(frame.To)
+		proxy := common.BytesToAddress(output[64:96])
+		if factory == (common.Address{}) || proxy == (common.Address{}) {
+			return common.Address{}, 0, common.Address{}, false, fmt.Errorf("gameAtIndex trace returned zero factory or game proxy")
+		}
+		return factory, uint32(gameTypeWord.Uint64()), proxy, true, nil
+	}
+	for i := range frame.Calls {
+		factory, gameType, proxy, found, err := findGameAtIndexCall(&frame.Calls[i], index)
+		if err != nil || found {
+			return factory, gameType, proxy, found, err
+		}
+	}
+	return common.Address{}, 0, common.Address{}, false, nil
 }
 
 // superGameRootClaim reads a super game's output root for this chain, matching
@@ -653,20 +792,21 @@ func (m *Monitor) getL2ChainID(ctx context.Context) (*big.Int, error) {
 	return id, nil
 }
 
-// traceProveInputs traces the L1 transaction and returns every
-// proveWithdrawalTransaction input reaching the portal (direct or via wrappers).
-func (m *Monitor) traceProveInputs(ctx context.Context, txHash common.Hash) ([][]byte, error) {
+// traceProveCalls traces the L1 transaction and returns every successful
+// proveWithdrawalTransaction frame reaching the portal (direct or via wrappers).
+// Retaining each frame is required to recover the historical factory/game lookup.
+func (m *Monitor) traceProveCalls(ctx context.Context, txHash common.Hash) ([]tracedProveCall, error) {
 	var frame callFrame
 	err := m.l1Raw.CallContext(ctx, &frame, "debug_traceTransaction", txHash, map[string]interface{}{"tracer": "callTracer"})
 	if err != nil {
 		return nil, err
 	}
-	var inputs [][]byte
-	m.collectProveInputs(&frame, &inputs)
-	if len(inputs) == 0 {
+	var calls []tracedProveCall
+	m.collectProveCalls(&frame, &calls)
+	if len(calls) == 0 {
 		return nil, fmt.Errorf("no %s call to portal found in trace", proveMethodName)
 	}
-	return inputs, nil
+	return calls, nil
 }
 
 // parseWithdrawalEvent parses a WithdrawalProvenExtension1 event from a log.
@@ -693,6 +833,7 @@ const (
 type assessment struct {
 	v         verdict
 	reason    string // set for invalid and unresolved
+	factory   common.Address
 	gameProxy common.Address
 	gameIndex *big.Int
 }
@@ -714,14 +855,18 @@ func (m *Monitor) processLog(block *types.Block, lg types.Log, client *ethclient
 	if provenWithdrawal == nil {
 		return nil
 	}
-	m.evaluateAndApply(lg, provenWithdrawal.WithdrawalHash)
+	firstSeen := time.Now()
+	if block != nil {
+		firstSeen = time.Unix(int64(block.Time()), 0)
+	}
+	m.evaluateAndApply(lg, provenWithdrawal.WithdrawalHash, firstSeen)
 	return nil
 }
 
 // evaluateAndApply assesses one event and records the outcome. Shared by the
 // processor (first sighting) and the async retry loop (subsequent attempts).
-func (m *Monitor) evaluateAndApply(lg types.Log, wdHash [32]byte) {
-	m.applyAssessment(m.assess(lg, wdHash), lg, wdHash)
+func (m *Monitor) evaluateAndApply(lg types.Log, wdHash [32]byte, firstSeen time.Time) {
+	m.applyAssessment(m.assess(lg, wdHash), lg, wdHash, firstSeen)
 }
 
 // assess re-verifies one prove event from L1 only and returns its verdict. It has
@@ -732,41 +877,45 @@ func (m *Monitor) assess(lg types.Log, wdHash [32]byte) assessment {
 	ctx, cancel := context.WithTimeout(m.baseCtx, assessTimeout)
 	defer cancel()
 
-	dp, reason := m.recoverProof(ctx, lg, wdHash)
-	if dp == nil {
+	recovered, reason := m.recoverProof(ctx, lg, wdHash)
+	if recovered == nil {
 		return assessment{v: verdictUnresolved, reason: reason}
 	}
-	gameProxy, rootClaim, err := m.gameInfo(ctx, dp.disputeGameIndex)
+	rootClaim, err := m.gameRootClaim(ctx, recovered.gameType, recovered.gameProxy)
 	if err != nil {
-		m.log.Warn("could not read dispute game", "txHash", lg.TxHash.Hex(), "factoryGameIndex", dp.disputeGameIndex, "err", err)
-		return assessment{v: verdictUnresolved, reason: reasonGameReadError, gameProxy: gameProxy, gameIndex: dp.disputeGameIndex}
+		m.log.Warn("could not read dispute game", "txHash", lg.TxHash.Hex(), "factory", recovered.factory,
+			"factoryGameIndex", recovered.proof.disputeGameIndex, "gameProxy", recovered.gameProxy, "err", err)
+		return assessment{v: verdictUnresolved, reason: reasonGameReadError, factory: recovered.factory,
+			gameProxy: recovered.gameProxy, gameIndex: recovered.proof.disputeGameIndex}
 	}
-	if r := verifyProof(wdHash, rootClaim, dp); r != "" {
-		return assessment{v: verdictInvalid, reason: r, gameProxy: gameProxy, gameIndex: dp.disputeGameIndex}
+	if r := verifyProof(wdHash, rootClaim, recovered.proof); r != "" {
+		return assessment{v: verdictInvalid, reason: r, factory: recovered.factory,
+			gameProxy: recovered.gameProxy, gameIndex: recovered.proof.disputeGameIndex}
 	}
-	return assessment{v: verdictValid, gameProxy: gameProxy, gameIndex: dp.disputeGameIndex}
+	return assessment{v: verdictValid, factory: recovered.factory,
+		gameProxy: recovered.gameProxy, gameIndex: recovered.proof.disputeGameIndex}
 }
 
 // applyAssessment records an assessment: emits metrics, logs, and updates the
 // pending set — parking unresolved events, releasing terminal ones.
-func (m *Monitor) applyAssessment(a assessment, lg types.Log, wdHash [32]byte) {
+func (m *Monitor) applyAssessment(a assessment, lg types.Log, wdHash [32]byte, firstSeen time.Time) {
 	txHashStr := lg.TxHash.Hex()
 	wdHashStr := common.BytesToHash(wdHash[:]).Hex()
 	switch a.v {
 	case verdictValid:
 		m.log.Info("✅ withdrawal proof re-verified", "txHash", txHashStr, "wdHash", wdHashStr,
-			"disputeGame", a.gameProxy.Hex(), "factoryGameIndex", a.gameIndex)
+			"factory", a.factory.Hex(), "disputeGame", a.gameProxy.Hex(), "factoryGameIndex", a.gameIndex)
 		m.metrics.validWithdrawals.WithLabelValues().Inc()
 		m.resolvePending(lg)
 	case verdictInvalid:
 		// The portal accepted a proof a correct verifier rejects. P0, regardless of
 		// whether the dispute game is valid.
 		m.log.Error("❌ INVALID WITHDRAWAL PROOF ACCEPTED BY PORTAL (P0)", "txHash", txHashStr, "wdHash", wdHashStr,
-			"reason", a.reason, "disputeGame", a.gameProxy.Hex(), "factoryGameIndex", a.gameIndex)
+			"reason", a.reason, "factory", a.factory.Hex(), "disputeGame", a.gameProxy.Hex(), "factoryGameIndex", a.gameIndex)
 		m.metrics.invalidWithdrawals.WithLabelValues(a.reason).Inc()
 		m.resolvePending(lg)
 	case verdictUnresolved:
-		if m.enqueuePending(lg, wdHash) {
+		if m.enqueuePending(lg, wdHash, firstSeen) {
 			// Count each event once, at first sighting, to keep the counter bounded;
 			// ongoing backlog is tracked by the pending/oldest gauges.
 			m.log.Warn("⚠️  withdrawal not yet verifiable — parked for retry", "txHash", txHashStr, "wdHash", wdHashStr, "reason", a.reason)
@@ -779,12 +928,12 @@ func (m *Monitor) applyAssessment(a assessment, lg types.Log, wdHash [32]byte) {
 
 // enqueuePending parks an unresolved event for async retry. Returns true if the
 // event was newly added (not already pending).
-func (m *Monitor) enqueuePending(lg types.Log, wdHash [32]byte) bool {
+func (m *Monitor) enqueuePending(lg types.Log, wdHash [32]byte, firstSeen time.Time) bool {
 	key := pendingKey(lg)
 	m.pendingMu.Lock()
 	_, exists := m.pending[key]
 	if !exists {
-		m.pending[key] = &pendingEvent{log: lg, wdHash: wdHash, firstSeen: time.Now()}
+		m.pending[key] = &pendingEvent{log: lg, wdHash: wdHash, firstSeen: firstSeen}
 	}
 	n := len(m.pending)
 	m.pendingMu.Unlock()
@@ -831,8 +980,7 @@ func (m *Monitor) retryPendingOnce(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		e.attempts++
-		m.evaluateAndApply(e.log, e.wdHash)
+		m.evaluateAndApply(e.log, e.wdHash, e.firstSeen)
 	}
 	m.updatePendingGauges()
 }
@@ -854,7 +1002,11 @@ func (m *Monitor) updatePendingGauges() {
 	if n == 0 {
 		m.metrics.oldestPendingSeconds.Set(0)
 	} else {
-		m.metrics.oldestPendingSeconds.Set(time.Since(oldest).Seconds())
+		age := time.Since(oldest).Seconds()
+		if age < 0 {
+			age = 0
+		}
+		m.metrics.oldestPendingSeconds.Set(age)
 	}
 }
 
@@ -867,12 +1019,12 @@ func (m *Monitor) updatePendingGauges() {
 // call). On success it returns the decoded proof and an empty reason; otherwise
 // it returns (nil, reason) so the caller can park the event as pending. It has no
 // metric side effects, so it is safe to call repeatedly from the retry loop.
-func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byte) (*decodedProof, string) {
+func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byte) (*recoveredProof, string) {
 	txHashStr := lg.TxHash.Hex()
-	var inputs [][]byte
+	var calls []tracedProveCall
 	var err error
 	for attempt := 0; attempt < traceAttempts; attempt++ {
-		inputs, err = m.traceProveInputs(ctx, lg.TxHash)
+		calls, err = m.traceProveCalls(ctx, lg.TxHash)
 		if err == nil {
 			break
 		}
@@ -891,28 +1043,33 @@ func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byt
 	// relayer could otherwise include a well-formed-selector-but-garbage-args
 	// portal call to abort processing before the real prove call is reached. We
 	// only give up if NO candidate matches this hash.
-	var candidates []*decodedProof
-	for _, input := range inputs {
-		dp, derr := m.decodeProveInput(input)
+	type candidate struct {
+		proof *decodedProof
+		frame *callFrame
+	}
+	var candidates []candidate
+	for _, call := range calls {
+		dp, derr := m.decodeProveInput(call.input)
 		if derr != nil {
 			m.log.Warn("skipping undecodable prove candidate", "txHash", txHashStr, "err", derr)
 			continue
 		}
-		candidate, herr := m.withdrawalHash(dp.withdrawalTx)
+		candidateHash, herr := m.withdrawalHash(dp.withdrawalTx)
 		if herr != nil {
 			m.log.Warn("skipping prove candidate with unhashable withdrawal tx", "txHash", txHashStr, "err", herr)
 			continue
 		}
-		if candidate == wdHash {
-			candidates = append(candidates, dp)
+		if candidateHash == wdHash {
+			candidates = append(candidates, candidate{proof: dp, frame: call.frame})
 		}
 	}
 
+	var selected candidate
 	switch len(candidates) {
 	case 0:
 		return nil, reasonNoProveCallFound
 	case 1:
-		return candidates[0], ""
+		selected = candidates[0]
 	default:
 		// The same hash is proven multiple times in this tx; disambiguate by the
 		// event's position among the matching logs.
@@ -922,8 +1079,18 @@ func (m *Monitor) recoverProof(ctx context.Context, lg types.Log, wdHash [32]byt
 				"txHash", txHashStr, "ordinal", ordinal, "candidates", len(candidates), "err", oerr)
 			return nil, reasonNoProveCallFound
 		}
-		return candidates[ordinal], ""
+		selected = candidates[ordinal]
 	}
+
+	factory, gameType, gameProxy, err := gameFromProveTrace(selected.frame, selected.proof.disputeGameIndex)
+	if err != nil {
+		m.log.Warn("could not recover historical factory/game from prove trace",
+			"txHash", txHashStr, "factoryGameIndex", selected.proof.disputeGameIndex, "err", err)
+		return nil, reasonGameReadError
+	}
+	return &recoveredProof{
+		proof: selected.proof, factory: factory, gameType: gameType, gameProxy: gameProxy,
+	}, ""
 }
 
 // eventOrdinal returns the zero-based position of log lg among all

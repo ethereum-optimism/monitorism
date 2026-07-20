@@ -1,9 +1,11 @@
 package withdrawalsv2
 
 import (
+	"context"
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/withdrawals-v2/bindings"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -42,14 +44,16 @@ func TestPendingStore(t *testing.T) {
 
 	logA := types.Log{TxHash: common.HexToHash("0xaa"), Index: 0}
 	logB := types.Log{TxHash: common.HexToHash("0xaa"), Index: 1} // same tx, different log
+	blockTime := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
 
-	assert.True(t, m.enqueuePending(logA, [32]byte{0x1}), "first enqueue is new")
-	assert.False(t, m.enqueuePending(logA, [32]byte{0x1}), "re-enqueue of same event is not new")
-	assert.True(t, m.enqueuePending(logB, [32]byte{0x2}), "distinct log position is a distinct event")
+	assert.True(t, m.enqueuePending(logA, [32]byte{0x1}, blockTime), "first enqueue is new")
+	assert.False(t, m.enqueuePending(logA, [32]byte{0x1}, time.Now()), "re-enqueue does not reset age")
+	assert.True(t, m.enqueuePending(logB, [32]byte{0x2}, blockTime.Add(time.Hour)), "distinct log position is a distinct event")
 	assert.Equal(t, float64(2), testutil.ToFloat64(m.metrics.pending))
+	assert.Equal(t, blockTime, m.pending[pendingKey(logA)].firstSeen)
 
 	m.updatePendingGauges()
-	assert.GreaterOrEqual(t, testutil.ToFloat64(m.metrics.oldestPendingSeconds), float64(0))
+	assert.GreaterOrEqual(t, testutil.ToFloat64(m.metrics.oldestPendingSeconds), float64((2*time.Hour-time.Second)/time.Second))
 
 	m.resolvePending(logA)
 	assert.Equal(t, float64(1), testutil.ToFloat64(m.metrics.pending))
@@ -58,6 +62,31 @@ func TestPendingStore(t *testing.T) {
 
 	m.updatePendingGauges()
 	assert.Equal(t, float64(0), testutil.ToFloat64(m.metrics.oldestPendingSeconds), "no pending -> oldest age resets to 0")
+}
+
+type linearHeaderReader struct {
+	spacing uint64
+}
+
+func (r linearHeaderReader) HeaderByNumber(_ context.Context, number *big.Int) (*types.Header, error) {
+	n := number.Uint64()
+	return &types.Header{Number: new(big.Int).SetUint64(n), Time: n * r.spacing}, nil
+}
+
+// TestReplayStartBlockCoversMaturityWindow proves restart recovery is bounded by
+// wall-clock maturity, not a too-small fixed block count. With 12-second blocks,
+// a 1,200-second window starts at block 900 even though lookback.blocks=50 would
+// otherwise start at block 950. The returned cursor is one block before that.
+func TestReplayStartBlockCoversMaturityWindow(t *testing.T) {
+	head := &types.Header{Number: big.NewInt(1000), Time: 12_000}
+	start, err := replayStartBlockFromHead(context.Background(), linearHeaderReader{spacing: 12}, head, 50, 1_200)
+	require.NoError(t, err)
+	assert.Equal(t, big.NewInt(899), start)
+
+	// A larger operator-configured block lookback still wins.
+	start, err = replayStartBlockFromHead(context.Background(), linearHeaderReader{spacing: 12}, head, 200, 1_200)
+	require.NoError(t, err)
+	assert.Equal(t, big.NewInt(799), start)
 }
 
 func TestComputeWithdrawalStorageKey(t *testing.T) {
@@ -268,6 +297,49 @@ func TestCollectProveInputs_SkipsRevertedDecoy(t *testing.T) {
 	m.collectProveInputs(frame, &got)
 	require.Len(t, got, 1, "only the successful prove call is collected")
 	assert.Equal(t, real, got[0])
+}
+
+func tracedGameAtIndexFrame(index *big.Int, factory common.Address, gameType uint32, proxy common.Address) callFrame {
+	input := append(append([]byte{}, gameAtIndexSelector[:]...), common.LeftPadBytes(index.Bytes(), 32)...)
+	output := make([]byte, 0, 96)
+	output = append(output, common.LeftPadBytes(new(big.Int).SetUint64(uint64(gameType)).Bytes(), 32)...)
+	output = append(output, make([]byte, 32)...) // timestamp is not needed by the monitor
+	output = append(output, common.LeftPadBytes(proxy.Bytes(), 32)...)
+	return callFrame{
+		Type: "STATICCALL", To: factory.Hex(),
+		Input: "0x" + common.Bytes2Hex(input), Output: "0x" + common.Bytes2Hex(output),
+	}
+}
+
+// TestGameFromProveTraceSpansFactoryMigration proves that the same game index is
+// bound to the factory/game used by each historical transaction. A startup-cached
+// factory would resolve both events through whichever side of the migration the
+// monitor happened to start on; trace binding keeps them distinct.
+func TestGameFromProveTraceSpansFactoryMigration(t *testing.T) {
+	index := big.NewInt(7)
+	oldFactory := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	newFactory := common.HexToAddress("0x2000000000000000000000000000000000000002")
+	oldGame := common.HexToAddress("0x3000000000000000000000000000000000000003")
+	newGame := common.HexToAddress("0x4000000000000000000000000000000000000004")
+
+	proveBeforeMigration := &callFrame{Calls: []callFrame{{
+		Type: "DELEGATECALL", Calls: []callFrame{tracedGameAtIndexFrame(index, oldFactory, 8, oldGame)},
+	}}}
+	proveAfterMigration := &callFrame{Calls: []callFrame{{
+		Type: "DELEGATECALL", Calls: []callFrame{tracedGameAtIndexFrame(index, newFactory, gameTypeSuperCannon, newGame)},
+	}}}
+
+	factory, gameType, proxy, err := gameFromProveTrace(proveBeforeMigration, index)
+	require.NoError(t, err)
+	assert.Equal(t, oldFactory, factory)
+	assert.Equal(t, uint32(8), gameType)
+	assert.Equal(t, oldGame, proxy)
+
+	factory, gameType, proxy, err = gameFromProveTrace(proveAfterMigration, index)
+	require.NoError(t, err)
+	assert.Equal(t, newFactory, factory)
+	assert.Equal(t, gameTypeSuperCannon, gameType)
+	assert.Equal(t, newGame, proxy)
 }
 
 // packProveTx builds calldata for a proveWithdrawalTransaction call with an
