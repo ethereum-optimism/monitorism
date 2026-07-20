@@ -340,7 +340,7 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	// StartBlock+1. Decrement by one so --start.block is INCLUSIVE: the block the
 	// user names is the first block scanned. StartBlock == 0 is left untouched so
 	// the processor's "start from latest finalized block" behavior is preserved.
-	procStartBlock := big.NewInt(int64(cfg.StartBlock))
+	var procStartBlock *big.Int
 	switch {
 	case cfg.StartBlock > 0:
 		procStartBlock = big.NewInt(int64(cfg.StartBlock) - 1)
