@@ -547,14 +547,16 @@ type tracedProveCall struct {
 //
 // Reverted frames are skipped entirely, together with their subtree: a frame
 // that carries a callTracer `error` did not take effect (no state change, no
-// event), so its calldata proves nothing. Without this, a relayer could prepend
-// a deliberately reverting portal call carrying the prove selector to poison the
-// candidate set before making the real successful prove call.
+// event), so its calldata proves nothing. Candidates must also be CALL frames:
+// a DELEGATECALL to the portal runs in the caller's context and cannot emit the
+// portal event this monitor is pairing with. Without these checks, a relayer
+// could prepend a decoy carrying the prove selector to poison the candidate set
+// before making the real successful prove call.
 func (m *Monitor) collectProveCalls(frame *callFrame, out *[]tracedProveCall) {
 	if frame.Error != "" {
 		return
 	}
-	if strings.EqualFold(frame.To, m.portalAddress.Hex()) {
+	if frame.Type == "CALL" && strings.EqualFold(frame.To, m.portalAddress.Hex()) {
 		input := common.FromHex(frame.Input)
 		if len(input) >= 4 && bytes.Equal(input[:4], m.proveSelector[:]) {
 			*out = append(*out, tracedProveCall{input: input, frame: frame})

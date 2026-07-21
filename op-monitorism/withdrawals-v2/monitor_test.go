@@ -299,6 +299,29 @@ func TestCollectProveInputs_SkipsRevertedDecoy(t *testing.T) {
 	assert.Equal(t, real, got[0])
 }
 
+// TestCollectProveInputs_SkipsDelegateCallDecoy proves that a successful
+// DELEGATECALL to the portal cannot take the event ordinal that belongs to the
+// real CALL. The delegate call executes in the wrapper's context, so it cannot
+// have emitted the portal-addressed event being assessed.
+func TestCollectProveInputs_SkipsDelegateCallDecoy(t *testing.T) {
+	m := newTestMonitor(t)
+	real := packProve(t, bindings.TypesOutputRootProof{}, [][]byte{{0x01}})
+	decoy := packProve(t, bindings.TypesOutputRootProof{StateRoot: [32]byte{0xde, 0xad}}, [][]byte{{0x02}})
+
+	frame := &callFrame{
+		Type: "CALL", To: "0x43edb88c4b80fdd2adff2412a7bebf9df42cb40e", Input: "0xabcdef",
+		Calls: []callFrame{
+			{Type: "DELEGATECALL", To: m.portalAddress.Hex(), Input: "0x" + common.Bytes2Hex(decoy)},
+			{Type: "CALL", To: m.portalAddress.Hex(), Input: "0x" + common.Bytes2Hex(real)},
+		},
+	}
+
+	var got [][]byte
+	m.collectProveInputs(frame, &got)
+	require.Len(t, got, 1, "only the portal CALL is collected")
+	assert.Equal(t, real, got[0])
+}
+
 func tracedGameAtIndexFrame(index *big.Int, factory common.Address, gameType uint32, proxy common.Address) callFrame {
 	input := append(append([]byte{}, gameAtIndexSelector[:]...), common.LeftPadBytes(index.Bytes(), 32)...)
 	output := make([]byte, 0, 96)
