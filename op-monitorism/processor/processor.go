@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"sort"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -47,6 +49,14 @@ type BlockProcessor struct {
 	metrics          Metrics
 	useLatest        bool
 
+	// Optional log filter. When logFilterAddresses is non-empty, per-block logs are
+	// fetched with eth_getLogs (filtered) instead of pulling every block receipt.
+	// This is far cheaper on busy chains and works against nodes that don't serve
+	// batch eth_getBlockReceipts for a given block (e.g. anvil fork-base blocks).
+	logFilterAddresses []common.Address
+	logFilterTopics    [][]common.Hash
+	retryDelay         time.Duration
+
 	// dynamic backoff state
 	currentDelay      time.Duration
 	stableCleanBlocks int
@@ -66,6 +76,12 @@ type Config struct {
 	StartBlock *big.Int      // Optional: starting block number
 	Interval   time.Duration // Optional: polling interval
 	UseLatest  bool          // Optional: use latest block instead of finalized block, not reorg safe
+
+	// Optional log filter (only used when a logProcessFunc is set). When
+	// LogFilterAddresses is non-empty, logs are fetched per block via eth_getLogs
+	// filtered by these addresses/topics instead of by pulling every block receipt.
+	LogFilterAddresses []common.Address
+	LogFilterTopics    [][]common.Hash
 
 	// Dynamic backoff configuration (optional)
 	MinDelay       time.Duration // Minimum per-block delay
@@ -128,6 +144,10 @@ func NewBlockProcessor(
 		metrics:          metrics,
 		log:              log,
 		useLatest:        config.UseLatest,
+
+		logFilterAddresses: config.LogFilterAddresses,
+		logFilterTopics:    config.LogFilterTopics,
+		retryDelay:         time.Second,
 	}
 
 	// Initialize RNG for jitter
@@ -257,16 +277,24 @@ func (p *BlockProcessor) processBlock(blockNumber *big.Int) error {
 		}
 	}
 
-	// Process logs for this block via receipts
+	// Process logs for this block. When a log filter is configured, fetch just the
+	// matching logs via eth_getLogs (cheap, and works against nodes that don't serve
+	// batch eth_getBlockReceipts for the block); otherwise pull every receipt.
 	if p.logProcessFunc != nil {
-		receipts, err := p.getBlockReceiptsWithRetry(block)
-		if err != nil {
-			return err // Context cancellation or unrecoverable error
-		}
-		for _, rcpt := range receipts {
-			for _, lg := range rcpt.Logs {
-				if err := p.processLogWithRetry(block, *lg); err != nil {
-					return err // Context cancellation
+		if len(p.logFilterAddresses) > 0 {
+			if err := p.processFilteredLogs(block); err != nil {
+				return err
+			}
+		} else {
+			receipts, err := p.getBlockReceiptsWithRetry(block)
+			if err != nil {
+				return err // Context cancellation or unrecoverable error
+			}
+			for _, rcpt := range receipts {
+				for _, lg := range rcpt.Logs {
+					if err := p.processLogWithRetry(block, *lg); err != nil {
+						return err // Context cancellation
+					}
 				}
 			}
 		}
@@ -276,6 +304,26 @@ func (p *BlockProcessor) processBlock(blockNumber *big.Int) error {
 	p.lastProcessed = new(big.Int).Set(blockNumber)
 	p.metrics.highestBlockProcessed.Set(float64(p.lastProcessed.Int64()))
 
+	return nil
+}
+
+// processFilteredLogs fetches and dispatches one block's filtered logs in
+// canonical block-log order. Nodes normally return eth_getLogs results ordered,
+// but sorting by the global log index makes the processor's callback contract
+// explicit and protects event/call positional matching from a non-conforming RPC.
+func (p *BlockProcessor) processFilteredLogs(block *types.Block) error {
+	logs, err := p.getFilteredLogsWithRetry(block.Number())
+	if err != nil {
+		return err
+	}
+	sort.SliceStable(logs, func(i, j int) bool {
+		return logs[i].Index < logs[j].Index
+	})
+	for _, lg := range logs {
+		if err := p.processLogWithRetry(block, lg); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -412,6 +460,49 @@ func (p *BlockProcessor) getBlockWithRetry(blockNumber *big.Int) (*types.Block, 
 	}
 }
 
+// getFilteredLogsWithRetry fetches the logs matching the configured address/topic
+// filter for a single block via eth_getLogs, with retry logic.
+func (p *BlockProcessor) getFilteredLogsWithRetry(blockNumber *big.Int) ([]types.Log, error) {
+	query := ethereum.FilterQuery{
+		FromBlock: blockNumber,
+		ToBlock:   blockNumber,
+		Addresses: p.logFilterAddresses,
+		Topics:    p.logFilterTopics,
+	}
+	for {
+		select {
+		case <-p.ctx.Done():
+			return nil, p.ctx.Err()
+		default:
+			logs, err := p.client.FilterLogs(p.ctx, query)
+			if err == nil {
+				return logs, nil
+			}
+			p.log.Error("error getting filtered logs", "block", blockNumber.String(), "err", err)
+			p.metrics.processingErrors.Inc()
+			p.errorsThisBlock++
+			if err := p.waitForRetry(); err != nil {
+				return nil, err
+			}
+		}
+	}
+}
+
+func (p *BlockProcessor) waitForRetry() error {
+	delay := p.retryDelay
+	if delay <= 0 {
+		delay = time.Second
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // getBlockReceiptsWithRetry gets block receipts with retry logic
 func (p *BlockProcessor) getBlockReceiptsWithRetry(block *types.Block) ([]*types.Receipt, error) {
 	for {
@@ -444,7 +535,13 @@ func (p *BlockProcessor) getLatestBlock() (*types.Block, error) {
 	var header *types.Header
 	err := p.client.Client().CallContext(p.ctx, &header, "eth_getBlockByNumber", tag, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get finalized header: %w", err)
+		return nil, fmt.Errorf("failed to get %s header: %w", tag, err)
+	}
+	// A node that doesn't have the requested tag (e.g. anvil/dev nodes with no
+	// "finalized" block) returns JSON null, leaving header nil with no error.
+	// Guard against it so we return a clear error instead of a nil dereference.
+	if header == nil {
+		return nil, fmt.Errorf("%s block is null (node may not support the %q tag)", tag, tag)
 	}
 
 	block, err := p.client.BlockByNumber(p.ctx, header.Number)
