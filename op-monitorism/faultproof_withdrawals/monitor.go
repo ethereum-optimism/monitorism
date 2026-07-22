@@ -453,16 +453,17 @@ func (m *Monitor) ConsumeEvent(enrichedWithdrawalEvent *validator.EnrichedProven
 
 	if !valid {
 		if !enrichedWithdrawalEvent.Blacklisted {
-			if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.CHALLENGER_WINS {
+			switch enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status {
+			case validator.CHALLENGER_WINS:
 				m.log.Debug("Incrementing suspicious events on challenger wins games")
 				m.state.IncrementSuspiciousEventsOnChallengerWinsGames(enrichedWithdrawalEvent)
-			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.DEFENDER_WINS {
+			case validator.DEFENDER_WINS:
 				m.log.Debug("Incrementing potential attack on defender wins games")
 				m.state.IncrementPotentialAttackOnDefenderWinsGames(enrichedWithdrawalEvent)
-			} else if enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status == validator.IN_PROGRESS {
+			case validator.IN_PROGRESS:
 				m.log.Debug("Incrementing potential attack on in-progress games")
 				m.state.IncrementPotentialAttackOnInProgressGames(enrichedWithdrawalEvent)
-			} else {
+			default:
 				m.log.Error("WITHDRAWAL: is NOT valid, game status is unknown",
 					"status", enrichedWithdrawalEvent.DisputeGame.DisputeGameData.Status)
 			}
