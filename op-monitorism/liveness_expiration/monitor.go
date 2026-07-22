@@ -53,13 +53,13 @@ func NewMonitor(ctx context.Context, log log.Logger, m metrics.Factory, cfg CLIC
 	}
 
 	if cfg.SafeAddress.Cmp(common.Address{}) == 0 {
-		return nil, fmt.Errorf("The `SafeAddress` specified is set to -> %s", cfg.SafeAddress)
+		return nil, fmt.Errorf("the `SafeAddress` specified is set to -> %s", cfg.SafeAddress)
 	}
 	if cfg.LivenessGuardAddress.Cmp(common.Address{}) == 0 {
-		return nil, fmt.Errorf("The `LivenessGuardAddress` specified is set to -> %s", cfg.LivenessGuardAddress)
+		return nil, fmt.Errorf("the `LivenessGuardAddress` specified is set to -> %s", cfg.LivenessGuardAddress)
 	}
 	if cfg.LivenessModuleAddress.Cmp(common.Address{}) == 0 {
-		return nil, fmt.Errorf("The `LivenessModuleAddress` specified is set to -> %s", cfg.LivenessModuleAddress)
+		return nil, fmt.Errorf("the `LivenessModuleAddress` specified is set to -> %s", cfg.LivenessModuleAddress)
 	}
 
 	GnosisSafe, err := bindings.NewGnosisSafe(cfg.SafeAddress, l1Client)

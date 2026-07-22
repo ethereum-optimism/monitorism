@@ -139,7 +139,7 @@ func ReadAllYamlRules(PathYamlRules string, log log.Logger) (GlobalConfiguration
 		}
 	}
 	if len(yamlFiles) == 0 {
-		return GlobalConfiguration{}, errors.New("No YAML files found in the directory")
+		return GlobalConfiguration{}, errors.New("no YAML files found in the directory")
 	}
 	for _, file := range yamlFiles {
 		path_rule := PathYamlRules + "/" + file.Name()

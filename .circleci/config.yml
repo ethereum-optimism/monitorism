@@ -3,7 +3,7 @@ version: 2.1
 parameters:
   ci_builder_image:
     type: string
-    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder:v0.55.0
+    default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder:latest
   ci_builder_rust_image:
     type: string
     default: us-docker.pkg.dev/oplabs-tools-artifacts/images/ci-builder-rust:latest
@@ -40,7 +40,8 @@ jobs:
         type: string
         default: ""
     docker:
-      - image: <<pipeline.parameters.ci_builder_image>>
+      - image: cimg/go:1.26
+        user: root
     steps:
       - checkout
       - restore_cache:
@@ -50,6 +51,10 @@ jobs:
           key: golang-build-cache
       - restore_cache:
           key: golang-lint-cache
+      - run:
+          name: install golangci-lint
+          command: |
+            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b /usr/local/bin v2.11.4
       - run:
           name: run Go linter
           command: |

@@ -24,11 +24,11 @@ op-monitorism:
 .PHONY: op-monitorism
 
 op-monitorism-lint-go: ## Lints Go code with specific linters
-	cd op-monitorism && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./...
+	cd op-monitorism && golangci-lint run ./...
 .PHONY: op-monitorism-lint-go
 
 op-monitorism-lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
-	cd op-monitorism && golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./... --fix
+	cd op-monitorism && golangci-lint run ./... --fix
 .PHONY: op-monitorism-lint-go-fix
 
 tidy:

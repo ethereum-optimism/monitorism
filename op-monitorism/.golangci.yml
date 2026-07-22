@@ -1,0 +1,17 @@
+version: "2"
+linters:
+  enable:
+    - sqlclosecheck
+    - bodyclose
+    - asciicheck
+    - misspell
+    - errorlint
+  exclusions:
+    rules:
+      - text: "errors.As"
+        path: ".*"
+      - text: "errors.Is"
+        path: ".*"
+formatters:
+  enable:
+    - goimports

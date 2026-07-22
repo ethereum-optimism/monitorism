@@ -113,7 +113,7 @@ func TestTransactionMonitoring(t *testing.T) {
 
 	// Start monitor in background
 	go monitor.Run(ctx)
-	defer monitor.Close(ctx)
+	defer func() { _ = monitor.Close(ctx) }()
 
 	t.Run("allowed address transaction", func(t *testing.T) {
 		// Send transaction to allowed address
