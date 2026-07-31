@@ -2,6 +2,8 @@ module github.com/ethereum-optimism/monitorism/op-monitorism
 
 go 1.26.0
 
+toolchain go1.26.5
+
 replace github.com/ethereum/go-ethereum => github.com/ethereum-optimism/op-geth v1.101503.1
 
 require (

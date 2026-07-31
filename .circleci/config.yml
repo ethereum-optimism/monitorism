@@ -40,7 +40,7 @@ jobs:
         type: string
         default: ""
     docker:
-      - image: cimg/go:1.26
+      - image: cimg/go:1.26.5
         user: root
     steps:
       - checkout
