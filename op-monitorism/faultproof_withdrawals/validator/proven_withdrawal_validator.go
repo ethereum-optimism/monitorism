@@ -11,11 +11,21 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// ErrWithdrawalProofDeleted reports that the OptimismPortal no longer holds a proof record for
-// a withdrawal hash and proof submitter. The withdrawal can never finalize with that proof, so
-// the monitor skips the event. Without this the monitor would try to read a dispute game at the
-// zero address, fail the whole block range, and never advance its L1 cursor.
+// ErrWithdrawalProofDeleted reports that the OptimismPortal deleted the proof record for a
+// withdrawal hash and proof submitter, confirmed by a WithdrawalProofDeleted event. The
+// withdrawal can never finalize with that proof, so the monitor skips the event. Without this
+// the monitor would try to read a dispute game at the zero address, fail the whole block range,
+// and never advance its L1 cursor.
 var ErrWithdrawalProofDeleted = errors.New("withdrawal proof deleted")
+
+// ErrWithdrawalProofMissing reports an empty proof record with no deletion event to explain it.
+// The record is read at the head of the chain, so a lagging node, a failover between nodes, or a
+// reorg of the prove transaction can all produce this. The monitor treats it as a transient error
+// and retries the block range, rather than skipping an event that may still be live.
+var ErrWithdrawalProofMissing = errors.New("withdrawal proof record missing without a deletion event")
+
+// errProofRecordEmpty reports that the proof record read empty, before the cause is known.
+var errProofRecordEmpty = errors.New("withdrawal proof record is empty")
 
 // ValidateProofWithdrawalState represents the state of the proof validation.
 type ValidateProofWithdrawalState int8
@@ -190,6 +200,9 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 // It returns the enriched event along with any error encountered.
 func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent *WithdrawalProvenExtension1Event) (*EnrichedProvenWithdrawalEvent, error) {
 	disputeGameProxy, err := wv.getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+	if errors.Is(err, errProofRecordEmpty) {
+		return nil, wv.classifyEmptyProofRecord(withdrawalEvent)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dispute games: %w", err)
 	}
@@ -205,6 +218,25 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 	return &enrichedWithdrawalEvent, nil
 }
 
+// classifyEmptyProofRecord decides whether an empty proof record is a deletion, which the monitor
+// skips, or an unexplained read, which the monitor retries.
+func (wv *ProvenWithdrawalValidator) classifyEmptyProofRecord(withdrawalEvent *WithdrawalProvenExtension1Event) error {
+	deleted, err := wv.L1Proxy.HasWithdrawalProofDeletedEvent(
+		withdrawalEvent.WithdrawalHash,
+		withdrawalEvent.ProofSubmitter,
+		withdrawalEvent.Raw.BlockNumber,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to check for a withdrawal proof deleted event: %w", err)
+	}
+	if !deleted {
+		return fmt.Errorf("%w: withdrawal hash:%x proof submitter:%x",
+			ErrWithdrawalProofMissing, withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+	}
+
+	return ErrWithdrawalProofDeleted
+}
+
 // getDisputeGamesFromWithdrawalhashAndProofSubmitter retrieves a DisputeGame object
 // based on the provided withdrawal hash and proof submitter address.
 func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (FaultDisputeGameProxy, error) {
@@ -213,7 +245,7 @@ func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSu
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games addresses: %w", err)
 	}
 	if submittedProofData.IsDeleted() {
-		return FaultDisputeGameProxy{}, ErrWithdrawalProofDeleted
+		return FaultDisputeGameProxy{}, errProofRecordEmpty
 	}
 
 	disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress

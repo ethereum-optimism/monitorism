@@ -64,6 +64,16 @@ func (l1Proxy *L1Proxy) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitte
 	return submittedProofData, nil
 }
 
+func (l1Proxy *L1Proxy) HasWithdrawalProofDeletedEvent(withdrawalHash [32]byte, proofSubmitter common.Address, fromBlock uint64) (bool, error) {
+	l1Proxy.Connections++
+	deleted, err := l1Proxy.optimismPortal2Helper.HasWithdrawalProofDeletedEvent(withdrawalHash, proofSubmitter, fromBlock)
+	if err != nil {
+		l1Proxy.ConnectionErrors++
+		return false, fmt.Errorf("failed to get withdrawal proof deleted events: %w", err)
+	}
+	return deleted, nil
+}
+
 func (l1Proxy *L1Proxy) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (FaultDisputeGameProxy, error) {
 	l1Proxy.Connections++
 	disputeGameProxy, err := l1Proxy.faultDisputeGameHelper.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)

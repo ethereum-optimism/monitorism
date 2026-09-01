@@ -6,8 +6,10 @@ import (
 	"math/big"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -35,9 +37,10 @@ type WithdrawalProvenEvent struct {
 // OptimismPortal2Helper assists in interacting with the Optimism Portal 2.
 type OptimismPortal2Helper struct {
 	// objects
-	l1Client        *ethclient.Client   // The L1 Ethereum client.
-	optimismPortal2 *l1.OptimismPortal2 // The Optimism Portal 2 contract instance.
-	ctx             context.Context     // Context for managing cancellation and timeouts.
+	l1Client              *ethclient.Client   // The L1 Ethereum client.
+	optimismPortal2       *l1.OptimismPortal2 // The Optimism Portal 2 contract instance.
+	optimismPortalAddress common.Address      // The address of the Optimism Portal 2 contract.
+	ctx                   context.Context     // Context for managing cancellation and timeouts.
 }
 
 // String provides a string representation of WithdrawalProvenExtension1Event.
@@ -72,10 +75,44 @@ func NewOptimismPortal2Helper(ctx context.Context, l1Client *ethclient.Client, o
 	}
 
 	return &OptimismPortal2Helper{
-		l1Client:        l1Client,
-		optimismPortal2: optimismPortal,
-		ctx:             ctx,
+		l1Client:              l1Client,
+		optimismPortal2:       optimismPortal,
+		optimismPortalAddress: optimismPortalAddress,
+		ctx:                   ctx,
 	}, nil
+}
+
+// withdrawalProofDeletedTopic is the topic of the OptimismPortal WithdrawalProofDeleted event.
+// The topic is computed here rather than read from the binding, because the binding is generated
+// from an ABI that predates the event.
+var withdrawalProofDeletedTopic = crypto.Keccak256Hash([]byte("WithdrawalProofDeleted(bytes32,address)"))
+
+// HasWithdrawalProofDeletedEvent reports whether the portal emitted a WithdrawalProofDeleted event
+// for this withdrawal hash and proof submitter at or after fromBlock.
+//
+// An empty proof record on its own does not prove a deletion. The record is read at the head of
+// the chain, so a lagging node, a failover between nodes, or a reorg of the prove transaction can
+// all return an empty record for a proof that is still live. The deletion event is the positive
+// signal that distinguishes the two.
+func (op *OptimismPortal2Helper) HasWithdrawalProofDeletedEvent(
+	withdrawalHash [32]byte,
+	proofSubmitter common.Address,
+	fromBlock uint64,
+) (bool, error) {
+	logs, err := op.l1Client.FilterLogs(op.ctx, ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(fromBlock),
+		Addresses: []common.Address{op.optimismPortalAddress},
+		Topics: [][]common.Hash{
+			{withdrawalProofDeletedTopic},
+			{common.BytesToHash(withdrawalHash[:])},
+			{common.BytesToHash(proofSubmitter.Bytes())},
+		},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to get withdrawal proof deleted events for withdrawal hash:%x proof submitter:%x error:%w", withdrawalHash, proofSubmitter, err)
+	}
+
+	return len(logs) > 0, nil
 }
 
 // IsGameBlacklisted checks if a dispute game is blacklisted.
