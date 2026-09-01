@@ -217,34 +217,30 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 }
 
 // classifyEmptyProofRecord decides whether an empty proof record is a deletion, which the monitor
-// skips, or an unexplained read, which the monitor retries.
+// skips, or a read the monitor cannot trust, which it retries.
 //
-// The portal appends the proof submitter and writes the proof record in the same transaction, and
-// deletion leaves the append-only submitter list untouched. So an empty record for a recorded
-// submitter is a deletion, and an empty record for an unknown submitter is a stale read or a
-// reorg of the prove transaction.
+// The first read happens at chain head, and a node can move in either direction between calls, so
+// that read alone decides nothing. The decision uses reads pinned to one block hash, where the
+// empty record and the submitter list are guaranteed to come from the same state. A node that
+// does not hold that block fails the call, and the monitor retries the block range.
 func (wv *ProvenWithdrawalValidator) classifyEmptyProofRecord(withdrawalEvent *WithdrawalProvenExtension1Event) error {
-	known, err := wv.L1Proxy.HasProofSubmitter(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+	blockHash, err := wv.L1Proxy.HeadBlockHash()
 	if err != nil {
-		return fmt.Errorf("failed to check the proof submitters: %w", err)
-	}
-	if !known {
-		return fmt.Errorf("%w: proof submitter is not recorded, so the L1 read is stale or the prove transaction was reorged, withdrawal hash:%x proof submitter:%x",
-			ErrWithdrawalProofMissing, withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+		return fmt.Errorf("failed to get the head block hash: %w", err)
 	}
 
-	// The submitter list and the record can be served by nodes at different heights, so confirm
-	// the record is still empty. A record that reappears means the reads disagree, not a deletion.
-	submittedProofData, err := wv.L1Proxy.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(
+	deletion, err := wv.L1Proxy.CheckProofDeletionAtBlockHash(
 		withdrawalEvent.WithdrawalHash,
 		withdrawalEvent.ProofSubmitter,
+		blockHash,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to re-read the proof record: %w", err)
+		return fmt.Errorf("failed to confirm the proof deletion: %w", err)
 	}
-	if !submittedProofData.IsDeleted() {
-		return fmt.Errorf("%w: proof record reappeared, so the L1 reads disagree, withdrawal hash:%x proof submitter:%x",
-			ErrWithdrawalProofMissing, withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+	if !deletion.IsDeleted() {
+		return fmt.Errorf("%w: record empty:%t submitter known:%t at block:%s, withdrawal hash:%x proof submitter:%x",
+			ErrWithdrawalProofMissing, deletion.RecordEmpty, deletion.SubmitterKnown, blockHash,
+			withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
 	}
 
 	return ErrWithdrawalProofDeleted
@@ -257,7 +253,7 @@ func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSu
 	if err != nil {
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games addresses: %w", err)
 	}
-	if submittedProofData.IsDeleted() {
+	if submittedProofData.IsEmpty() {
 		return FaultDisputeGameProxy{}, errProofRecordEmpty
 	}
 

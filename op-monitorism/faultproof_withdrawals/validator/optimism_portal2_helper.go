@@ -55,11 +55,10 @@ func (p *SubmittedProofData) String() string {
 	return fmt.Sprintf("proofSubmitterAddress: %x, withdrawalHash: %x, disputeGameProxyAddress: %x, disputeGameProxyTimestamp: %d", p.proofSubmitterAddress, p.withdrawalHash, p.disputeGameProxyAddress, p.disputeGameProxyTimestamp)
 }
 
-// IsDeleted reports whether the OptimismPortal no longer holds this proof record.
-// The portal zeroes the record when anyone deletes a proof, which is possible once the game
-// the withdrawal was proven against resolved in favor of the challenger or was blacklisted.
-// proofSubmitters is append-only, so the event and the submitter list outlive the record.
-func (p *SubmittedProofData) IsDeleted() bool {
+// IsEmpty reports whether the portal holds no proof record here. Read at chain head this only
+// starts the check: a deletion, a node that lags, and a reorg of the prove transaction all read
+// empty. CheckProofDeletionAtBlockHash decides between them.
+func (p *SubmittedProofData) IsEmpty() bool {
 	return p.disputeGameProxyAddress == (common.Address{})
 }
 
@@ -78,32 +77,63 @@ func NewOptimismPortal2Helper(ctx context.Context, l1Client *ethclient.Client, o
 	}, nil
 }
 
-// HasProofSubmitter reports whether this address appears in the append-only list of proof
-// submitters for the withdrawal hash.
+// ProofDeletion describes an empty proof record read against one block.
+type ProofDeletion struct {
+	RecordEmpty      bool // The portal holds no proof record for the withdrawal and submitter.
+	SubmitterKnown   bool // The append-only submitter list holds the submitter.
+	DisputeGameProxy common.Address
+}
+
+// IsDeleted reports whether the reads prove a deletion. The portal writes the proof record and
+// appends the submitter in the same transaction, and deletion leaves the submitter in place, so
+// an empty record for a recorded submitter can only be a deletion.
+func (d ProofDeletion) IsDeleted() bool {
+	return d.RecordEmpty && d.SubmitterKnown
+}
+
+// CheckProofDeletionAtBlockHash reads the proof record and the proof submitter list against one
+// block hash.
 //
-// An empty proof record on its own does not prove a deletion. The record is read at the head of
-// the chain, so a lagging node, a failover between nodes, or a reorg of the prove transaction can
-// all return an empty record for a proof that is still live. The portal writes the record and
-// appends the submitter in the same transaction, and deletion never removes the submitter, so an
-// empty record together with a recorded submitter identifies a deletion. This is a state read of
-// a short list, so it costs a bounded number of calls and never scans a block range.
-func (op *OptimismPortal2Helper) HasProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (bool, error) {
-	numProofSubmitters, err := op.optimismPortal2.NumProofSubmitters(nil, withdrawalHash)
+// An empty proof record read at chain head does not prove a deletion, because a node that lags,
+// a failover between nodes, or a reorg of the prove transaction all report an empty record for a
+// proof that is still live. Reading both facts at one block hash removes that ambiguity: a node
+// that does not have the block, in either direction, fails the call rather than answering from a
+// different state. These are state reads of a short list, so the cost is bounded and no block
+// range is scanned.
+func (op *OptimismPortal2Helper) CheckProofDeletionAtBlockHash(
+	withdrawalHash [32]byte,
+	proofSubmitter common.Address,
+	blockHash common.Hash,
+) (ProofDeletion, error) {
+	opts := &bind.CallOpts{BlockHash: blockHash, Context: op.ctx}
+
+	record, err := op.optimismPortal2.ProvenWithdrawals(opts, withdrawalHash, proofSubmitter)
 	if err != nil {
-		return false, fmt.Errorf("failed to get num proof submitters for withdrawal hash:%x error:%w", withdrawalHash, err)
+		return ProofDeletion{}, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x block:%s error:%w", withdrawalHash, proofSubmitter, blockHash, err)
+	}
+
+	numProofSubmitters, err := op.optimismPortal2.NumProofSubmitters(opts, withdrawalHash)
+	if err != nil {
+		return ProofDeletion{}, fmt.Errorf("failed to get num proof submitters for withdrawal hash:%x block:%s error:%w", withdrawalHash, blockHash, err)
+	}
+
+	deletion := ProofDeletion{
+		RecordEmpty:      record.DisputeGameProxy == (common.Address{}),
+		DisputeGameProxy: record.DisputeGameProxy,
 	}
 
 	for i := int64(0); i < numProofSubmitters.Int64(); i++ {
-		submitter, err := op.optimismPortal2.ProofSubmitters(nil, withdrawalHash, big.NewInt(i))
+		submitter, err := op.optimismPortal2.ProofSubmitters(opts, withdrawalHash, big.NewInt(i))
 		if err != nil {
-			return false, fmt.Errorf("failed to get proof submitter for withdrawal hash:%x index:%d error:%w", withdrawalHash, i, err)
+			return ProofDeletion{}, fmt.Errorf("failed to get proof submitter for withdrawal hash:%x index:%d block:%s error:%w", withdrawalHash, i, blockHash, err)
 		}
 		if submitter == proofSubmitter {
-			return true, nil
+			deletion.SubmitterKnown = true
+			break
 		}
 	}
 
-	return false, nil
+	return deletion, nil
 }
 
 // IsGameBlacklisted checks if a dispute game is blacklisted.

@@ -64,14 +64,14 @@ func (l1Proxy *L1Proxy) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitte
 	return submittedProofData, nil
 }
 
-func (l1Proxy *L1Proxy) HasProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (bool, error) {
+func (l1Proxy *L1Proxy) CheckProofDeletionAtBlockHash(withdrawalHash [32]byte, proofSubmitter common.Address, blockHash common.Hash) (ProofDeletion, error) {
 	l1Proxy.Connections++
-	known, err := l1Proxy.optimismPortal2Helper.HasProofSubmitter(withdrawalHash, proofSubmitter)
+	deletion, err := l1Proxy.optimismPortal2Helper.CheckProofDeletionAtBlockHash(withdrawalHash, proofSubmitter, blockHash)
 	if err != nil {
 		l1Proxy.ConnectionErrors++
-		return false, fmt.Errorf("failed to get proof submitters: %w", err)
+		return ProofDeletion{}, fmt.Errorf("failed to check proof deletion: %w", err)
 	}
-	return known, nil
+	return deletion, nil
 }
 
 func (l1Proxy *L1Proxy) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (FaultDisputeGameProxy, error) {
@@ -112,6 +112,18 @@ func (l1Proxy *L1Proxy) BlockNumber() (uint64, error) {
 		return 0, fmt.Errorf("failed to get block number: %w", err)
 	}
 	return blockNumber, nil
+}
+
+// HeadBlockHash returns the hash of the latest block. Reads that must agree with each other are
+// pinned to this hash.
+func (l1Proxy *L1Proxy) HeadBlockHash() (common.Hash, error) {
+	l1Proxy.Connections++
+	header, err := l1Proxy.l1GethClient.HeaderByNumber(l1Proxy.ctx, nil)
+	if err != nil {
+		l1Proxy.ConnectionErrors++
+		return common.Hash{}, fmt.Errorf("failed to get the latest header: %w", err)
+	}
+	return header.Hash(), nil
 }
 
 func (l1Proxy *L1Proxy) GetTotalConnections() uint64 {
