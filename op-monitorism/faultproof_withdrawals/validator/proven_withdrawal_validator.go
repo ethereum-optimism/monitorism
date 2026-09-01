@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -9,6 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
+
+// ErrWithdrawalProofDeleted reports that the OptimismPortal no longer holds a proof record for
+// a withdrawal hash and proof submitter. The withdrawal can never finalize with that proof, so
+// the monitor skips the event. Without this the monitor would try to read a dispute game at the
+// zero address, fail the whole block range, and never advance its L1 cursor.
+var ErrWithdrawalProofDeleted = errors.New("withdrawal proof deleted")
 
 // ValidateProofWithdrawalState represents the state of the proof validation.
 type ValidateProofWithdrawalState int8
@@ -205,6 +212,10 @@ func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSu
 	if err != nil {
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games addresses: %w", err)
 	}
+	if submittedProofData.IsDeleted() {
+		return FaultDisputeGameProxy{}, ErrWithdrawalProofDeleted
+	}
+
 	disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress
 	disputeGame, err := wv.L1Proxy.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)
 	if err != nil {
@@ -226,6 +237,10 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, 
 
 	for _, event := range events {
 		enrichedWithdrawalEvent, err := wv.GetEnrichedWithdrawalEvent(&event)
+		if errors.Is(err, ErrWithdrawalProofDeleted) {
+			wv.logSkippedDeletedProof(&event)
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to get enriched withdrawal event: %w", err)
 		}
@@ -248,14 +263,20 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint6
 	for iterator.Next() {
 		event := iterator.Event
 
-		enrichedWithdrawalEvent, err := wv.GetEnrichedWithdrawalEvent(&WithdrawalProvenExtension1Event{
+		withdrawalEvent := WithdrawalProvenExtension1Event{
 			WithdrawalHash: event.WithdrawalHash,
 			ProofSubmitter: event.ProofSubmitter,
 			Raw: Raw{
 				BlockNumber: event.Raw.BlockNumber,
 				TxHash:      event.Raw.TxHash,
 			},
-		})
+		}
+
+		enrichedWithdrawalEvent, err := wv.GetEnrichedWithdrawalEvent(&withdrawalEvent)
+		if errors.Is(err, ErrWithdrawalProofDeleted) {
+			wv.logSkippedDeletedProof(&withdrawalEvent)
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to get enriched withdrawal event: %w", err)
 		}
@@ -265,6 +286,14 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint6
 	}
 
 	return enrichedProvenWithdrawalEvents, nil
+}
+
+// logSkippedDeletedProof records that an event was skipped because its proof record is gone.
+func (wv *ProvenWithdrawalValidator) logSkippedDeletedProof(event *WithdrawalProvenExtension1Event) {
+	wv.log.Info("WITHDRAWAL: proof deleted, skipping event",
+		"withdrawalHash", common.BytesToHash(event.WithdrawalHash[:]),
+		"proofSubmitter", event.ProofSubmitter,
+		"TxHash", event.Raw.TxHash)
 }
 
 // IsWithdrawalEventValid checks if the enriched withdrawal event is valid.

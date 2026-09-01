@@ -55,6 +55,14 @@ func (p *SubmittedProofData) String() string {
 	return fmt.Sprintf("proofSubmitterAddress: %x, withdrawalHash: %x, disputeGameProxyAddress: %x, disputeGameProxyTimestamp: %d", p.proofSubmitterAddress, p.withdrawalHash, p.disputeGameProxyAddress, p.disputeGameProxyTimestamp)
 }
 
+// IsDeleted reports whether the OptimismPortal no longer holds this proof record.
+// The portal zeroes the record when anyone deletes a proof, which is possible once the game
+// the withdrawal was proven against resolved in favor of the challenger or was blacklisted.
+// proofSubmitters is append-only, so the event and the submitter list outlive the record.
+func (p *SubmittedProofData) IsDeleted() bool {
+	return p.disputeGameProxyAddress == (common.Address{})
+}
+
 // NewOptimismPortal2Helper initializes a new OptimismPortal2Helper.
 // It binds to the Optimism Portal 2 contract and returns the helper instance.
 func NewOptimismPortal2Helper(ctx context.Context, l1Client *ethclient.Client, optimismPortalAddress common.Address) (*OptimismPortal2Helper, error) {
