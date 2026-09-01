@@ -12,17 +12,15 @@ import (
 )
 
 // ErrWithdrawalProofDeleted reports that the OptimismPortal deleted the proof record for a
-// withdrawal hash and proof submitter, confirmed by a WithdrawalProofDeleted event. The
-// withdrawal can never finalize with that proof, so the monitor skips the event. Without this
-// the monitor would try to read a dispute game at the zero address, fail the whole block range,
-// and never advance its L1 cursor.
+// withdrawal hash and proof submitter. The withdrawal can never finalize with that proof, so the
+// monitor skips the event. Without this the monitor would try to read a dispute game at the zero
+// address, fail the whole block range, and never advance its L1 cursor.
 var ErrWithdrawalProofDeleted = errors.New("withdrawal proof deleted")
 
-// ErrWithdrawalProofMissing reports an empty proof record with no deletion event to explain it.
-// The record is read at the head of the chain, so a lagging node, a failover between nodes, or a
-// reorg of the prove transaction can all produce this. The monitor treats it as a transient error
-// and retries the block range, rather than skipping an event that may still be live.
-var ErrWithdrawalProofMissing = errors.New("withdrawal proof record missing without a deletion event")
+// ErrWithdrawalProofMissing reports an empty proof record that a deletion does not explain. The
+// monitor treats it as a transient error and retries the block range, rather than skipping an
+// event whose proof may still be live.
+var ErrWithdrawalProofMissing = errors.New("withdrawal proof record missing without a deletion")
 
 // errProofRecordEmpty reports that the proof record read empty, before the cause is known.
 var errProofRecordEmpty = errors.New("withdrawal proof record is empty")
@@ -220,17 +218,32 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 
 // classifyEmptyProofRecord decides whether an empty proof record is a deletion, which the monitor
 // skips, or an unexplained read, which the monitor retries.
+//
+// The portal appends the proof submitter and writes the proof record in the same transaction, and
+// deletion leaves the append-only submitter list untouched. So an empty record for a recorded
+// submitter is a deletion, and an empty record for an unknown submitter is a stale read or a
+// reorg of the prove transaction.
 func (wv *ProvenWithdrawalValidator) classifyEmptyProofRecord(withdrawalEvent *WithdrawalProvenExtension1Event) error {
-	deleted, err := wv.L1Proxy.HasWithdrawalProofDeletedEvent(
+	known, err := wv.L1Proxy.HasProofSubmitter(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+	if err != nil {
+		return fmt.Errorf("failed to check the proof submitters: %w", err)
+	}
+	if !known {
+		return fmt.Errorf("%w: proof submitter is not recorded, so the L1 read is stale or the prove transaction was reorged, withdrawal hash:%x proof submitter:%x",
+			ErrWithdrawalProofMissing, withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+	}
+
+	// The submitter list and the record can be served by nodes at different heights, so confirm
+	// the record is still empty. A record that reappears means the reads disagree, not a deletion.
+	submittedProofData, err := wv.L1Proxy.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(
 		withdrawalEvent.WithdrawalHash,
 		withdrawalEvent.ProofSubmitter,
-		withdrawalEvent.Raw.BlockNumber,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to check for a withdrawal proof deleted event: %w", err)
+		return fmt.Errorf("failed to re-read the proof record: %w", err)
 	}
-	if !deleted {
-		return fmt.Errorf("%w: withdrawal hash:%x proof submitter:%x",
+	if !submittedProofData.IsDeleted() {
+		return fmt.Errorf("%w: proof record reappeared, so the L1 reads disagree, withdrawal hash:%x proof submitter:%x",
 			ErrWithdrawalProofMissing, withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
 	}
 

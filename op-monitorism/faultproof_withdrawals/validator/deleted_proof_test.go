@@ -33,21 +33,24 @@ var (
 	testGameStatusValue = uint8(CHALLENGER_WINS)
 )
 
-// fakeL1 serves the few JSON-RPC methods the validator needs, so a test can control exactly
-// what provenWithdrawals returns for a withdrawal that has a WithdrawalProvenExtension1 event.
+// fakeL1 serves the few JSON-RPC methods the validator needs, so a test can control exactly what
+// the portal reports for a withdrawal that has a WithdrawalProvenExtension1 event.
 type fakeL1 struct {
 	t *testing.T
-	// provenWithdrawalsGame is the dispute game address the portal reports. The zero address
-	// means the proof record read empty.
-	provenWithdrawalsGame common.Address
-	// proofDeletionLogged controls whether the portal emitted a WithdrawalProofDeleted event,
-	// which is the difference between a real deletion and an empty read of stale state.
-	proofDeletionLogged bool
-	portalABI           *abi.ABI
-	gameABI             *abi.ABI
+	// provenWithdrawalsGames holds the dispute game address the portal reports, per call. The
+	// zero address means the proof record read empty. The last entry answers every later call,
+	// so a test can make the second read of the same record disagree with the first.
+	provenWithdrawalsGames []common.Address
+	// proofSubmitters is the append-only submitter list the portal reports.
+	proofSubmitters []common.Address
+
+	portalABI *abi.ABI
+	gameABI   *abi.ABI
+
+	provenWithdrawalsCalls int
 }
 
-func newFakeL1(t *testing.T, provenWithdrawalsGame common.Address, proofDeletionLogged bool) *httptest.Server {
+func newFakeL1(t *testing.T, provenWithdrawalsGames []common.Address, proofSubmitters []common.Address) *httptest.Server {
 	t.Helper()
 	portalABI, err := l1.OptimismPortal2MetaData.GetAbi()
 	require.NoError(t, err)
@@ -55,11 +58,11 @@ func newFakeL1(t *testing.T, provenWithdrawalsGame common.Address, proofDeletion
 	require.NoError(t, err)
 
 	f := &fakeL1{
-		t:                     t,
-		provenWithdrawalsGame: provenWithdrawalsGame,
-		proofDeletionLogged:   proofDeletionLogged,
-		portalABI:             portalABI,
-		gameABI:               gameABI,
+		t:                      t,
+		provenWithdrawalsGames: provenWithdrawalsGames,
+		proofSubmitters:        proofSubmitters,
+		portalABI:              portalABI,
+		gameABI:                gameABI,
 	}
 	server := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(server.Close)
@@ -129,38 +132,12 @@ func (f *fakeL1) handle(req rpcRequest) (any, error) {
 	}
 }
 
-// logs answers a filter query. The validator asks for two different events, so the fake answers
-// on the first topic: the prove event that starts a run, and the deletion event that explains an
-// empty proof record.
-func (f *fakeL1) logs(req rpcRequest) ([]map[string]any, error) {
-	var query struct {
-		Topics [][]*common.Hash `json:"topics"`
-	}
-	if err := json.Unmarshal(req.Params[0], &query); err != nil {
-		return nil, err
-	}
-	if len(query.Topics) == 0 || len(query.Topics[0]) == 0 || query.Topics[0][0] == nil {
-		return nil, fmt.Errorf("filter query has no first topic")
-	}
-
-	switch *query.Topics[0][0] {
-	case f.portalABI.Events["WithdrawalProvenExtension1"].ID:
-		return []map[string]any{f.log(*query.Topics[0][0])}, nil
-	case withdrawalProofDeletedTopic:
-		if !f.proofDeletionLogged {
-			return []map[string]any{}, nil
-		}
-		return []map[string]any{f.log(withdrawalProofDeletedTopic)}, nil
-	default:
-		return nil, fmt.Errorf("unexpected filter topic %s", query.Topics[0][0])
-	}
-}
-
-func (f *fakeL1) log(topic common.Hash) map[string]any {
-	return map[string]any{
+// logs returns a single WithdrawalProvenExtension1 event for the test withdrawal.
+func (f *fakeL1) logs(_ rpcRequest) ([]map[string]any, error) {
+	return []map[string]any{{
 		"address": testPortalAddress,
 		"topics": []common.Hash{
-			topic,
+			f.portalABI.Events["WithdrawalProvenExtension1"].ID,
 			testWithdrawalHash,
 			common.BytesToHash(testProofSubmitter.Bytes()),
 		},
@@ -171,7 +148,17 @@ func (f *fakeL1) log(topic common.Hash) map[string]any {
 		"transactionIndex": hexutil.Uint64(0),
 		"logIndex":         hexutil.Uint64(0),
 		"removed":          false,
+	}}, nil
+}
+
+// nextProvenWithdrawalsGame returns the game address for this read of the proof record.
+func (f *fakeL1) nextProvenWithdrawalsGame() common.Address {
+	index := f.provenWithdrawalsCalls
+	if index >= len(f.provenWithdrawalsGames) {
+		index = len(f.provenWithdrawalsGames) - 1
 	}
+	f.provenWithdrawalsCalls++
+	return f.provenWithdrawalsGames[index]
 }
 
 func (f *fakeL1) call(to common.Address, data []byte) (hexutil.Bytes, error) {
@@ -190,7 +177,15 @@ func (f *fakeL1) call(to common.Address, data []byte) (hexutil.Bytes, error) {
 	var values []any
 	switch method.Name {
 	case "provenWithdrawals":
-		values = []any{f.provenWithdrawalsGame, uint64(testGameCreatedAt + 1)}
+		values = []any{f.nextProvenWithdrawalsGame(), uint64(testGameCreatedAt + 1)}
+	case "numProofSubmitters":
+		values = []any{big.NewInt(int64(len(f.proofSubmitters)))}
+	case "proofSubmitters":
+		index, err := method.Inputs.Unpack(data[4:])
+		if err != nil {
+			return nil, fmt.Errorf("failed to unpack proofSubmitters inputs: %w", err)
+		}
+		values = []any{f.proofSubmitters[index[1].(*big.Int).Int64()]}
 	case "rootClaim":
 		values = []any{[32]byte(testRootClaim)}
 	case "l2BlockNumber":
@@ -214,21 +209,32 @@ func (f *fakeL1) call(to common.Address, data []byte) (hexutil.Bytes, error) {
 	return out, nil
 }
 
-func newTestValidator(t *testing.T, provenWithdrawalsGame common.Address, proofDeletionLogged bool) *ProvenWithdrawalValidator {
+func newTestValidator(t *testing.T, provenWithdrawalsGames []common.Address, proofSubmitters []common.Address) *ProvenWithdrawalValidator {
 	t.Helper()
-	server := newFakeL1(t, provenWithdrawalsGame, proofDeletionLogged)
+	server := newFakeL1(t, provenWithdrawalsGames, proofSubmitters)
 	ctx := context.Background()
 	l1Proxy, err := NewL1Proxy(ctx, server.URL, testPortalAddress)
 	require.NoError(t, err)
 	return &ProvenWithdrawalValidator{L1Proxy: l1Proxy, ctx: ctx, log: log.New()}
 }
 
+var (
+	// recordDeleted is a proof record that reads empty on every read.
+	recordDeleted = []common.Address{{}}
+	// recordLive is a proof record that holds a dispute game.
+	recordLive = []common.Address{testGameAddress}
+	// submitterRecorded is the append-only submitter list after the withdrawal was proven.
+	submitterRecorded = []common.Address{testProofSubmitter}
+	// submitterUnknown is the submitter list a node reports before it has the prove transaction.
+	submitterUnknown []common.Address
+)
+
 // TestGetEnrichedWithdrawalsEventsMapSkipsDeletedProof pins the fix for the monitor stall.
 // Anyone can delete a proof record once its game resolved in favor of the challenger or was
 // blacklisted. The prove events stay in the logs forever, so the monitor must skip the event
 // instead of returning an error, which would stop it from advancing its L1 cursor.
 func TestGetEnrichedWithdrawalsEventsMapSkipsDeletedProof(t *testing.T) {
-	validator := newTestValidator(t, common.Address{}, true)
+	validator := newTestValidator(t, recordDeleted, submitterRecorded)
 	stop := testProveBlock
 
 	events, err := validator.GetEnrichedWithdrawalsEventsMap(testProveBlock, &stop)
@@ -237,12 +243,25 @@ func TestGetEnrichedWithdrawalsEventsMapSkipsDeletedProof(t *testing.T) {
 	require.Empty(t, events)
 }
 
-// TestGetEnrichedWithdrawalsEventsMapFailsOnMissingProofWithoutDeletion pins the limit of the
-// skip. An empty proof record with no deletion event can come from a lagging node, a failover
-// between nodes, or a reorg of the prove transaction. The monitor must fail the block range and
-// retry it, because skipping would drop a proof that may still be live.
-func TestGetEnrichedWithdrawalsEventsMapFailsOnMissingProofWithoutDeletion(t *testing.T) {
-	validator := newTestValidator(t, common.Address{}, false)
+// TestGetEnrichedWithdrawalsEventsMapFailsOnUnknownSubmitter pins the limit of the skip. A
+// lagging node, a failover between nodes, or a reorg of the prove transaction all report an
+// empty record and an empty submitter list. The monitor must fail the block range and retry it,
+// because skipping would drop a proof that may still be live.
+func TestGetEnrichedWithdrawalsEventsMapFailsOnUnknownSubmitter(t *testing.T) {
+	validator := newTestValidator(t, recordDeleted, submitterUnknown)
+	stop := testProveBlock
+
+	events, err := validator.GetEnrichedWithdrawalsEventsMap(testProveBlock, &stop)
+
+	require.ErrorIs(t, err, ErrWithdrawalProofMissing)
+	require.Nil(t, events)
+}
+
+// TestGetEnrichedWithdrawalsEventsMapFailsOnReappearingRecord covers reads served by nodes at
+// different heights: the record reads empty, the submitter is recorded, but the record is back on
+// the next read. The reads disagree, so the monitor must retry rather than skip.
+func TestGetEnrichedWithdrawalsEventsMapFailsOnReappearingRecord(t *testing.T) {
+	validator := newTestValidator(t, []common.Address{{}, testGameAddress}, submitterRecorded)
 	stop := testProveBlock
 
 	events, err := validator.GetEnrichedWithdrawalsEventsMap(testProveBlock, &stop)
@@ -254,7 +273,7 @@ func TestGetEnrichedWithdrawalsEventsMapFailsOnMissingProofWithoutDeletion(t *te
 // TestGetEnrichedWithdrawalsEventsMapKeepsLiveProof is the control for the tests above: an event
 // with a proof record still in state must be enriched, not skipped.
 func TestGetEnrichedWithdrawalsEventsMapKeepsLiveProof(t *testing.T) {
-	validator := newTestValidator(t, testGameAddress, false)
+	validator := newTestValidator(t, recordLive, submitterRecorded)
 	stop := testProveBlock
 
 	events, err := validator.GetEnrichedWithdrawalsEventsMap(testProveBlock, &stop)
@@ -269,7 +288,7 @@ func TestGetEnrichedWithdrawalsEventsMapKeepsLiveProof(t *testing.T) {
 
 // TestGetEnrichedWithdrawalsEventsSkipsDeletedProof covers the slice variant of the same loop.
 func TestGetEnrichedWithdrawalsEventsSkipsDeletedProof(t *testing.T) {
-	validator := newTestValidator(t, common.Address{}, true)
+	validator := newTestValidator(t, recordDeleted, submitterRecorded)
 	stop := testProveBlock
 
 	events, err := validator.GetEnrichedWithdrawalsEvents(testProveBlock, &stop)
@@ -278,10 +297,10 @@ func TestGetEnrichedWithdrawalsEventsSkipsDeletedProof(t *testing.T) {
 	require.Empty(t, events)
 }
 
-// TestGetEnrichedWithdrawalsEventsFailsOnMissingProofWithoutDeletion covers the slice variant of
-// the unexplained empty record.
-func TestGetEnrichedWithdrawalsEventsFailsOnMissingProofWithoutDeletion(t *testing.T) {
-	validator := newTestValidator(t, common.Address{}, false)
+// TestGetEnrichedWithdrawalsEventsFailsOnUnknownSubmitter covers the slice variant of the
+// unexplained empty record.
+func TestGetEnrichedWithdrawalsEventsFailsOnUnknownSubmitter(t *testing.T) {
+	validator := newTestValidator(t, recordDeleted, submitterUnknown)
 	stop := testProveBlock
 
 	events, err := validator.GetEnrichedWithdrawalsEvents(testProveBlock, &stop)
