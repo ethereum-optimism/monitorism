@@ -1,0 +1,36 @@
+package:
+  name: op-monitorism
+  version: "0.0.0"
+  epoch: 0
+  description: op-monitorism — OP Stack chain monitoring
+  copyright:
+    - license: MIT
+
+environment:
+  contents:
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    repositories:
+      - https://packages.wolfi.dev/os
+    packages:
+      - busybox
+      - build-base
+      - ca-certificates-bundle
+      - git
+      - go-1.26
+  environment:
+    CGO_ENABLED: "0"
+    GOFLAGS: -buildvcs=false
+
+pipeline:
+  - uses: go/build
+    with:
+      modroot: op-monitorism
+      packages: ./cmd/monitorism
+      output: monitorism
+      go-package: go-1.26
+      prefix: usr/local
+      tags: all
+      ldflags: -s -w -X main.GitCommit=${GIT_COMMIT:-unknown} -X main.GitDate=${GIT_DATE:-0}
+
+  - uses: strip
