@@ -20,6 +20,7 @@ environment:
       - go-1.26
   environment:
     CGO_ENABLED: "0"
+    GOFLAGS: -buildvcs=false
 
 pipeline:
   - uses: go/build
