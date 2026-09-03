@@ -51,6 +51,8 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           if [[ "$REF_TYPE" == "tag" ]]; then
@@ -59,6 +61,8 @@ jobs:
             else
               DOCKER_TAG="$REF_NAME"
             fi
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            DOCKER_TAG="pr-${PR_NUMBER}"
           else
             DOCKER_TAG="$SHA"
           fi
