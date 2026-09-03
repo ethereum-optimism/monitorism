@@ -8,5 +8,14 @@
   },
   "automergeType": "pr",
   "platformAutomerge": false,
-  "rebaseWhen": "behind-base-branch"
+  "rebaseWhen": "behind-base-branch",
+  "packageRules": [
+    {
+      "description": "Park medium-and-lower vulnerability fixes behind dashboard approval; high and critical flow automatically",
+      "matchJsonata": [
+        "$lowercase(vulnerabilitySeverity) in ['low','moderate','medium']"
+      ],
+      "dependencyDashboardApproval": true
+    }
+  ]
 }
