@@ -5,9 +5,10 @@
     "melange/pipelines/**"
   ],
   "melange_archs": [
-    "x86_64"
+    "x86_64",
+    "aarch64"
   ],
-  "apko_archs": "amd64",
+  "apko_archs": "amd64,arm64",
   "release": {
     "tag_regex": "^([^/]+)/(v.+)$",
     "service_match": 1,
