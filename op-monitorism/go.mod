@@ -53,7 +53,7 @@ require (
 	github.com/naoina/toml v0.1.2-0.20170918210437-9fafd6967416 // indirect
 	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
-	github.com/pion/dtls/v2 v2.2.12 // indirect
+	github.com/pion/dtls/v3 v3.0.0 // indirect
 	github.com/pion/dtls/v3 v3.0.0 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/stun/v2 v2.0.0 // indirect
