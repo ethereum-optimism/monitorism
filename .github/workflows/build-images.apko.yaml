@@ -112,6 +112,7 @@ jobs:
       registry: us-docker.pkg.dev/oplabs-tools-artifacts/images
       publish-tag: ${{ matrix.publish_tag }}
       archs: ${{ matrix.archs }}
+      melange-archs: x86_64
       tag-prefix: apko-
 
   smoke-test:
