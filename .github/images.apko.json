@@ -1,0 +1,41 @@
+{
+  "shared_paths": [
+    ".github/images.apko.json",
+    ".github/workflows/build-images.apko.yaml",
+    "melange/pipelines/**"
+  ],
+  "melange_archs": [
+    "x86_64"
+  ],
+  "apko_archs": "amd64",
+  "release": {
+    "tag_regex": "^([^/]+)/(v.+)$",
+    "service_match": 1,
+    "version_match": 2,
+    "publish_tag": "${version}",
+    "source_ref": "${ref_name}"
+  },
+  "default_runners": {
+    "x86_64": "ubuntu-24.04",
+    "aarch64": "ubuntu-24.04-arm"
+  },
+  "melange": {
+    "op-monitorism": {}
+  },
+  "images": {
+    "op-monitorism": {
+      "needs_melange": [
+        "op-monitorism"
+      ],
+      "paths": [
+        "op-monitorism/**"
+      ],
+      "nexus_paths": [
+        "melange/op-monitorism.yaml",
+        "apko/op-monitorism.yaml"
+      ],
+      "apko_archs": "amd64",
+      "smoke_test": "op-monitorism --help"
+    }
+  }
+}
