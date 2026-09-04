@@ -8,9 +8,6 @@ contents:
     - wolfi-baselayout
     - op-monitorism@local
 
-archs:
-  - amd64
-
 environment:
   PATH: /usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
   SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
