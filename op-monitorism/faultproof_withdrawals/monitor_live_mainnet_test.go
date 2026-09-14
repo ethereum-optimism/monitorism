@@ -138,7 +138,14 @@ func TestInvalidWithdrawalsOnMainnet(t *testing.T) {
 	// On mainnet for OP OptimismPortal, the block number 20873192 is known to have only 1 event
 	start := uint64(20873192)
 	stop := uint64(20873193)
-	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEvents(start, &stop)
+	header, err := test_monitor.withdrawalValidator.GetLatestL1Header()
+	require.NoError(t, err)
+	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEvents(
+		start,
+		&stop,
+		header.Number.Uint64(),
+		header.Hash(),
+	)
 	require.NoError(t, err)
 	require.Equal(t, len(newEvents), 1)
 

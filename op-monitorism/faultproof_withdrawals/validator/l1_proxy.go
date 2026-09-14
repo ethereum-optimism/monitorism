@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -54,24 +55,22 @@ func (l1Proxy *L1Proxy) IsGameBlacklisted(disputeGame *FaultDisputeGameProxy) (b
 	return blacklisted, nil
 }
 
-func (l1Proxy *L1Proxy) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
+func (l1Proxy *L1Proxy) GetSubmittedProofsDataAtBlockHash(
+	withdrawalHash [32]byte,
+	proofSubmitterAddress common.Address,
+	blockHash common.Hash,
+) (*SubmittedProofData, error) {
 	l1Proxy.Connections++
-	submittedProofData, err := l1Proxy.optimismPortal2Helper.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitterAddress)
+	submittedProofData, err := l1Proxy.optimismPortal2Helper.GetSubmittedProofsDataAtBlockHash(
+		withdrawalHash,
+		proofSubmitterAddress,
+		blockHash,
+	)
 	if err != nil {
 		l1Proxy.ConnectionErrors++
 		return nil, fmt.Errorf("failed to get submitted proofs data: %w", err)
 	}
 	return submittedProofData, nil
-}
-
-func (l1Proxy *L1Proxy) CheckProofDeletionAtBlockHash(withdrawalHash [32]byte, proofSubmitter common.Address, blockHash common.Hash) (ProofDeletion, error) {
-	l1Proxy.Connections++
-	deletion, err := l1Proxy.optimismPortal2Helper.CheckProofDeletionAtBlockHash(withdrawalHash, proofSubmitter, blockHash)
-	if err != nil {
-		l1Proxy.ConnectionErrors++
-		return ProofDeletion{}, fmt.Errorf("failed to check proof deletion: %w", err)
-	}
-	return deletion, nil
 }
 
 func (l1Proxy *L1Proxy) GetDisputeGameProxyFromAddress(disputeGameProxyAddress common.Address) (FaultDisputeGameProxy, error) {
@@ -114,16 +113,15 @@ func (l1Proxy *L1Proxy) BlockNumber() (uint64, error) {
 	return blockNumber, nil
 }
 
-// HeadBlockHash returns the hash of the latest block. Reads that must agree with each other are
-// pinned to this hash.
-func (l1Proxy *L1Proxy) HeadBlockHash() (common.Hash, error) {
+// LatestHeader returns the current unsafe L1 header.
+func (l1Proxy *L1Proxy) LatestHeader() (*types.Header, error) {
 	l1Proxy.Connections++
 	header, err := l1Proxy.l1GethClient.HeaderByNumber(l1Proxy.ctx, nil)
 	if err != nil {
 		l1Proxy.ConnectionErrors++
-		return common.Hash{}, fmt.Errorf("failed to get the latest header: %w", err)
+		return nil, fmt.Errorf("failed to get the latest header: %w", err)
 	}
-	return header.Hash(), nil
+	return header, nil
 }
 
 func (l1Proxy *L1Proxy) GetTotalConnections() uint64 {

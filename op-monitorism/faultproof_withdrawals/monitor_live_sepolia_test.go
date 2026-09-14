@@ -81,7 +81,14 @@ func TestConsumeEventsSepolia(t *testing.T) {
 	blockIncrement := test_monitor.maxBlockRange
 	finalBlock := initialBlock + blockIncrement
 
-	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(initialBlock, &finalBlock)
+	header, err := test_monitor.withdrawalValidator.GetLatestL1Header()
+	require.NoError(t, err)
+	newEvents, err := test_monitor.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(
+		initialBlock,
+		&finalBlock,
+		header.Number.Uint64(),
+		header.Hash(),
+	)
 	require.NoError(t, err)
 	require.NotEqual(t, 0, len(newEvents))
 
