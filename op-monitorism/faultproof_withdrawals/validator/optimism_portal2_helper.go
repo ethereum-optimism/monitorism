@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"fmt"
-	"math/big"
 
 	"github.com/ethereum-optimism/monitorism/op-monitorism/faultproof_withdrawals/bindings/l1"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -55,9 +54,7 @@ func (p *SubmittedProofData) String() string {
 	return fmt.Sprintf("proofSubmitterAddress: %x, withdrawalHash: %x, disputeGameProxyAddress: %x, disputeGameProxyTimestamp: %d", p.proofSubmitterAddress, p.withdrawalHash, p.disputeGameProxyAddress, p.disputeGameProxyTimestamp)
 }
 
-// IsEmpty reports whether the portal holds no proof record here. Read at chain head this only
-// starts the check: a deletion, a node that lags, and a reorg of the prove transaction all read
-// empty. CheckProofDeletionAtBlockHash decides between them.
+// IsEmpty reports whether the portal holds no proof record at the captured block.
 func (p *SubmittedProofData) IsEmpty() bool {
 	return p.disputeGameProxyAddress == (common.Address{})
 }
@@ -75,65 +72,6 @@ func NewOptimismPortal2Helper(ctx context.Context, l1Client *ethclient.Client, o
 		optimismPortal2: optimismPortal,
 		ctx:             ctx,
 	}, nil
-}
-
-// ProofDeletion describes an empty proof record read against one block.
-type ProofDeletion struct {
-	RecordEmpty      bool // The portal holds no proof record for the withdrawal and submitter.
-	SubmitterKnown   bool // The append-only submitter list holds the submitter.
-	DisputeGameProxy common.Address
-}
-
-// IsDeleted reports whether the reads prove a deletion. The portal writes the proof record and
-// appends the submitter in the same transaction, and deletion leaves the submitter in place, so
-// an empty record for a recorded submitter can only be a deletion.
-func (d ProofDeletion) IsDeleted() bool {
-	return d.RecordEmpty && d.SubmitterKnown
-}
-
-// CheckProofDeletionAtBlockHash reads the proof record and the proof submitter list against one
-// block hash.
-//
-// An empty proof record read at chain head does not prove a deletion, because a node that lags,
-// a failover between nodes, or a reorg of the prove transaction all report an empty record for a
-// proof that is still live. Reading both facts at one block hash removes that ambiguity: a node
-// that does not have the block, in either direction, fails the call rather than answering from a
-// different state. These are state reads of a short list, so the cost is bounded and no block
-// range is scanned.
-func (op *OptimismPortal2Helper) CheckProofDeletionAtBlockHash(
-	withdrawalHash [32]byte,
-	proofSubmitter common.Address,
-	blockHash common.Hash,
-) (ProofDeletion, error) {
-	opts := &bind.CallOpts{BlockHash: blockHash, Context: op.ctx}
-
-	record, err := op.optimismPortal2.ProvenWithdrawals(opts, withdrawalHash, proofSubmitter)
-	if err != nil {
-		return ProofDeletion{}, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x block:%s error:%w", withdrawalHash, proofSubmitter, blockHash, err)
-	}
-
-	numProofSubmitters, err := op.optimismPortal2.NumProofSubmitters(opts, withdrawalHash)
-	if err != nil {
-		return ProofDeletion{}, fmt.Errorf("failed to get num proof submitters for withdrawal hash:%x block:%s error:%w", withdrawalHash, blockHash, err)
-	}
-
-	deletion := ProofDeletion{
-		RecordEmpty:      record.DisputeGameProxy == (common.Address{}),
-		DisputeGameProxy: record.DisputeGameProxy,
-	}
-
-	for i := int64(0); i < numProofSubmitters.Int64(); i++ {
-		submitter, err := op.optimismPortal2.ProofSubmitters(opts, withdrawalHash, big.NewInt(i))
-		if err != nil {
-			return ProofDeletion{}, fmt.Errorf("failed to get proof submitter for withdrawal hash:%x index:%d block:%s error:%w", withdrawalHash, i, blockHash, err)
-		}
-		if submitter == proofSubmitter {
-			deletion.SubmitterKnown = true
-			break
-		}
-	}
-
-	return deletion, nil
 }
 
 // IsGameBlacklisted checks if a dispute game is blacklisted.
@@ -228,44 +166,16 @@ func (op *OptimismPortal2Helper) GetProvenWithdrawalsExtension1Events(start uint
 	return events, nil
 }
 
-// GetSubmittedProofsDataFromWithdrawalhash retrieves submitted proof data associated with the given withdrawal hash.
-// It returns a slice of SubmittedProofData along with any error encountered.
-func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhash(withdrawalHash [32]byte) ([]SubmittedProofData, error) {
-	numProofSubmitters, err := op.optimismPortal2.NumProofSubmitters(nil, withdrawalHash)
+// GetSubmittedProofsDataAtBlockHash reads one proof record at the captured block.
+func (op *OptimismPortal2Helper) GetSubmittedProofsDataAtBlockHash(
+	withdrawalHash [32]byte,
+	proofSubmitterAddress common.Address,
+	blockHash common.Hash,
+) (*SubmittedProofData, error) {
+	opts := &bind.CallOpts{BlockHash: blockHash, Context: op.ctx}
+	gameProxyStruct, err := op.optimismPortal2.ProvenWithdrawals(opts, withdrawalHash, proofSubmitterAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get num proof submitters for withdrawal hash:%x error:%w", withdrawalHash, err)
-	}
-
-	withdrawals := make([]SubmittedProofData, numProofSubmitters.Int64())
-
-	for i := 0; i < int(numProofSubmitters.Int64()); i++ {
-		proofSubmitterAddress, err := op.optimismPortal2.ProofSubmitters(nil, withdrawalHash, big.NewInt(int64(i)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get proof submitter for withdrawal hash:%x index:%d error:%w", withdrawalHash, i, err)
-		}
-		gameProxyStruct, err := op.optimismPortal2.ProvenWithdrawals(nil, withdrawalHash, proofSubmitterAddress)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x error:%w", withdrawalHash, proofSubmitterAddress, err)
-		}
-
-		withdrawals[i] = SubmittedProofData{
-			proofSubmitterAddress:     proofSubmitterAddress,
-			withdrawalHash:            withdrawalHash,
-			disputeGameProxyAddress:   gameProxyStruct.DisputeGameProxy,
-			disputeGameProxyTimestamp: gameProxyStruct.Timestamp,
-		}
-	}
-
-	return withdrawals, nil
-}
-
-// GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress retrieves submitted proof data
-// for the specified withdrawal hash and proof submitter address.
-// It returns a pointer to SubmittedProofData along with any error encountered.
-func (op *OptimismPortal2Helper) GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash [32]byte, proofSubmitterAddress common.Address) (*SubmittedProofData, error) {
-	gameProxyStruct, err := op.optimismPortal2.ProvenWithdrawals(nil, withdrawalHash, proofSubmitterAddress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x error:%w", withdrawalHash, proofSubmitterAddress, err)
+		return nil, fmt.Errorf("failed to get proven withdrawal for withdrawal hash:%x proof submitter:%x block:%s error:%w", withdrawalHash, proofSubmitterAddress, blockHash, err)
 	}
 
 	return &SubmittedProofData{

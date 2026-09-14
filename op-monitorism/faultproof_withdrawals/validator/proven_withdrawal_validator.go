@@ -7,6 +7,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -17,9 +18,8 @@ import (
 // address, fail the whole block range, and never advance its L1 cursor.
 var ErrWithdrawalProofDeleted = errors.New("withdrawal proof deleted")
 
-// ErrWithdrawalProofMissing reports an empty proof record that a deletion does not explain. The
-// monitor treats it as a transient error and retries the block range, rather than skipping an
-// event whose proof may still be live.
+// ErrWithdrawalProofMissing reports that the captured block precedes the proof event.
+// The monitor retries the block range instead of classifying the empty record.
 var ErrWithdrawalProofMissing = errors.New("withdrawal proof record missing without a deletion")
 
 // errProofRecordEmpty reports that the proof record read empty, before the cause is known.
@@ -194,12 +194,30 @@ func (wv *ProvenWithdrawalValidator) UpdateEnrichedWithdrawalEvent(event *Enrich
 	return nil
 }
 
-// GetEnrichedWithdrawalEvent retrieves an enriched withdrawal event based on the given withdrawal event.
-// It returns the enriched event along with any error encountered.
-func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent *WithdrawalProvenExtension1Event) (*EnrichedProvenWithdrawalEvent, error) {
-	disputeGameProxy, err := wv.getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
+// GetEnrichedWithdrawalEvent retrieves one enriched withdrawal event at the captured L1 block.
+func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(
+	withdrawalEvent *WithdrawalProvenExtension1Event,
+	headerNumber uint64,
+	headerHash common.Hash,
+) (*EnrichedProvenWithdrawalEvent, error) {
+	if withdrawalEvent.Raw.BlockNumber > headerNumber {
+		return nil, fmt.Errorf(
+			"%w: event block:%d captured block:%d withdrawal hash:%x proof submitter:%x",
+			ErrWithdrawalProofMissing,
+			withdrawalEvent.Raw.BlockNumber,
+			headerNumber,
+			withdrawalEvent.WithdrawalHash,
+			withdrawalEvent.ProofSubmitter,
+		)
+	}
+
+	disputeGameProxy, err := wv.getDisputeGame(
+		withdrawalEvent.WithdrawalHash,
+		withdrawalEvent.ProofSubmitter,
+		headerHash,
+	)
 	if errors.Is(err, errProofRecordEmpty) {
-		return nil, wv.classifyEmptyProofRecord(withdrawalEvent)
+		return nil, ErrWithdrawalProofDeleted
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dispute games: %w", err)
@@ -216,40 +234,16 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalEvent(withdrawalEvent 
 	return &enrichedWithdrawalEvent, nil
 }
 
-// classifyEmptyProofRecord decides whether an empty proof record is a deletion, which the monitor
-// skips, or a read the monitor cannot trust, which it retries.
-//
-// The first read happens at chain head, and a node can move in either direction between calls, so
-// that read alone decides nothing. The decision uses reads pinned to one block hash, where the
-// empty record and the submitter list are guaranteed to come from the same state. A node that
-// does not hold that block fails the call, and the monitor retries the block range.
-func (wv *ProvenWithdrawalValidator) classifyEmptyProofRecord(withdrawalEvent *WithdrawalProvenExtension1Event) error {
-	blockHash, err := wv.L1Proxy.HeadBlockHash()
-	if err != nil {
-		return fmt.Errorf("failed to get the head block hash: %w", err)
-	}
-
-	deletion, err := wv.L1Proxy.CheckProofDeletionAtBlockHash(
-		withdrawalEvent.WithdrawalHash,
-		withdrawalEvent.ProofSubmitter,
+func (wv *ProvenWithdrawalValidator) getDisputeGame(
+	withdrawalHash [32]byte,
+	proofSubmitter common.Address,
+	blockHash common.Hash,
+) (FaultDisputeGameProxy, error) {
+	submittedProofData, err := wv.L1Proxy.GetSubmittedProofsDataAtBlockHash(
+		withdrawalHash,
+		proofSubmitter,
 		blockHash,
 	)
-	if err != nil {
-		return fmt.Errorf("failed to confirm the proof deletion: %w", err)
-	}
-	if !deletion.IsDeleted() {
-		return fmt.Errorf("%w: record empty:%t submitter known:%t at block:%s, withdrawal hash:%x proof submitter:%x",
-			ErrWithdrawalProofMissing, deletion.RecordEmpty, deletion.SubmitterKnown, blockHash,
-			withdrawalEvent.WithdrawalHash, withdrawalEvent.ProofSubmitter)
-	}
-
-	return ErrWithdrawalProofDeleted
-}
-
-// getDisputeGamesFromWithdrawalhashAndProofSubmitter retrieves a DisputeGame object
-// based on the provided withdrawal hash and proof submitter address.
-func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSubmitter(withdrawalHash [32]byte, proofSubmitter common.Address) (FaultDisputeGameProxy, error) {
-	submittedProofData, err := wv.L1Proxy.GetSubmittedProofsDataFromWithdrawalhashAndProofSubmitterAddress(withdrawalHash, proofSubmitter)
 	if err != nil {
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games addresses: %w", err)
 	}
@@ -257,27 +251,31 @@ func (wv *ProvenWithdrawalValidator) getDisputeGamesFromWithdrawalhashAndProofSu
 		return FaultDisputeGameProxy{}, errProofRecordEmpty
 	}
 
-	disputeGameProxyAddress := submittedProofData.disputeGameProxyAddress
-	disputeGame, err := wv.L1Proxy.GetDisputeGameProxyFromAddress(disputeGameProxyAddress)
+	disputeGameProxy, err := wv.L1Proxy.GetDisputeGameProxyFromAddress(
+		submittedProofData.disputeGameProxyAddress,
+	)
 	if err != nil {
 		return FaultDisputeGameProxy{}, fmt.Errorf("failed to get games: %w", err)
 	}
 
-	return disputeGame, nil
+	return disputeGameProxy, nil
 }
 
-// GetEnrichedWithdrawalsEvents retrieves enriched withdrawal events within the specified block range.
-// It returns a slice of EnrichedProvenWithdrawalEvent along with any error encountered.
-func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, end *uint64) ([]EnrichedProvenWithdrawalEvent, error) {
+// GetEnrichedWithdrawalsEvents retrieves enriched events at the captured L1 block.
+func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(
+	start uint64,
+	end *uint64,
+	headerNumber uint64,
+	headerHash common.Hash,
+) ([]EnrichedProvenWithdrawalEvent, error) {
 	events, err := wv.L1Proxy.GetProvenWithdrawalsExtension1Events(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 events: %w", err)
 	}
 
-	enrichedProvenWithdrawalEvents := make([]EnrichedProvenWithdrawalEvent, 0)
-
+	enrichedEvents := make([]EnrichedProvenWithdrawalEvent, 0)
 	for _, event := range events {
-		enrichedWithdrawalEvent, err := wv.GetEnrichedWithdrawalEvent(&event)
+		enrichedEvent, err := wv.GetEnrichedWithdrawalEvent(&event, headerNumber, headerHash)
 		if errors.Is(err, ErrWithdrawalProofDeleted) {
 			wv.logSkippedDeletedProof(&event)
 			continue
@@ -285,25 +283,26 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEvents(start uint64, 
 		if err != nil {
 			return nil, fmt.Errorf("failed to get enriched withdrawal event: %w", err)
 		}
-		enrichedProvenWithdrawalEvents = append(enrichedProvenWithdrawalEvents, *enrichedWithdrawalEvent)
+		enrichedEvents = append(enrichedEvents, *enrichedEvent)
 	}
-
-	return enrichedProvenWithdrawalEvents, nil
+	return enrichedEvents, nil
 }
 
-// GetEnrichedWithdrawalsEvents retrieves enriched withdrawal events within the specified block range.
-// It returns a slice of EnrichedProvenWithdrawalEvent along with any error encountered.
-func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint64, end *uint64) (map[common.Hash]*EnrichedProvenWithdrawalEvent, error) {
+// GetEnrichedWithdrawalsEventsMap retrieves enriched events at the captured L1 block.
+func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(
+	start uint64,
+	end *uint64,
+	headerNumber uint64,
+	headerHash common.Hash,
+) (map[common.Hash]*EnrichedProvenWithdrawalEvent, error) {
 	iterator, err := wv.L1Proxy.GetProvenWithdrawalsExtension1EventsIterator(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proven withdrawals extension1 iterator error:%w", err)
 	}
 
-	enrichedProvenWithdrawalEvents := make(map[common.Hash]*EnrichedProvenWithdrawalEvent)
-
+	enrichedEvents := make(map[common.Hash]*EnrichedProvenWithdrawalEvent)
 	for iterator.Next() {
 		event := iterator.Event
-
 		withdrawalEvent := WithdrawalProvenExtension1Event{
 			WithdrawalHash: event.WithdrawalHash,
 			ProofSubmitter: event.ProofSubmitter,
@@ -313,7 +312,11 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint6
 			},
 		}
 
-		enrichedWithdrawalEvent, err := wv.GetEnrichedWithdrawalEvent(&withdrawalEvent)
+		enrichedEvent, err := wv.GetEnrichedWithdrawalEvent(
+			&withdrawalEvent,
+			headerNumber,
+			headerHash,
+		)
 		if errors.Is(err, ErrWithdrawalProofDeleted) {
 			wv.logSkippedDeletedProof(&withdrawalEvent)
 			continue
@@ -321,12 +324,9 @@ func (wv *ProvenWithdrawalValidator) GetEnrichedWithdrawalsEventsMap(start uint6
 		if err != nil {
 			return nil, fmt.Errorf("failed to get enriched withdrawal event: %w", err)
 		}
-
-		key := enrichedWithdrawalEvent.Event.Raw.TxHash
-		enrichedProvenWithdrawalEvents[key] = enrichedWithdrawalEvent
+		enrichedEvents[enrichedEvent.Event.Raw.TxHash] = enrichedEvent
 	}
-
-	return enrichedProvenWithdrawalEvents, nil
+	return enrichedEvents, nil
 }
 
 // logSkippedDeletedProof records that an event was skipped because its proof record is gone.
@@ -358,4 +358,9 @@ func (wv *ProvenWithdrawalValidator) GetL2BlockNumber() (uint64, error) {
 
 func (wv *ProvenWithdrawalValidator) GetL1BlockNumber() (uint64, error) {
 	return wv.L1Proxy.BlockNumber()
+}
+
+// GetLatestL1Header returns the current unsafe L1 header.
+func (wv *ProvenWithdrawalValidator) GetLatestL1Header() (*types.Header, error) {
+	return wv.L1Proxy.LatestHeader()
 }
