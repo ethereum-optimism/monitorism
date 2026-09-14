@@ -277,31 +277,11 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(
 	return best, nil
 }
 
-// GetLatestBlock retrieves the latest block number from the L1 Geth client.
-// It updates the state with the latest L1 height.
-func (m *Monitor) GetLatestBlock() (uint64, error) {
-	m.log.Debug("Getting latest L1 block number")
-	latestL1Height, err := m.withdrawalValidator.GetL1BlockNumber()
-	if err != nil {
-		m.log.Error("Failed to query latest block number", "error", err)
-		return 0, fmt.Errorf("failed to query latest block number: %w", err)
-	}
-	m.state.latestL1Height = latestL1Height
-	m.log.Debug("Updated latest L1 block number", "height", latestL1Height)
-	return latestL1Height, nil
-}
-
-// GetMaxBlock calculates the maximum block number to be processed.
-// It considers the next L1 height and the defined max block range.
-func (m *Monitor) GetMaxBlock() (uint64, error) {
+// GetMaxBlock caps the scan at the captured L1 header.
+func (m *Monitor) GetMaxBlock(latestL1Height uint64) uint64 {
 	m.log.Debug("Calculating max block number",
 		"nextL1Height", m.state.nextL1Height,
 		"maxBlockRange", m.maxBlockRange)
-
-	latestL1Height, err := m.GetLatestBlock()
-	if err != nil {
-		return 0, fmt.Errorf("failed to query latest block number: %w", err)
-	}
 
 	stop := m.state.nextL1Height + m.maxBlockRange
 	if stop > latestL1Height {
@@ -311,7 +291,7 @@ func (m *Monitor) GetMaxBlock() (uint64, error) {
 			"adjustedStop", stop)
 	}
 	m.log.Debug("Calculated max block number", "stop", stop)
-	return stop, nil
+	return stop
 }
 
 // Run executes the main monitoring loop.
@@ -324,11 +304,18 @@ func (m *Monitor) Run(ctx context.Context) {
 	start := m.state.nextL1Height
 	m.log.Debug("Starting monitoring run", "startBlock", start)
 
-	stop, err := m.GetMaxBlock()
+	header, err := m.withdrawalValidator.GetLatestL1Header()
 	if err != nil {
-		m.log.Error("Failed to get max block", "error", err)
+		m.log.Error("Failed to get latest L1 header", "error", err)
 		return
 	}
+	headerNumber := header.Number.Uint64()
+	m.state.latestL1Height = headerNumber
+	if start > headerNumber {
+		m.log.Info("No new events to process", "start", start, "stop", headerNumber)
+		return
+	}
+	stop := m.GetMaxBlock(headerNumber)
 	m.log.Debug("Got max block for processing", "stopBlock", stop)
 
 	// review previous invalidProposalWithdrawalsEvents
@@ -345,7 +332,12 @@ func (m *Monitor) Run(ctx context.Context) {
 		"l1BlockStart", fmt.Sprintf("%d", start),
 		"l1BlockStop", fmt.Sprintf("%d", stop),
 		"l1BlockRange", fmt.Sprintf("%d", stop-start))
-	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(start, &stop)
+	newEvents, err := m.withdrawalValidator.GetEnrichedWithdrawalsEventsMap(
+		start,
+		&stop,
+		headerNumber,
+		header.Hash(),
+	)
 
 	if err != nil {
 		if start >= stop {
