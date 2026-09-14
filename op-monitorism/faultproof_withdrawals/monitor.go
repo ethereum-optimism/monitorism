@@ -279,10 +279,18 @@ func (m *Monitor) getBlockAtApproximateTimeBinarySearch(
 
 // GetMaxBlock caps the scan at the captured L1 header.
 func (m *Monitor) GetMaxBlock(latestL1Height uint64) uint64 {
+	m.log.Debug("Calculating max block number",
+		"nextL1Height", m.state.nextL1Height,
+		"maxBlockRange", m.maxBlockRange)
+
 	stop := m.state.nextL1Height + m.maxBlockRange
 	if stop > latestL1Height {
 		stop = latestL1Height
+		m.log.Debug("Max block adjusted to latest L1 height",
+			"originalStop", m.state.nextL1Height+m.maxBlockRange,
+			"adjustedStop", stop)
 	}
+	m.log.Debug("Calculated max block number", "stop", stop)
 	return stop
 }
 
