@@ -11,5 +11,14 @@
       "target": "op-monitorism",
       "paths": ["op-monitorism/**"]
     }
+  },
+  "apko_images": {
+    "op-monitorism": {
+      "melange_config": "melange/op-monitorism.yaml",
+      "apko_config_dir": "apko",
+      "services": "op-monitorism",
+      "smoke_test": "op-monitorism",
+      "registry": "us-docker.pkg.dev/oplabs-tools-artifacts/images"
+    }
   }
 }
