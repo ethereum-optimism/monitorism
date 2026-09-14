@@ -49,7 +49,6 @@ type fakeConfig struct {
 // fakeL1 serves the few JSON-RPC methods the validator needs, so a test can control exactly what
 // the portal reports for a withdrawal that has a WithdrawalProvenExtension1 event.
 type fakeL1 struct {
-	t *testing.T
 	fakeConfig
 
 	portalABI *abi.ABI
@@ -66,7 +65,7 @@ func newFakeL1(t *testing.T, config fakeConfig) *httptest.Server {
 	gameABI, err := dispute.FaultDisputeGameMetaData.GetAbi()
 	require.NoError(t, err)
 
-	f := &fakeL1{t: t, fakeConfig: config, portalABI: portalABI, gameABI: gameABI}
+	f := &fakeL1{fakeConfig: config, portalABI: portalABI, gameABI: gameABI}
 	server := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(server.Close)
 	return server
@@ -86,12 +85,18 @@ func (e rpcError) Error() string { return e.message }
 
 func (f *fakeL1) serve(w http.ResponseWriter, r *http.Request) {
 	var raw json.RawMessage
-	require.NoError(f.t, json.NewDecoder(r.Body).Decode(&raw))
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	var batch []rpcRequest
 	if err := json.Unmarshal(raw, &batch); err != nil {
 		var single rpcRequest
-		require.NoError(f.t, json.Unmarshal(raw, &single))
+		if err := json.Unmarshal(raw, &single); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		batch = []rpcRequest{single}
 	}
 
@@ -105,24 +110,31 @@ func (f *fakeL1) serve(w http.ResponseWriter, r *http.Request) {
 				`{"jsonrpc":"2.0","id":%s,"error":{"code":-32000,"message":%q}}`, req.ID, nodeErr.message)))
 			continue
 		}
-		require.NoError(f.t, err)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		encoded, err := json.Marshal(result)
-		require.NoError(f.t, err)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		responses = append(responses, json.RawMessage(fmt.Sprintf(
 			`{"jsonrpc":"2.0","id":%s,"result":%s}`, req.ID, encoded)))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if len(batch) == 1 {
-		_, err := w.Write(responses[0])
-		require.NoError(f.t, err)
+		_, _ = w.Write(responses[0])
 		return
 	}
 	out, err := json.Marshal(responses)
-	require.NoError(f.t, err)
-	_, err = w.Write(out)
-	require.NoError(f.t, err)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(out)
 }
 
 func (f *fakeL1) handle(req rpcRequest) (any, error) {
@@ -154,7 +166,10 @@ func (f *fakeL1) handle(req rpcRequest) (any, error) {
 			if f.missingPinnedBlock {
 				return nil, rpcError{message: "header not found"}
 			}
-			require.Equal(f.t, testHeadHeader(f.headBlockNumber).Hash(), *target.BlockHash)
+			expected := testHeadHeader(f.headBlockNumber).Hash()
+			if *target.BlockHash != expected {
+				return nil, fmt.Errorf("unexpected block hash %s, expected %s", *target.BlockHash, expected)
+			}
 		}
 
 		return f.call(call.To, call.Data)
